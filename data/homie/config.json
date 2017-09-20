@@ -1,0 +1,24 @@
+{
+  "name": "d1",
+  "device_id": "d1-artnet",
+  "wifi": {
+    "ssid": "***REMOVED***",
+    "password": "lappisdudes"
+  },
+  "mqtt": {
+    "host": "paj",
+    "base_topic": "devices/",
+    "auth": false,
+    "username": "user",
+    "password": "pass"
+  },
+  "ota": {
+    "host": "paj",
+    "enabled": true,
+		"port": 9080,
+    "path": "/ota"
+  },
+  "settings": {
+    "status_interval": 30
+  }
+}
