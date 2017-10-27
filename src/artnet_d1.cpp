@@ -41,20 +41,9 @@ WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
 // byte sign;
 
 #include <NeoPixelBus.h>
-#include <NeoPixelAnimator.h>
 #define colorSaturation 128
-NeoPixelBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod> neoPixelStrip(LED_COUNT, LED_PIN);
-NeoPixelAnimator animations(LED_COUNT, NEO_CENTISECONDS);
-RgbColor red(colorSaturation, 0, 0); RgbColor green(0, colorSaturation, 0); RgbColor blue(0, 0, colorSaturation);
-RgbColor white(colorSaturation); RgbColor black(0);
+NeoPixelBus<NeoRgbwFeature, NeoEsp8266BitBang800KbpsMethod> neoPixelStrip(LED_COUNT, LED_PIN);
 void testNeoPixelBus();
-void SetupAnimationSet();
-void SetRandomSeed() {
-    uint32_t seed = analogRead(0); delay(1);
-    for (int shifts = 3; shifts < 31; shifts += 3) {
-        seed ^= analogRead(0) << shifts; delay(1);
-    } randomSeed(seed);
-}
 
 
 void loopArtNet();
@@ -115,11 +104,7 @@ void setup() {
 	/* mqttLog.setProperty("log").send("test, setting up"); */
 	// brightnessNode.setProperty("brightness").send("100");
 
-	neoPixelStrip.Begin(); neoPixelStrip.Show(); SetRandomSeed();
-	// for (uint16_t pixel = 0; pixel < LED_COUNT; pixel++) {
-	// 		RgbColor color = RgbColor(random(255), random(255), random(255));
-	// 		neoPixelStrip.SetPixelColor(pixel, color);
-	// }
+	neoPixelStrip.Begin(); neoPixelStrip.Show();
 	
 
 	// LED.setOutput(SK_PIN);
@@ -207,32 +192,6 @@ void testNeoPixelBus() {
     neoPixelStrip.SetPixelColor(0, black); neoPixelStrip.SetPixelColor(1, black); neoPixelStrip.SetPixelColor(2, black); neoPixelStrip.SetPixelColor(3, black);
     neoPixelStrip.Show();
     delay(200);
-}
-void SetupAnimationSet() {
-    for (uint16_t pixel = 0; pixel < LED_COUNT; pixel++) {
-        const uint8_t peak = 128;
-        // pick a random duration of the animation for this pixel since values are centiseconds, the range is 1 - 4 seconds
-        uint16_t time = random(100, 400);
-        RgbwColor originalColor = neoPixelStrip.GetPixelColor(pixel);
-        RgbwColor targetColor = RgbwColor(random(peak), random(peak), random(peak), random(peak));
-        AnimEaseFunction easing;
-
-        switch (random(3)) {
-					case 0: easing = NeoEase::CubicIn; break;
-					case 1: easing = NeoEase::CubicOut; break;
-					case 2: easing = NeoEase::QuadraticInOut; break;
-        }
-
-        AnimUpdateCallback animUpdate = [=](const AnimationParam& param) {
-            // progress will start at 0.0 and end at 1.0 we convert to the curve we want
-            float progress = easing(param.progress);
-            // use the curve value to apply to the animation
-            RgbwColor updatedColor = RgbwColor::LinearBlend(originalColor, targetColor, progress);
-            neoPixelStrip.SetPixelColor(pixel, updatedColor);
-        };
-        // now use the animation properties we just calculated and start the animation which will continue to run and call the update function until it completes
-        animations.StartAnimation(pixel, time, animUpdate);
-    }
 }
 
 void loopFX() {
