@@ -1,11 +1,12 @@
 #include <Arduino.h> 	//needed by linters
 #include <ArduinoOTA.h>
-#include <WiFiUdp.h>
-/* #include <Timer.h> */
-#include <Homie.h>
-#include <WS2812FX.h>
-#include <string.h>
 
+#include <Homie.h>
+/* HomieNode mqttLog("artnet", "log"); */
+HomieNode brightnessNode("brightness", "scale");
+
+// MANUAL straight DMX->BITBANG method
+#include <WiFiUdp.h>
 #define WSout 5  // Pin D1
 #define WSbit (1<<WSout)
 #define ARTNET_DATA 0x50
@@ -13,21 +14,48 @@
 #define ARTNET_POLL_REPLY 0x21
 #define ARTNET_PORT 6454
 #define ARTNET_HEADER 17
-
 WiFiUDP udp;
 uint8_t uniData[514]; uint16_t uniSize; uint8_t hData[ARTNET_HEADER + 1];
 uint8_t net = 0, subnet = 0, universe = 1, universe2 = 2;
 
-/* Timer t; */
-/* HomieNode mqttLog("artnet", "log"); */
-HomieNode brightnessNode("brightness", "scale");
 
 #define LED_COUNT 144
 #define LED_PIN D1
-WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
 
+// #include <Timer.h>
+/* Timer t; */
+#include <string.h>
 String cmd = "";               // String to store incoming serial commands
 bool cmd_complete = false;  // whether the command string is complete
+#include <WS2812FX.h>
+WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
+
+
+// #include "WS2812w.h"
+// // #include <WS2812.h>
+// #define SK_COUNT 128
+// #define SK_PIN 5
+// WS2812W LED(LED_COUNT);
+// cRGB value;
+// byte intensity;
+// byte sign;
+
+#include <NeoPixelBus.h>
+#include <NeoPixelAnimator.h>
+#define colorSaturation 128
+NeoPixelBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod> neoPixelStrip(LED_COUNT, LED_PIN);
+NeoPixelAnimator animations(LED_COUNT, NEO_CENTISECONDS);
+RgbColor red(colorSaturation, 0, 0); RgbColor green(0, colorSaturation, 0); RgbColor blue(0, 0, colorSaturation);
+RgbColor white(colorSaturation); RgbColor black(0);
+void testNeoPixelBus();
+void SetupAnimationSet();
+void SetRandomSeed() {
+    uint32_t seed = analogRead(0); delay(1);
+    for (int shifts = 3; shifts < 31; shifts += 3) {
+        seed ^= analogRead(0) << shifts; delay(1);
+    } randomSeed(seed);
+}
+
 
 void loopArtNet();
 void printModes();
@@ -35,13 +63,32 @@ void setupOTA();
 void process_command();
 void serialEvent();
 void sendWS();
+void flushNeoPixelBus();
 
 
 void loop() {
   ArduinoOTA.handle();
 	Homie.loop();
-
 	loopArtNet();
+
+
+	// for(uint32_t t = 0; t < uniSize; t++) {
+	// 	// XXX read pixel value from incoming artnet...
+	// 	value.b = 0; value.g = 0; value.r = 0; value.w = 0;
+	// 	LED.set_crgb_at(i, value);
+	// } LED.sync();
+
+	// for(uint32_t i = 0; i < SK_COUNT; i++) {
+	// 	// value.b = 0; value.g = 0; value.r = 0; value.w = i;
+	// 	value.b = 0; value.g = 0; value.r = i;
+	// 	LED.set_crgb_at(i, value);
+	// } LED.sync();
+
+	// testNeoPixelBus();
+	// if (animations.IsAnimating()) { animations.UpdateAnimations(); neoPixelStrip.Show();
+	// } else { Serial.println("Setup Next Set..."); SetupAnimationSet(); }
+
+
 
 	// ws2812fx.service();
   /* #if defined(__AVR_ATmega32U4__) */
@@ -67,13 +114,21 @@ void setup() {
 	Homie.setup();
 	/* mqttLog.setProperty("log").send("test, setting up"); */
 	// brightnessNode.setProperty("brightness").send("100");
+
+	neoPixelStrip.Begin(); neoPixelStrip.Show(); SetRandomSeed();
+	// for (uint16_t pixel = 0; pixel < LED_COUNT; pixel++) {
+	// 		RgbColor color = RgbColor(random(255), random(255), random(255));
+	// 		neoPixelStrip.SetPixelColor(pixel, color);
+	// }
 	
 
+	// LED.setOutput(SK_PIN);
+	// LED.setColorOrderGRBW();
+	// intensity = 0; sign = 1;
+
+
 	// ws2812fx.init();
-  // ws2812fx.setBrightness(7);
-  // ws2812fx.setSpeed(200);
-  // ws2812fx.setColor(0x2A7BFF);
-  // ws2812fx.setMode(FX_MODE_STATIC);
+  // ws2812fx.setBrightness(7); ws2812fx.setSpeed(200); ws2812fx.setColor(0x2A7BFF); ws2812fx.setMode(FX_MODE_STATIC);
 	// ws2812fx.start();
 	// printModes();
 
@@ -94,28 +149,37 @@ void loopArtNet() {
 		if (hData[8] == 0x00 && hData[9] == ARTNET_DATA && hData[15] == net) {
 			if ((hData[14] == (subnet << 4) + universe) || (hData[14] == (subnet << 4) + universe2)) { // UNIVERSE
 				uniSize = (hData[16] << 8) + (hData[17]);
-				udp.read(uniData, uniSize);  sendWS();
-				// if (Homie.getOption('logartnet')) {
-					// Serial.println('DMX packet received');
-				// } // something like this
+				udp.read(uniData, uniSize);
+				// sendWS();
+				flushNeoPixelBus();
+				// if (Homie.getOption('logartnet')) Serial.println('DMX packet received'); // something like this
 	} } }
 }
 
 void ICACHE_FLASH_ATTR sendWS() {
   uint32_t writeBits; uint8_t bitMask, time;
   os_intr_lock();
-  for (uint16_t t = 0; t < uniSize; t++) { 	// outer loop counting bytes
-    bitMask = 0x80; while (bitMask) { 			// time=0ns : start by setting bit on
-      time = 4; while (time--) WRITE_PERI_REG(0x60000304, WSbit);  		// do ON bits // T=0
-      if (uniData[t] & bitMask) writeBits = 0;  		// if this is a '1' keep the on time on for longer, so dont write an off bit
-      else 											writeBits = WSbit;  // else it must be a zero, so write the off bit !
+  for(uint16_t t = 0; t < uniSize; t++) { 	// loop each byte in universe
+    // bitMask = 0x80; while (bitMask) { 			// loop bits in byte (bitMask) // time=0ns
+    for(bitMask = 0x80; bitMask; bitMask >>= 1) { 			// loop bits in byte (bitMask) // time=0ns
+      time = 4; while(time--) WRITE_PERI_REG(0x60000304, WSbit);  		 // write ON bits // T=0
+      if (uniData[t] & bitMask) writeBits = 0; else writeBits = WSbit; // keep ON (= write 0) if true, else prep OFF
 
-      time = 4; while (time--) WRITE_PERI_REG(0x60000308, writeBits); // do OFF bits // T='0' time 350ns
-      time = 6; while (time--) WRITE_PERI_REG(0x60000308, WSbit);  		// switch all bits off  T='1' time 700ns
-      bitMask >>= 1; 					//end of bite write time=1250ns
+      time = 4; while(time--) WRITE_PERI_REG(0x60000308, writeBits); 	// write OFF bits, zeropulse at time=350ns
+      time = 6; while(time--) WRITE_PERI_REG(0x60000308, WSbit);  		// switch all bits off  T='1' time 700ns
+      // bitMask >>= 1; 					// shift bitmask // end of bite write time=1250ns
 	} }; os_intr_unlock();
 }
 
+void flushNeoPixelBus() {
+	uint16_t pixel = 0;
+  for(uint16_t t = 0; t < uniSize; t += 4) { 	// loop each pixel (4 bytes) in universe
+		RgbwColor color = RgbwColor(uniData[t], uniData[t+1], uniData[t+2], uniData[t+3]);
+		neoPixelStrip.SetPixelColor(pixel, color);
+		pixel++;
+	}
+	neoPixelStrip.Show();
+}
 
 void setupOTA() {
   ArduinoOTA.setHostname("d1");
@@ -131,14 +195,52 @@ void setupOTA() {
 	}	}); ArduinoOTA.begin();
 }
 
+void testNeoPixelBus() {
+    Serial.println("Colors R, G, B, W...");
+
+    neoPixelStrip.SetPixelColor(0, red); neoPixelStrip.SetPixelColor(1, green); neoPixelStrip.SetPixelColor(2, blue); neoPixelStrip.SetPixelColor(3, white);
+    // neoPixelStrip.SetPixelColor(3, RgbwColor(colorSaturation));
+    neoPixelStrip.Show();
+
+    delay(1000);
+    Serial.println("Off ...");
+    neoPixelStrip.SetPixelColor(0, black); neoPixelStrip.SetPixelColor(1, black); neoPixelStrip.SetPixelColor(2, black); neoPixelStrip.SetPixelColor(3, black);
+    neoPixelStrip.Show();
+    delay(200);
+}
+void SetupAnimationSet() {
+    for (uint16_t pixel = 0; pixel < LED_COUNT; pixel++) {
+        const uint8_t peak = 128;
+        // pick a random duration of the animation for this pixel since values are centiseconds, the range is 1 - 4 seconds
+        uint16_t time = random(100, 400);
+        RgbwColor originalColor = neoPixelStrip.GetPixelColor(pixel);
+        RgbwColor targetColor = RgbwColor(random(peak), random(peak), random(peak), random(peak));
+        AnimEaseFunction easing;
+
+        switch (random(3)) {
+					case 0: easing = NeoEase::CubicIn; break;
+					case 1: easing = NeoEase::CubicOut; break;
+					case 2: easing = NeoEase::QuadraticInOut; break;
+        }
+
+        AnimUpdateCallback animUpdate = [=](const AnimationParam& param) {
+            // progress will start at 0.0 and end at 1.0 we convert to the curve we want
+            float progress = easing(param.progress);
+            // use the curve value to apply to the animation
+            RgbwColor updatedColor = RgbwColor::LinearBlend(originalColor, targetColor, progress);
+            neoPixelStrip.SetPixelColor(pixel, updatedColor);
+        };
+        // now use the animation properties we just calculated and start the animation which will continue to run and call the update function until it completes
+        animations.StartAnimation(pixel, time, animUpdate);
+    }
+}
 
 void loopFX() {
 	ws2812fx.setMode((ws2812fx.getMode() + 1) % ws2812fx.getModeCount());
 	Serial.printf("FX Mode %u ", ws2812fx.getMode());
 }
 
-// Checks received command and calls corresponding functions.
-void process_command() {
+void process_command() {	// Checks received command and calls corresponding functions.
   if(cmd[0] == 'b') { 
     uint8_t b = (uint8_t) cmd.substring(2, cmd.length()).toInt();
     ws2812fx.setBrightness(b);
@@ -176,7 +278,7 @@ void printModes() {	// Prints all available WS2812FX blinken modes.
     Serial.println(ws2812fx.getModeName(i));
 } }
 
-void serialEvent() {	// Reads new input from serial to cmd string. Command is completed on \n
+void serialEvent() {	// Reads new input from serial to cmd str. Command is completed on \n
   while(Serial.available()) {
     char inChar = (char) Serial.read();
     if(inChar == '\n') cmd_complete = true;
