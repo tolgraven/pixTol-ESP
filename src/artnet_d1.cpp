@@ -16,7 +16,7 @@
 
 WiFiUDP udp;
 uint8_t uniData[514]; uint16_t uniSize; uint8_t hData[ARTNET_HEADER + 1];
-uint8_t net = 0, universe = 0, subnet = 0;
+uint8_t net = 0, subnet = 0, universe = 1, universe2 = 2;
 
 /* Timer t; */
 /* HomieNode mqttLog("artnet", "log"); */
@@ -33,6 +33,8 @@ void loopArtNet();
 void printModes();
 void setupOTA();
 void process_command();
+void serialEvent();
+void sendWS();
 
 
 void loop() {
@@ -41,11 +43,11 @@ void loop() {
 
 	loopArtNet();
 
-	ws2812fx.service();
+	// ws2812fx.service();
   /* #if defined(__AVR_ATmega32U4__) */
-  serialEvent();
+  // serialEvent();
   /* #endif */
-  if(cmd_complete) process_command();
+  // if(cmd_complete) process_command();
 
 	/* t.update(); */
 }
@@ -61,19 +63,19 @@ void setup() {
   Serial.begin(115200);
 	Homie.disableResetTrigger(); Homie_setFirmware("artnet", "1.0.1");
 	/* mqttLog.advertise("log"); */
-	brightnessNode.advertise("brightness").settable(brightnessHandler);
+	// brightnessNode.advertise("brightness").settable(brightnessHandler);
 	Homie.setup();
 	/* mqttLog.setProperty("log").send("test, setting up"); */
-	brightnessNode.setProperty("brightness").send("100");
+	// brightnessNode.setProperty("brightness").send("100");
 	
 
-	ws2812fx.init();
-  ws2812fx.setBrightness(7);
-  ws2812fx.setSpeed(200);
-  ws2812fx.setColor(0x2A7BFF);
-  ws2812fx.setMode(FX_MODE_STATIC);
-	ws2812fx.start();
-	printModes();
+	// ws2812fx.init();
+  // ws2812fx.setBrightness(7);
+  // ws2812fx.setSpeed(200);
+  // ws2812fx.setColor(0x2A7BFF);
+  // ws2812fx.setMode(FX_MODE_STATIC);
+	// ws2812fx.start();
+	// printModes();
 
   /* t.every(5000, loopFX);  //update mode */
 
@@ -81,8 +83,54 @@ void setup() {
 	setupOTA(); 
 
 	Homie.getLogger() << "All prepped n ready to break!!!" << endl;
-
 }
+
+
+void loopArtNet() {
+  if (!udp.parsePacket()) return;
+	udp.read(hData, ARTNET_HEADER + 1); //Serial.print((char*)hData);
+	/* if (strncmp((char*)hData, "Art-Net", 7)) { */
+	if (hData[0] == 'A' && hData[1] == 'r' && hData[2] == 't' && hData[3] == '-' && hData[4] == 'N' && hData[5] == 'e' && hData[6] == 't') {
+		if (hData[8] == 0x00 && hData[9] == ARTNET_DATA && hData[15] == net) {
+			if ((hData[14] == (subnet << 4) + universe) || (hData[14] == (subnet << 4) + universe2)) { // UNIVERSE
+				uniSize = (hData[16] << 8) + (hData[17]);
+				udp.read(uniData, uniSize);  sendWS();
+				// if (Homie.getOption('logartnet')) {
+					// Serial.println('DMX packet received');
+				// } // something like this
+	} } }
+}
+
+void ICACHE_FLASH_ATTR sendWS() {
+  uint32_t writeBits; uint8_t bitMask, time;
+  os_intr_lock();
+  for (uint16_t t = 0; t < uniSize; t++) { 	// outer loop counting bytes
+    bitMask = 0x80; while (bitMask) { 			// time=0ns : start by setting bit on
+      time = 4; while (time--) WRITE_PERI_REG(0x60000304, WSbit);  		// do ON bits // T=0
+      if (uniData[t] & bitMask) writeBits = 0;  		// if this is a '1' keep the on time on for longer, so dont write an off bit
+      else 											writeBits = WSbit;  // else it must be a zero, so write the off bit !
+
+      time = 4; while (time--) WRITE_PERI_REG(0x60000308, writeBits); // do OFF bits // T='0' time 350ns
+      time = 6; while (time--) WRITE_PERI_REG(0x60000308, WSbit);  		// switch all bits off  T='1' time 700ns
+      bitMask >>= 1; 					//end of bite write time=1250ns
+	} }; os_intr_unlock();
+}
+
+
+void setupOTA() {
+  ArduinoOTA.setHostname("d1");
+  /* ArduinoOTA.onProgress([](unsigned int p, unsigned int tot) { Serial.printf("%u%%\r", (p / (tot / 100))); }); */
+  ArduinoOTA.onProgress( [](unsigned int p, unsigned int tot) { Serial.printf("OTA updating  -  %u%%\r", p / (tot / 100)); } );
+  ArduinoOTA.onError( [](ota_error_t error) {  Serial.printf("OTA Error[%u]: ", error); 
+		switch(error) { 
+			case OTA_AUTH_ERROR:		Serial.println("Auth Failed"); 		break;
+			case OTA_BEGIN_ERROR:		Serial.println("Begin Failed");		break;
+			case OTA_CONNECT_ERROR:	Serial.println("Connect Failed");	break;
+			case OTA_RECEIVE_ERROR:	Serial.println("Receive Failed");	break;
+			case OTA_END_ERROR:			Serial.println("End Failed");			break;
+	}	}); ArduinoOTA.begin();
+}
+
 
 void loopFX() {
 	ws2812fx.setMode((ws2812fx.getMode() + 1) % ws2812fx.getModeCount());
@@ -134,47 +182,3 @@ void serialEvent() {	// Reads new input from serial to cmd string. Command is co
     if(inChar == '\n') cmd_complete = true;
     else cmd += inChar;
 } }
-
-
-void loopArtNet() {
-  if (!udp.parsePacket()) return;
-	udp.read(hData, ARTNET_HEADER + 1); //Serial.print((char*)hData);
-	/* if (strncmp((char*)hData, "Art-Net", 7)) { */
-	if (hData[0] == 'A' && hData[1] == 'r' && hData[2] == 't' && hData[3] == '-' && hData[4] == 'N' && hData[5] == 'e' && hData[6] == 't') {
-		if (hData[8] == 0x00 && hData[9] == ARTNET_DATA && hData[15] == net) {
-			if (hData[14] == (subnet << 4) + universe) { // UNIVERSE
-				uniSize = (hData[16] << 8) + (hData[17]);
-				udp.read(uniData, uniSize);  sendWS();
-	} } }
-}
-
-void ICACHE_FLASH_ATTR sendWS() {
-  uint32_t writeBits; uint8_t bitMask, time;
-  os_intr_lock();
-  for (uint16_t t = 0; t < uniSize; t++) { 	// outer loop counting bytes
-    bitMask = 0x80; while (bitMask) { 			// time=0ns : start by setting bit on
-      time = 4; while (time--) WRITE_PERI_REG(0x60000304, WSbit);  		// do ON bits // T=0
-      if (uniData[t] & bitMask) writeBits = 0;  		// if this is a '1' keep the on time on for longer, so dont write an off bit
-      else 											writeBits = WSbit;  // else it must be a zero, so write the off bit !
-
-      time = 4; while (time--) WRITE_PERI_REG(0x60000308, writeBits); // do OFF bits // T='0' time 350ns
-      time = 6; while (time--) WRITE_PERI_REG(0x60000308, WSbit);  		// switch all bits off  T='1' time 700ns
-      bitMask >>= 1; 					//end of bite write time=1250ns
-	} }; os_intr_unlock();
-}
-
-
-void setupOTA() {
-  ArduinoOTA.setHostname("d1");
-  /* ArduinoOTA.onProgress([](unsigned int p, unsigned int tot) { Serial.printf("%u%%\r", (p / (tot / 100))); }); */
-  ArduinoOTA.onProgress( [](unsigned int p, unsigned int tot) { Serial.printf("OTA updating  -  %u%%\r", p / (tot / 100)); } );
-  ArduinoOTA.onError( [](ota_error_t error) {  Serial.printf("OTA Error[%u]: ", error); 
-		switch(error) { 
-			case OTA_AUTH_ERROR:		Serial.println("Auth Failed"); 		break;
-			case OTA_BEGIN_ERROR:		Serial.println("Begin Failed");		break;
-			case OTA_CONNECT_ERROR:	Serial.println("Connect Failed");	break;
-			case OTA_RECEIVE_ERROR:	Serial.println("Receive Failed");	break;
-			case OTA_END_ERROR:			Serial.println("End Failed");			break;
-	}	}); ArduinoOTA.begin();
-}
-

@@ -19,6 +19,8 @@
     "path": "/ota"
   },
   "settings": {
-    "status_interval": 30
+    "status_interval": 30,
+    "log_artnet": false
   }
 }
+
