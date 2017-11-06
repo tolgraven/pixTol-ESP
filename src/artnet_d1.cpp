@@ -1,98 +1,82 @@
 #include <Arduino.h> 	//needed by linters
 #include <ArduinoOTA.h>
-
 #include <Homie.h>
-HomieSetting<bool> cfg_log_artnet("log_artnet", "whether to log incoming artnet packets");
-HomieSetting<long> cfg_strips("strips", "number of LED strips being controlled");
-HomieSetting<long> cfg_pin("led_pin", "pin to use for LED strip control"); // should be array. D1 = 5 / GPIO05
-HomieSetting<long> cfg_count("led_count", "number of LEDs in strip"); // rework for multiple strips
-HomieSetting<long> cfg_bytes("bytes_per_pixel", "3 for RGB, 4 for RGBW");
-HomieSetting<long> cfg_universes("universes", "number of DMX universes");
-HomieSetting<long> cfg_start_uni("starting_universe", "index of first DMX universe used");
-HomieSetting<long> cfg_start_addr("starting_address", "index of beginning of strip, within starting_universe."); // individual pixel control starts after x function channels offset (for strobing etc)
-// XXX define num leds as well and automatically work out how to map universes based on bytes_per_pixel, num leds and starting universe?
-// or struct with universe-pin/offset mapping?
-// want flexibility to both control one strip multiple universes, and multiple strips on one universe...
-uint8_t bytes_per_pixel;
+#include <WiFiUdp.h>
+#include <ArtnetnodeWifi.h>
+#include <NeoPixelBus.h>
+#include <Timer.h>
+// #include <WS2812FX.h>
 
-// TODO:
-// first few channels are DMX control. Definitely:
-// ** Strobe 
-// ** Dimmer (so don't have to emulate it in Afterglow...) - could also go past 100? so boosting everything (obvs clipped to 255/255/255/255) - Compensate for fact that Afterglow won't go over 50/50/50/50% when "maxed", needs lightness 100 I guess?
-// ** Function channel, toggling:
-// - Halogen emulation curve...
+#define LED_PIN D1
+#define ARTNET_PORT 6454
+
+#define DMX_FUNCTION_CHANNELS 8
+#define CH_DIMMER 1
+#define CH_STROBE 2
+#define CH_STROBE_R 3
+#define CH_STROBE_G 4
+#define CH_STROBE_B 5
+#define CH_STROBE_PIXELS 6
+#define CH_FUNCTIONS 7
+
+HomieSetting<bool> cfg_log_artnet("log_artnet", 				"whether to log incoming artnet packets");
+HomieSetting<long> cfg_strips(		"strips", 						"number of LED strips being controlled");
+HomieSetting<long> cfg_pin(				"led_pin", 						"pin to use for LED strip control"); // should be array. D1 = 5 / GPIO05
+HomieSetting<long> cfg_count(			"led_count", 					"number of LEDs in strip"); // rework for multiple strips
+HomieSetting<long> cfg_bytes(			"bytes_per_pixel", 		"3 for RGB, 4 for RGBW");
+HomieSetting<long> cfg_universes(	"universes", 					"number of DMX universes");
+HomieSetting<long> cfg_start_uni(	"starting_universe", 	"index of first DMX universe used");
+HomieSetting<long> cfg_start_addr("starting_address", 	"index of beginning of strip, within starting_universe."); // individual pixel control starts after x function channels offset (for strobing etc)
+
+uint8_t bytes_per_pixel;
+uint16_t led_count;
+// TODO: global function channels:
+// 1 Dimmer (so don't have to emulate it in Afterglow...) - could also go past 100? so boosting everything (obvs clipped to 255/255/255/255) - Compensate for fact that Afterglow won't go over 50/50/50/50% when "maxed", needs lightness 100 I guess?
+// 2 Strobe 
+// 3-5 Strobe Red, Green, Blue
+// 6 Strobe functions - per pixel on/off, time-ratio on/off for strobe, halogen emulationish etc
+// 7 Function channel, toggling:
 // - Automatic light bleed between pixels?
 // - Automatic "blur" / afterglow (keep track of past few states for pixel and blend in like)
+// - Dithering like just small randomness so esp strobe still looks eh, organic or something
 // - Gamma adjust from pixelbus, toggle?
-// - neopixelbus
-//   - RotateLeft/Right ShiftLeft/Right? for direct sweeps/animations of current state however it was reached... would def allow cool results when activated over dmx
-//   - the NeoBuffer/NeoVerticalPriteSheet/NeoBitmapFile stuff?
-// - random other shit. WS2812FX etc?
-// - set as slave 
+// - neopixelbus - RotateLeft/Right ShiftLeft/Right? for direct sweeps/animations of current state however it was reached... would def allow cool results when activated over dmx
+//   						 - the NeoBuffer/NeoVerticalPriteSheet/NeoBitmapFile stuff?
+// - random other shit. WS2812FX etc?  // - set as slave 
 
-// MANUAL straight ARTNET->DMX->BITBANG method
-#include <WiFiUdp.h>
 WiFiUDP udp;
-uint8_t start_universe, universes, last_uni;
-
-uint16_t led_count;
-#define LED_COUNT 300
-#define LED_PIN D1
-
-#include <Timer.h>
-Timer t;
-// #include <WS2812FX.h>
-// WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
-
-
-#include <NeoPixelBus.h>
-// NeoPixelBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod> bus(LED_COUNT, LED_PIN);
-NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> *bus = NULL;
-
-#include <ArtnetnodeWifi.h>
 ArtnetnodeWifi artnet;
+NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> *bus = NULL;	// this way we can (re!)init off config values, post boot
+// WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
+Timer timer;
 
-void loopArtNet();
+
 void setupOTA();
-void sendWS();
 void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data);
 
-void logPixels();
-
-void loop() {
-  ArduinoOTA.handle();
-	Homie.loop();
-	// loopArtNet();
-	artnet.read();
-
-	if(last_uni == universes) {
-		bus->Show();
-		last_uni = 0;
-	}
-	// t.update();
-	// yield(); // should use?
-}
-
+// uint8_t start_universe, universes, last_uni;
 
 void setup() {
-  Serial.begin(115200);
 	Homie.disableResetTrigger(); Homie_setFirmware("artnet", "1.0.1");
 	cfg_strips.setDefaultValue(1); cfg_pin.setDefaultValue(LED_PIN); cfg_start_uni.setDefaultValue(1); cfg_start_addr.setDefaultValue(1);
 
 	Homie.setup();
-	bytes_per_pixel = cfg_bytes.get(); led_count = cfg_count.get(); //start_universe = cfg_start_uni.get();
-	universes = cfg_universes.get();
+	bytes_per_pixel = cfg_bytes.get(); //led_count = cfg_count.get();
+	// universes = cfg_universes.get();
 		
 	if(bus) delete bus;
-	bus = new NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>(led_count);
+	bus = new NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>(cfg_count.get());
 	bus->Begin();
 	
   artnet.setName(Homie.getConfiguration().name);
-  artnet.setNumPorts(cfg_strips.get()); artnet.setStartingUniverse(cfg_start_uni.get());
+  artnet.setNumPorts(cfg_universes.get()); 	// wrong obvs since we have 1 strip, 2 unis.,..
+	artnet.setStartingUniverse(cfg_start_uni.get());
 	artnet.enableDMXOutput(0); artnet.enableDMXOutput(1); 
 	artnet.begin();
 	artnet.setArtDmxCallback(flushNeoPixelBus);
+
   udp.begin(ARTNET_PORT);
+
 	setupOTA(); 
 
 	Homie.getLogger() << "All prepped n ready to break!!!" << endl;
@@ -108,18 +92,20 @@ void logPixels() {
 void loopArtNet() {
   uint16_t code = artnet.read();
   switch(code) {
-    case OpDmx: // dmx data, let callback handle...
-			if(cfg_log_artnet.get()) Serial.println("got DMX packet");
-			break;
-    case OpPoll:
-			Serial.println("Art Poll Packet"); break;
+    case OpDmx:  if(cfg_log_artnet.get()) Homie.getLogger() << "DMX "; break;
+    case OpPoll: if(cfg_log_artnet.get()) Homie.getLogger() << "Art Poll Packet"; break;
 	}
 }
 
 void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
-	// Serial.print("x");
+	uint8_t* functions = &data[1];  // take care of DMX ch offset...
+	if(functions[CH_STROBE]) {
+		// do that shit, make use of strobe R, G, B and PIXELS etc. Most imporant thing is just keeping the timing on-microcontroller tho, less about throughput per se hey
+	}
 	uint16_t pixel = 512/bytes_per_pixel * (universe - 1);
-  for(uint16_t t = 0; t < length; t += bytes_per_pixel) { // loop each pixel (4 bytes) in universe
+
+
+  for(uint16_t t = DMX_FUNCTION_CHANNELS; t < length; t += bytes_per_pixel) { // loop each pixel (4 bytes) in universe
 		if(bytes_per_pixel == 3) {
 			RgbColor color 	= RgbColor(data[t], data[t+1], data[t+2]);
 			bus->SetPixelColor(pixel, color);
@@ -128,7 +114,27 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 			bus->SetPixelColor(pixel, color);
 		} pixel++;
 	}
+	if(functions[CH_DIMMER] != 255) {
+		// scale fucking everything. But also should implement above-100 gain that'd be cool... Maybe reg dimmer and then part of ch7 or 8 or whatever is extra gain? hmm
+
+	}
+	bus->Show();
 }
+
+void loop() {
+  ArduinoOTA.handle();
+	Homie.loop();
+	loopArtNet();
+
+	// if(last_uni == universes) {
+	// 	bus->Show();
+	// 	last_uni = 0;
+	// }
+
+	// timer.update();
+	// yield(); // should use?
+}
+
 
 void setupOTA() {
   ArduinoOTA.setHostname(Homie.getConfiguration().name);
