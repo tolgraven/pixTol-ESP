@@ -32,19 +32,8 @@ uint8_t bytes_per_pixel;
 
 // MANUAL straight ARTNET->DMX->BITBANG method
 #include <WiFiUdp.h>
-// #define WSout 5  // Pin D1
-// #define WSbit (1<<WSout)
-// #define ARTNET_DATA 0x50
-// #define ARTNET_POLL 0x20
-// #define ARTNET_POLL_REPLY 0x21
-// #define ARTNET_PORT 6454
-// #define ARTNET_HEADER 17
-// WiFiUDP udp;
-// uint8_t uniData[514]; uint16_t uniSize; uint8_t h[ARTNET_HEADER + 1];
-uint8_t net = 0, subnet = 0, universe;
-
-uint8_t universes;
-uint8_t last_uni;
+WiFiUDP udp;
+uint8_t start_universe, universes, last_uni;
 
 uint16_t led_count;
 #define LED_COUNT 300
@@ -81,7 +70,7 @@ void loop() {
 		last_uni = 0;
 	}
 	// t.update();
-	yield(); // should use?
+	// yield(); // should use?
 }
 
 
@@ -91,8 +80,7 @@ void setup() {
 	cfg_strips.setDefaultValue(1); cfg_pin.setDefaultValue(LED_PIN); cfg_start_uni.setDefaultValue(1); cfg_start_addr.setDefaultValue(1);
 
 	Homie.setup();
-	bytes_per_pixel = cfg_bytes.get(); led_count = cfg_count.get(); universe = cfg_start_uni.get();
-	// uint8_t universes = (led_count * bytes_per_pixel) / 512; universes = 2;
+	bytes_per_pixel = cfg_bytes.get(); led_count = cfg_count.get(); //start_universe = cfg_start_uni.get();
 	universes = cfg_universes.get();
 		
 	if(bus) delete bus;
@@ -100,10 +88,11 @@ void setup() {
 	bus->Begin();
 	
   artnet.setName(Homie.getConfiguration().name);
-  artnet.setNumPorts(2); artnet.setStartingUniverse(1);
+  artnet.setNumPorts(cfg_strips.get()); artnet.setStartingUniverse(cfg_start_uni.get());
+	artnet.enableDMXOutput(0); artnet.enableDMXOutput(1); 
 	artnet.begin();
 	artnet.setArtDmxCallback(flushNeoPixelBus);
-  // udp.begin(ARTNET_PORT); pinMode(WSout, OUTPUT);
+  udp.begin(ARTNET_PORT);
 	setupOTA(); 
 
 	Homie.getLogger() << "All prepped n ready to break!!!" << endl;
@@ -120,43 +109,15 @@ void loopArtNet() {
   uint16_t code = artnet.read();
   switch(code) {
     case OpDmx: // dmx data, let callback handle...
+			if(cfg_log_artnet.get()) Serial.println("got DMX packet");
 			break;
     case OpPoll:
 			Serial.println("Art Poll Packet"); break;
 	}
-
-  // if(!udp.parsePacket()) return;
-	// udp.read(h, ARTNET_HEADER + 1);
-	// if(h[0]=='A' && h[1]=='r' && h[2]=='t' && h[3]=='-' && h[4]=='N' && h[5]=='e' && h[6]=='t') {
-	// 	if (h[8] == 0x00 && h[9] == ARTNET_DATA && h[15] == net) {
-	// 		for(int uni = universe; uni <= universes; uni++) {
-	// 			if (h[14] == (subnet << 4) + uni) { // UNIVERSE
-	// 				uniSize = (h[16] << 8) + (h[17]);
-	// 				udp.read(uniData, uniSize);
-	// 				// sendWS(); 				// manual bitbang method, only for WS2812b RGB
-	// 				flushNeoPixelBus(uni); // works with RGBW etc as well... but will still have to run sep controllers per type I guess? still, same-ish codebase = good
-	// 				last_uni = uni;
-					// if (log_artnet.get()) Serial.println('DMX packet received'); // something like this
-		// }	}
-	// bus->Show();
-	// } } 
 }
 
-// void ICACHE_FLASH_ATTR sendWS() {
-//   uint32_t writeBits; uint8_t bitMask, time;
-//   os_intr_lock();
-//   for(uint16_t t = 0; t < uniSize; t++) { 	// loop each byte in universe
-//     // bitMask = 0x80; while (bitMask) { 			// loop bits in byte (bitMask) // time=0ns
-//     for(bitMask = 0x80; bitMask; bitMask >>= 1) { 			// loop bits in byte (bitMask) // time=0ns
-//       time = 4; while(time--) WRITE_PERI_REG(0x60000304, WSbit);  		 // write ON bits // T=0
-//       if (uniData[t] & bitMask) writeBits = 0; else writeBits = WSbit; // keep ON (= write 0) if true, else prep OFF
-//       time = 4; while(time--) WRITE_PERI_REG(0x60000308, writeBits); 	// write OFF bits, zeropulse at time=350ns
-//       time = 6; while(time--) WRITE_PERI_REG(0x60000308, WSbit);  		// switch all bits off  T='1' time 700ns
-//       // bitMask >>= 1; 					// shift bitmask // end of bite write time=1250ns
-// 	} }; os_intr_unlock();
-// }
-
 void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
+	// Serial.print("x");
 	uint16_t pixel = 512/bytes_per_pixel * (universe - 1);
   for(uint16_t t = 0; t < length; t += bytes_per_pixel) { // loop each pixel (4 bytes) in universe
 		if(bytes_per_pixel == 3) {
@@ -165,8 +126,7 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 		} else if(bytes_per_pixel == 4) { 
 			RgbwColor color = RgbwColor(data[t], data[t+1], data[t+2], data[t+3]);
 			bus->SetPixelColor(pixel, color);
-		}
-		pixel++;
+		} pixel++;
 	}
 }
 
