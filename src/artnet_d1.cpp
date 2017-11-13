@@ -32,18 +32,10 @@ uint16_t led_count;
 
 WiFiUDP udp;
 ArtnetnodeWifi artnet;
-<<<<<<< HEAD
-NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> *bus = NULL;	// this way we can (re!)init off config values, post boot
-||||||| merged common ancestors
-NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> *bus = NULL;	// this way we can (re!)init off config values, post boot
-// WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
-=======
 // XXX how get around having to init RGB or GRBW hardcoded?
 // NeoPixelBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod> *bus = NULL;	// this way we can (re!)init off config values, post boot
 // NeoPixelBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod> *bus[2] = {};	// this way we can (re!)init off config values, post boot
 // use pointer array to be able to store several, I guess (for different pins/universes, if that's actually proper feasible)
-// WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
->>>>>>> multiplehardcoded
 Timer timer;
 
 
