@@ -5,7 +5,6 @@
 #include <ArtnetnodeWifi.h>
 #include <NeoPixelBus.h>
 #include <Timer.h>
-// #include <WS2812FX.h>
 
 #define LED_PIN D1
 #define ARTNET_PORT 6454
@@ -30,24 +29,10 @@ HomieSetting<long> cfg_start_addr("starting_address", 	"index of beginning of st
 
 uint8_t bytes_per_pixel;
 uint16_t led_count;
-// TODO: global function channels:
-// 1 Dimmer (so don't have to emulate it in Afterglow...) - could also go past 100? so boosting everything (obvs clipped to 255/255/255/255) - Compensate for fact that Afterglow won't go over 50/50/50/50% when "maxed", needs lightness 100 I guess?
-// 2 Strobe 
-// 3-5 Strobe Red, Green, Blue
-// 6 Strobe functions - per pixel on/off, time-ratio on/off for strobe, halogen emulationish etc
-// 7 Function channel, toggling:
-// - Automatic light bleed between pixels?
-// - Automatic "blur" / afterglow (keep track of past few states for pixel and blend in like)
-// - Dithering like just small randomness so esp strobe still looks eh, organic or something
-// - Gamma adjust from pixelbus, toggle?
-// - neopixelbus - RotateLeft/Right ShiftLeft/Right? for direct sweeps/animations of current state however it was reached... would def allow cool results when activated over dmx
-//   						 - the NeoBuffer/NeoVerticalPriteSheet/NeoBitmapFile stuff?
-// - random other shit. WS2812FX etc?  // - set as slave 
 
 WiFiUDP udp;
 ArtnetnodeWifi artnet;
 NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> *bus = NULL;	// this way we can (re!)init off config values, post boot
-// WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
 Timer timer;
 
 
@@ -125,11 +110,6 @@ void loop() {
   ArduinoOTA.handle();
 	Homie.loop();
 	loopArtNet();
-
-	// if(last_uni == universes) {
-	// 	bus->Show();
-	// 	last_uni = 0;
-	// }
 
 	// timer.update();
 	// yield(); // should use?
