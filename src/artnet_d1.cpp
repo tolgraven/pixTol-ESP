@@ -46,7 +46,9 @@ uint16_t led_count;
 
 WiFiUDP udp;
 ArtnetnodeWifi artnet;
-NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> *bus = NULL;	// this way we can (re!)init off config values, post boot
+// NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> *bus = NULL;	// this way we can (re!)init off config values, post boot
+NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> *bus[3];	// this way we can (re!)init off config values, post boot
+// NeoPixelBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod> *bus[3];	// this way we can (re!)init off config values, post boot
 // WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
 Timer timer;
 
@@ -64,9 +66,12 @@ void setup() {
 	bytes_per_pixel = cfg_bytes.get(); //led_count = cfg_count.get();
 	// universes = cfg_universes.get();
 		
-	if(bus) delete bus;
-	bus = new NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>(cfg_count.get());
-	bus->Begin();
+	if(bus[0]) delete bus[0];
+	// bus[0] = new NeoPixelBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(cfg_count.get(), 5);
+	bus[0] = new NeoPixelBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>(cfg_count.get());
+	// bus[1] = new NeoPixelBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(cfg_count.get(), 6);
+	// bus[2] = new NeoPixelBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(cfg_count.get() / 2, 7);
+	// for(int i = 0; i <= 2; i++) bus[i]->Begin();
 	
   artnet.setName(Homie.getConfiguration().name);
   artnet.setNumPorts(cfg_universes.get()); 	// wrong obvs since we have 1 strip, 2 unis.,..
@@ -83,8 +88,8 @@ void setup() {
 }
 
 void logPixels() {
-	size_t bufsize = bus->PixelsSize();
-	uint8_t* pixels = bus->Pixels();
+	size_t bufsize = bus[0]->PixelsSize();
+	uint8_t* pixels = bus[0]->Pixels();
 	for(size_t p = 0; p < bufsize; ++p)  Serial.printf("%d ", pixels[p]);
 }
 
@@ -102,23 +107,26 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 	if(functions[CH_STROBE]) {
 		// do that shit, make use of strobe R, G, B and PIXELS etc. Most imporant thing is just keeping the timing on-microcontroller tho, less about throughput per se hey
 	}
-	uint16_t pixel = 512/bytes_per_pixel * (universe - 1);
 
+	// uint16_t pixel = 512/bytes_per_pixel * (universe - 1);
+	uint16_t pixel = 0;
+	// uint8_t busidx = universe - 1;
+	uint8_t busidx = 0;
 
   for(uint16_t t = DMX_FUNCTION_CHANNELS; t < length; t += bytes_per_pixel) { // loop each pixel (4 bytes) in universe
 		if(bytes_per_pixel == 3) {
 			RgbColor color 	= RgbColor(data[t], data[t+1], data[t+2]);
-			bus->SetPixelColor(pixel, color);
+			bus[busidx]->SetPixelColor(pixel, color);
 		} else if(bytes_per_pixel == 4) { 
 			RgbwColor color = RgbwColor(data[t], data[t+1], data[t+2], data[t+3]);
-			bus->SetPixelColor(pixel, color);
+			bus[busidx]->SetPixelColor(pixel, color);
 		} pixel++;
 	}
 	if(functions[CH_DIMMER] != 255) {
 		// scale fucking everything. But also should implement above-100 gain that'd be cool... Maybe reg dimmer and then part of ch7 or 8 or whatever is extra gain? hmm
 
 	}
-	bus->Show();
+	bus[busidx]->Show();
 }
 
 void loop() {
