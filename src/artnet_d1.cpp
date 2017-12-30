@@ -3,9 +3,7 @@
 #include <Homie.h>
 #include <WiFiUdp.h>
 #include <ArtnetnodeWifi.h>
-// #include <NeoPixelBus.h>
 #include <NeoPixelBrightnessBus.h>
-// #include <Timer.h>
 #include <Ticker.h>
 
 // D1=5, D2=4, D3=0, D4=2  D0=16, D55=14, D6=12, D7=13, D8=15
@@ -33,18 +31,16 @@ HomieSetting<long> cfg_start_addr("starting_address", 	"index of beginning of st
 
 uint8_t bytes_per_pixel;
 uint16_t led_count;
-// uint8_t ch_strobe_last_value = 0;
-// Timer timer_strobe_each;
 struct busState {
-	bool shutterOpen;
+	// bool shutterOpen; // actually do we even want this per bus? obviously for strobe etc this is one unit, no? so one shutter, one timer etc. but then further hax on other end for fixture def larger than one universe...
+	// prob just use first connected strip's function channels, rest are slaved?
 	NeoPixelBrightnessBus<NeoGrbwFeature,  NeoEsp8266BitBang800KbpsMethod> *bus;	// this way we can (re!)init off config values, post boot
-	uint8_t brightness;
-	Ticker timer_strobe_each;
-	Ticker timer_strobe_on_for;
-	float onFraction;
-	uint16_t onTime;
-	uint8_t ch_strobe_last_value;
-	// uint8_t idx;
+	// uint8_t brightness;
+	// Ticker timer_strobe_each;
+	// Ticker timer_strobe_on_for;
+	// float onFraction;
+	// uint16_t onTime;
+	// uint8_t ch_strobe_last_value;
 	// busState(): shutterOpen(true) {}
 };
 
@@ -54,12 +50,19 @@ ArtnetnodeWifi artnet;
 NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266BitBang800KbpsMethod> *bus[4] = {};	// this way we can (re!)init off config values, post boot
 NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod> *busW[4] = {};	// this way we can (re!)init off config values, post boot
 busState* buses = new busState[4]();
+bool shutterOpen = true;
+Ticker timer_strobe_predelay;
+Ticker timer_strobe_each;
+Ticker timer_strobe_on_for;
+float onFraction = 7;
+uint16_t onTime;
+uint8_t ch_strobe_last_value = 0;
+uint8_t brightness;
 
 void setupOTA();
 void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data);
-void shutterClose(uint8_t idx);
-void shutterOpen(uint8_t idx);
-// void shutterOpen();
+void shutterCloseCallback(); //uint8_t idx);
+void shutterOpenCallback(); //uint8_t idx);
 
 void setup() {
 	Homie.disableResetTrigger(); Homie_setFirmware("artnet", "1.0.1");
@@ -70,22 +73,19 @@ void setup() {
 	// Homie.enableLogging(cfg_log_to_serial.get()); // gone after homie update, it seems....
 	bytes_per_pixel = cfg_bytes.get(); led_count = cfg_count.get();
 		
-	// if(bus) delete bus;
 	if(bytes_per_pixel == 3) {
 		// bus[0] = new NeoPixelBrightnessBus<NeoGrbFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D1);
 		// bus[1] = new NeoPixelBrightnessBus<NeoGrbFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D2);
 	}
 	else if(bytes_per_pixel == 4){
-		// buses[0] = new busState();
 		buses[0].bus = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D1);
-		buses[0].shutterOpen = true;
-		buses[0].onFraction = 5;
-		buses[0].ch_strobe_last_value = 0;
-		// buses[1] = new busState();
+		// buses[0].shutterOpen = true;
+		// buses[0].onFraction = 7;
+		// buses[0].ch_strobe_last_value = 0;
 		buses[1].bus = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D2);
-		buses[1].shutterOpen = true;
-		buses[1].onFraction = 5;
-		buses[1].ch_strobe_last_value = 0;
+		// buses[1].shutterOpen = true;
+		// buses[1].onFraction = 7;
+		// buses[1].ch_strobe_last_value = 0;
 		// busW[0] = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D1);
 		// busW[1] = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D2);
 		// busW[2] = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count / 2, D3);
@@ -129,6 +129,7 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 	uint8_t* functions = &data[-1];  // take care of DMX ch offset... does offset like this actually work lol?
 	// uint16_t pixel = 512/bytes_per_pixel * (universe - 1);  // for one-strip-multiple-universes
 	uint16_t pixel = 0;
+	// bool flushStrobe = false;
 
 	uint8_t busidx = universe - cfg_start_uni.get(); // XXX again watch out for uni 0...
 
@@ -142,50 +143,54 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 			buses[busidx].bus->SetPixelColor(pixel, color);
 		} pixel++;
 	} // GLOBAL FUNCTIONS:
-	if(functions[CH_STROBE]) {
-		if(functions[CH_STROBE] != buses[busidx].ch_strobe_last_value) { // reset timer for new state
-			// uint16_t strobePeriod = 1000 / (float)(functions[CH_STROBE] / 255)   // 1 = 1 hz, 255 = 10 hz, to test
-			uint8_t hzMin = cfg_strobe_hz_min.get(); // should these be setable through dmx control ch?
-			uint8_t hzMax = cfg_strobe_hz_max.get();
-			float hz = ((hzMax - hzMin) * (functions[CH_STROBE] - 1) / (255 - 1)) + hzMin;
-			uint16_t strobePeriod = 1000 / hz;   // 1 = 1 hz, 255 = 10 hz, to test
-			if(functions[CH_STROBE_CURVES]) { //use non-default fraction
-				// buses[busidx].onFraction = ...
-			}
-			buses[busidx].onTime = strobePeriod / buses[busidx].onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
-			// timer_strobe_on_for.after(onTime, shutterClose);
-			// timer_strobe_on_for.once_ms<uint8_t>(onTime, [](uint8_t idx) {
-			buses[busidx].timer_strobe_on_for.once_ms<uint8_t>(buses[busidx].onTime, shutterClose, busidx);
-			// buses[busidx].timer_strobe_on_for.once_ms<uint8_t>(onTime, shutterClose, 0);
-				// }, busidx);
-			// buses[busidx].timer_strobe_each.attach_ms<uint8_t>(strobePeriod, [&](uint8_t idx) {
-			buses[busidx].timer_strobe_each.attach_ms<uint8_t>(strobePeriod, shutterOpen, busidx);
-				// buses[idx].shutterOpen = true;
-				// // if(buses[idx]) {
-				// 	// buses[idx].bus->SetBrightness(functions[CH_DIMMER]);
-				// 	// buses[idx].bus->Show();
-				// // } else
-				// if(buses[idx].bus) {
-				// 	buses[idx].bus->SetBrightness(buses[idx].brightness);
-				// 	buses[idx].bus->Show();
+	if(busidx == 0) { // first strip is master (at least for strobe etc)
+		if(functions[CH_STROBE]) {
+			if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
+				// XXX does same stupid thing as ADJ wash when sweeping strobe rate. because it starts instantly I guess. throttle somehow, or offset actual strobe slightly.
+				// buses[busidx].timer_strobe_on_for.detach(); // test, tho guess little chance it'd hit inbetween here and later in if body
+				// buses[busidx].timer_strobe_each.detach();
+				uint8_t hzMin = cfg_strobe_hz_min.get(); // should these be setable through dmx control ch?
+				uint8_t hzMax = cfg_strobe_hz_max.get();
+				float hz = ((hzMax - hzMin) * (functions[CH_STROBE] - 1) / (255 - 1)) + hzMin;
+				uint16_t strobePeriod = 1000 / hz;   // 1 = 1 hz, 255 = 10 hz, to test
+				// if(functions[CH_STROBE_CURVES]) { //use non-default fraction
+				// 	// buses[busidx].onFraction = ...
 				// }
-				// buses[idx].timer_strobe_on_for.once_ms<uint8_t>(onTime, shutterClose, idx);
-				// }, busidx);
-			// timer_strobe.every(strobeTime, shutterOpen);
-			buses[busidx].shutterOpen = true;
-		} else { // handle strobe logic
+				onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
+						// timer_strobe_on_for.once_ms<uint8_t>(onTime, shutterCloseCallback, busidx);
+						// shutterOpen = true;
+						// for(uint8_t i = 0; i < cfg_universes.get(); i++) {
+						// 	buses[i].bus->SetBrightness(brightness);
+						// 	buses[i].bus->Show();
+						// }
+
+
+				timer_strobe_predelay.once_ms(10, shutterOpenCallback);
+				// timer_strobe_predelay.once_ms(20, []() {
+				// 		timer_strobe_on_for.once_ms(onTime, shutterOpenCallback); //, busidx);
+				// 		shutterOpen = true;
+				// 		for(uint8_t i = 0; i < cfg_universes.get(); i++) {
+				// 			buses[i].bus->SetBrightness(brightness);
+				// 			buses[i].bus->Show();
+				// 		}
+				// });
+				
+				// timer_strobe_each.attach_ms<uint8_t>(strobePeriod, shutterOpenCallback, busidx);
+				timer_strobe_each.attach_ms(strobePeriod, shutterOpenCallback); //, busidx);
+
+				// flushStrobe = true;
+			}
+		} else { // 0, clean up
+			timer_strobe_on_for.detach();
+			timer_strobe_each.detach();
+			shutterOpen = true;
 		}
-		buses[busidx].ch_strobe_last_value = functions[CH_STROBE];	
-		// ch_strobe_last_value = functions[CH_STROBE];
+		ch_strobe_last_value = functions[CH_STROBE];
 	}
-	// if(bus[busidx]) {
-	// 	if(shutterOpen) bus[busidx]->SetBrightness(functions[CH_DIMMER]);
-	// 	bus[busidx]->Show();
-	// } else 
-		if(buses[busidx].bus)  {
-		// Homie.getLogger() << functions[CH_DIMMER] << " ";
-		buses[busidx].brightness = functions[CH_DIMMER];
-		if(buses[busidx].shutterOpen) buses[busidx].bus->SetBrightness(functions[CH_DIMMER]);
+	if(buses[busidx].bus) {
+		brightness = functions[CH_DIMMER];
+		if(brightness < 8) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
+		if(shutterOpen) buses[busidx].bus->SetBrightness(brightness);
 		buses[busidx].bus->Show();
 	}
 	// if(bus[busidx]) bus[busidx]->Show();
@@ -206,29 +211,28 @@ void loop() {
 // void shutterOpen() {
 //
 // }
-void shutterClose(uint8_t idx) {
-	buses[idx].shutterOpen = false;
-	// if(buses[idx]) {
-		// buses[idx].bus->SetBrightness(0);
-		// buses[idx].bus->Show();
-	// } else if(busW[idx]) {
-	// } else 
-	if(buses[idx].bus) {
-		buses[idx].bus->SetBrightness(0);
-		buses[idx].bus->Show();
-		}
-}
-void shutterOpen(uint8_t idx) {
-	buses[idx].shutterOpen = true;
-	// if(buses[idx]) {
-		// buses[idx].bus->SetBrightness(functions[CH_DIMMER]);
-		// buses[idx].bus->Show();
-	// } else
-	if(buses[idx].bus) {
-		buses[idx].bus->SetBrightness(buses[idx].brightness);
-		buses[idx].bus->Show();
+void shutterCloseCallback() { //uint8_t idx) {
+	shutterOpen = false;
+	for(uint8_t i = 0; i < cfg_universes.get(); i++) { // flush all at once, don't wait for DMX packets...
+		buses[i].bus->SetBrightness(0);
+		buses[i].bus->Show();
 	}
-	buses[idx].timer_strobe_on_for.once_ms<uint8_t>(buses[idx].onTime, shutterClose, idx);
+	// if(buses[idx].bus) {
+	// 	buses[idx].bus->SetBrightness(0);
+	// 	buses[idx].bus->Show();
+	// 	}
+}
+void shutterOpenCallback() { //uint8_t idx) {
+	shutterOpen = true;
+	for(uint8_t i = 0; i < cfg_universes.get(); i++) { // flush all at once, don't wait for DMX packets...
+		buses[i].bus->SetBrightness(brightness);
+		buses[i].bus->Show();
+	}
+	// if(buses[idx].bus) {
+	// 	buses[idx].bus->SetBrightness(brightness);
+	// 	buses[idx].bus->Show();
+	// }
+	timer_strobe_on_for.once_ms(onTime, shutterCloseCallback); //, idx);
 }
 
 void setupOTA() {
