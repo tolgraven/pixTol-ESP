@@ -32,29 +32,21 @@ HomieSetting<long> cfg_start_addr("starting_address", 	"index of beginning of st
 uint8_t bytes_per_pixel;
 uint16_t led_count;
 struct busState {
-	// bool shutterOpen; // actually do we even want this per bus? obviously for strobe etc this is one unit, no? so one shutter, one timer etc. but then further hax on other end for fixture def larger than one universe...
-	// prob just use first connected strip's function channels, rest are slaved?
+	// bool shutterOpen; // actually do we even want this per bus? obviously for strobe etc this is one unit, no? so one shutter, one timer etc. but then further hax on other end for fixture def larger than one universe...  prob just use first connected strip's function channels, rest are slaved?
 	NeoPixelBrightnessBus<NeoGrbwFeature,  NeoEsp8266BitBang800KbpsMethod> *bus;	// this way we can (re!)init off config values, post boot
-	// uint8_t brightness;
-	// Ticker timer_strobe_each;
-	// Ticker timer_strobe_on_for;
-	// float onFraction;
-	// uint16_t onTime;
-	// uint8_t ch_strobe_last_value;
-	// busState(): shutterOpen(true) {}
 };
 
 WiFiUDP udp;
 ArtnetnodeWifi artnet;
 // XXX didnt get Uart mode working, Dma works but iffy with concurrent bitbanging - stick to bang?  +REMEMBER: DMA and UART must ->Begin() after BitBang...
-NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266BitBang800KbpsMethod> *bus[4] = {};	// this way we can (re!)init off config values, post boot
-NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod> *busW[4] = {};	// this way we can (re!)init off config values, post boot
+// NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266BitBang800KbpsMethod> *bus[4] = {};	// this way we can (re!)init off config values, post boot
+// NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod> *busW[4] = {};	// this way we can (re!)init off config values, post boot
 busState* buses = new busState[4]();
 bool shutterOpen = true;
 Ticker timer_strobe_predelay;
 Ticker timer_strobe_each;
 Ticker timer_strobe_on_for;
-float onFraction = 8;
+float onFraction = 10;
 uint16_t onTime;
 uint8_t ch_strobe_last_value = 0;
 uint8_t brightness;
@@ -79,13 +71,7 @@ void setup() {
 	}
 	else if(bytes_per_pixel == 4){
 		buses[0].bus = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D1);
-		// buses[0].shutterOpen = true;
-		// buses[0].onFraction = 7;
-		// buses[0].ch_strobe_last_value = 0;
 		buses[1].bus = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D2);
-		// buses[1].shutterOpen = true;
-		// buses[1].onFraction = 7;
-		// buses[1].ch_strobe_last_value = 0;
 		// busW[0] = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D1);
 		// busW[1] = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D2);
 		// busW[2] = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count / 2, D3);
@@ -129,7 +115,6 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 	uint8_t* functions = &data[-1];  // take care of DMX ch offset... does offset like this actually work lol?
 	// uint16_t pixel = 512/bytes_per_pixel * (universe - 1);  // for one-strip-multiple-universes
 	uint16_t pixel = 0;
-	// bool flushStrobe = false;
 
 	uint8_t busidx = universe - cfg_start_uni.get(); // XXX again watch out for uni 0...
 
@@ -139,7 +124,6 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 			// bus[busidx]->SetPixelColor(pixel, color);
 		} else if(bytes_per_pixel == 4) { 
 			RgbwColor color = RgbwColor(data[t], data[t+1], data[t+2], data[t+3]);
-			// busW[busidx]->SetPixelColor(pixel, color);
 			buses[busidx].bus->SetPixelColor(pixel, color);
 		} pixel++;
 	} // GLOBAL FUNCTIONS:
@@ -158,7 +142,7 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 				// }
 				onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
 
-				timer_strobe_predelay.once_ms(20, shutterOpenCallback);
+				timer_strobe_predelay.once_ms(5, shutterOpenCallback); // 1 frame at 40hz = 25 ms so prob dont want to go above  10 before double flush
 				timer_strobe_each.attach_ms(strobePeriod, shutterOpenCallback); //, busidx);
 			}
 		} else { // 0, clean up
@@ -174,24 +158,16 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 		if(shutterOpen) buses[busidx].bus->SetBrightness(brightness);
 		buses[busidx].bus->Show();
 	}
-	// if(bus[busidx]) bus[busidx]->Show();
-	// else if(busW[busidx]) busW[busidx]->Show();
 }
 
 void loop() {
-	// timer_strobe_on_for.update();
-	// timer_strobe_each.update();
 	loopArtNet();
-
   ArduinoOTA.handle();
 	Homie.loop();
 
 	// yield(); // should use?
 }
 
-// void shutterOpen() {
-//
-// }
 void shutterCloseCallback() { //uint8_t idx) {
 	shutterOpen = false;
 	for(uint8_t i = 0; i < cfg_universes.get(); i++) { // flush all at once, don't wait for DMX packets...
