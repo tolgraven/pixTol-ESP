@@ -54,7 +54,7 @@ bool shutterOpen = true;
 Ticker timer_strobe_predelay;
 Ticker timer_strobe_each;
 Ticker timer_strobe_on_for;
-float onFraction = 7;
+float onFraction = 8;
 uint16_t onTime;
 uint8_t ch_strobe_last_value = 0;
 uint8_t brightness;
@@ -157,28 +157,9 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 				// 	// buses[busidx].onFraction = ...
 				// }
 				onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
-						// timer_strobe_on_for.once_ms<uint8_t>(onTime, shutterCloseCallback, busidx);
-						// shutterOpen = true;
-						// for(uint8_t i = 0; i < cfg_universes.get(); i++) {
-						// 	buses[i].bus->SetBrightness(brightness);
-						// 	buses[i].bus->Show();
-						// }
 
-
-				timer_strobe_predelay.once_ms(10, shutterOpenCallback);
-				// timer_strobe_predelay.once_ms(20, []() {
-				// 		timer_strobe_on_for.once_ms(onTime, shutterOpenCallback); //, busidx);
-				// 		shutterOpen = true;
-				// 		for(uint8_t i = 0; i < cfg_universes.get(); i++) {
-				// 			buses[i].bus->SetBrightness(brightness);
-				// 			buses[i].bus->Show();
-				// 		}
-				// });
-				
-				// timer_strobe_each.attach_ms<uint8_t>(strobePeriod, shutterOpenCallback, busidx);
+				timer_strobe_predelay.once_ms(20, shutterOpenCallback);
 				timer_strobe_each.attach_ms(strobePeriod, shutterOpenCallback); //, busidx);
-
-				// flushStrobe = true;
 			}
 		} else { // 0, clean up
 			timer_strobe_on_for.detach();
