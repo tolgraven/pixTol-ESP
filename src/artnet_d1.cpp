@@ -14,14 +14,16 @@
 #define CH_DIMMER 1
 #define CH_STROBE 2
 #define CH_STROBE_CURVES 3
+#define CH_RELEASE 4
 #define CH_FUNCTIONS 7
 
 HomieSetting<long> cfg_log_artnet("log_artnet", 				"log level for incoming artnet packets");
 HomieSetting<bool> cfg_log_to_serial("log_to_serial", 	"whether to log to serial");
 HomieSetting<bool> cfg_log_to_mqtt("log_to_mqtt", 			"whether to log to mqtt");
-HomieSetting<long> cfg_strobe_hz_min("strobe_hz_min", 						"lowest strobe frequency");
-HomieSetting<long> cfg_strobe_hz_max("strobe_hz_max", 						"highest strobe frequency");
+HomieSetting<long> cfg_strobe_hz_min("strobe_hz_min", 	"lowest strobe frequency");
+HomieSetting<long> cfg_strobe_hz_max("strobe_hz_max", 	"highest strobe frequency");
 HomieSetting<long> cfg_strips(		"strips", 						"number of LED strips being controlled");
+HomieSetting<bool> cfg_mirror(		"mirror_second_half", "whether to mirror strip back onto itself, for controlling folded strips >1 uni as if one");
 HomieSetting<long> cfg_pin(				"led_pins", 					"pin to use for LED strip control"); // should be array. D1 = 5 / GPIO05
 HomieSetting<long> cfg_count(			"led_count", 					"number of LEDs in strip"); // rework for multiple strips
 HomieSetting<long> cfg_bytes(			"bytes_per_pixel", 		"3 for RGB, 4 for RGBW");
@@ -33,7 +35,8 @@ uint8_t bytes_per_pixel;
 uint16_t led_count;
 struct busState {
 	// bool shutterOpen; // actually do we even want this per bus? obviously for strobe etc this is one unit, no? so one shutter, one timer etc. but then further hax on other end for fixture def larger than one universe...  prob just use first connected strip's function channels, rest are slaved?
-	NeoPixelBrightnessBus<NeoGrbwFeature,  NeoEsp8266BitBang800KbpsMethod> *bus;	// this way we can (re!)init off config values, post boot
+	NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266BitBang800KbpsMethod> *bus;	// this way we can (re!)init off config values, post boot
+	NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod> *busW;	// this way we can (re!)init off config values, post boot
 };
 
 WiFiUDP udp;
@@ -46,7 +49,7 @@ bool shutterOpen = true;
 Ticker timer_strobe_predelay;
 Ticker timer_strobe_each;
 Ticker timer_strobe_on_for;
-float onFraction = 10;
+float onFraction = 8;
 uint16_t onTime;
 uint8_t ch_strobe_last_value = 0;
 uint8_t brightness;
@@ -63,23 +66,22 @@ void setup() {
 	Serial.begin(115200);
 	Homie.setup();
 	// Homie.enableLogging(cfg_log_to_serial.get()); // gone after homie update, it seems....
-	bytes_per_pixel = cfg_bytes.get(); led_count = cfg_count.get();
-		
+	bytes_per_pixel = cfg_bytes.get();
+	led_count = cfg_count.get();
+	if(cfg_mirror.get()) led_count *= 2;	// actual leds in strip twice what's specified
+
 	if(bytes_per_pixel == 3) {
-		// bus[0] = new NeoPixelBrightnessBus<NeoGrbFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D1);
-		// bus[1] = new NeoPixelBrightnessBus<NeoGrbFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D2);
+		buses[0].bus = new NeoPixelBrightnessBus<NeoGrbFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D1);
+		// buses[1].bus = new NeoPixelBrightnessBus<NeoGrbFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D2);
 	}
 	else if(bytes_per_pixel == 4){
-		buses[0].bus = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D1);
-		buses[1].bus = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D2);
-		// busW[0] = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D1);
-		// busW[1] = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D2);
-		// busW[2] = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count / 2, D3);
+		buses[0].busW = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D1);
+		buses[1].busW = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count, D2);
+		buses[2].busW = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>(led_count / 2, D3);
 	}
 	for(int i = 0; i < 4; i++) {
-		if(buses[i].bus) buses[i].bus->Begin();
-		// if(bus[i]) bus[i]->Begin();
-		// if(busW[i]) busW[i]->Begin();
+		if(buses[i].bus)  buses[i].bus->Begin();
+		if(buses[i].busW) buses[i].busW->Begin();
 	}
 
   artnet.setName(Homie.getConfiguration().name);
@@ -87,7 +89,7 @@ void setup() {
 	artnet.setStartingUniverse(cfg_start_uni.get());
 	// XXX watchout for if starting universe is 0
 	uint8_t uniidx = cfg_start_uni.get() - 1;
-	for(int i=uniidx; i < uniidx + cfg_universes.get(); i++) artnet.enableDMXOutput(i);
+	for(uint8_t i=uniidx; i < uniidx + cfg_universes.get(); i++) artnet.enableDMXOutput(i);
 	artnet.enableDMXOutput(0); artnet.enableDMXOutput(1); artnet.enableDMXOutput(2); 
 	artnet.enableDMXOutput(3);
 	artnet.begin();
@@ -96,37 +98,50 @@ void setup() {
 
 	setupOTA();
 
-	Homie.getLogger() << "All prepped n ready to break!!!" << endl;
+	Homie.getLogger() << endl << "Setup completed" << endl << endl;
 }
 
 
 void loopArtNet() {
-  uint16_t code = artnet.read();
-  switch(code) {
-    case OpDmx:  if(cfg_log_artnet.get() >= 2) Homie.getLogger() << "DMX "; break;
+  switch(artnet.read()) { // check opcode for logging purposes, actual logic in setArtDmxCallback function
+    case OpDmx:  if(cfg_log_artnet.get() >= 2) Homie.getLogger() << "DMX "; 					 break;
     case OpPoll: if(cfg_log_artnet.get() >= 1) Homie.getLogger() << "Art Poll Packet"; break;
 	}
 }
 
 void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
-	if(universe < cfg_start_uni.get() || universe >= cfg_start_uni.get() + cfg_universes.get()) return;
+	if(universe < cfg_start_uni.get() || universe >= cfg_start_uni.get() + cfg_universes.get()) return; // need to expand with different subnets etc...
 
-	// if(cfg_log_artnet.get() >= 1) Homie.getLogger() << universe;
-	uint8_t* functions = &data[-1];  // take care of DMX ch offset... does offset like this actually work lol?
+	if(cfg_log_artnet.get() >= 1) Homie.getLogger() << universe;
+	uint8_t* functions = &data[-1];  // take care of DMX ch offset...
 	// uint16_t pixel = 512/bytes_per_pixel * (universe - 1);  // for one-strip-multiple-universes
 	uint16_t pixel = 0;
-
 	uint8_t busidx = universe - cfg_start_uni.get(); // XXX again watch out for uni 0...
 
-	for(uint16_t t = DMX_FUNCTION_CHANNELS; t < length; t += bytes_per_pixel) { // loop each pixel (4 bytes) in universe
+	// for(uint16_t t = DMX_FUNCTION_CHANNELS; t < length; t += bytes_per_pixel) { // loop each pixel (4 bytes) in universe
+	for(uint16_t t = DMX_FUNCTION_CHANNELS; t < bytes_per_pixel * cfg_count.get() + DMX_FUNCTION_CHANNELS; t += bytes_per_pixel) { // loop each pixel (4 bytes) in universe
 		if(bytes_per_pixel == 3) {
 			RgbColor color 	= RgbColor(data[t], data[t+1], data[t+2]);
-			// bus[busidx]->SetPixelColor(pixel, color);
+			if(color.CalculateBrightness() == 0) { // XXX rather, if delta > release then fade? or focus on "attack"/blend?
+				color = buses[busidx].bus->GetPixelColor(pixel);
+				color.Darken(30); // delta 0-255
+				if(color.CalculateBrightness() < 16) color.Darken(16); // avoid bitcrunch
+			} else {
+				color = RgbColor::LinearBlend(buses[busidx].bus->GetPixelColor(pixel), color, 0.2f);
+			}
+			buses[busidx].bus->SetPixelColor(pixel, color);
+
+			if(cfg_mirror.get()) buses[busidx].bus->SetPixelColor(2*cfg_count.get() - pixel - 1, color);
 		} else if(bytes_per_pixel == 4) { 
 			RgbwColor color = RgbwColor(data[t], data[t+1], data[t+2], data[t+3]);
-			buses[busidx].bus->SetPixelColor(pixel, color);
+			buses[busidx].busW->SetPixelColor(pixel, color);
+			if(cfg_mirror.get()) buses[busidx].busW->SetPixelColor(2*cfg_count.get() - pixel - 1, color);
 		} pixel++;
-	} // GLOBAL FUNCTIONS:
+	}
+	// if(cfg_mirror.get()) {
+	// 	for(uint16_t p = 0; cfg_count.get() / 2)
+	// }
+	// GLOBAL FUNCTIONS:
 	if(busidx == 0) { // first strip is master (at least for strobe etc)
 		if(functions[CH_STROBE]) {
 			if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
@@ -142,7 +157,7 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 				// }
 				onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
 
-				timer_strobe_predelay.once_ms(5, shutterOpenCallback); // 1 frame at 40hz = 25 ms so prob dont want to go above  10 before double flush
+				timer_strobe_predelay.once_ms(8, shutterOpenCallback); // 1 frame at 40hz = 25 ms so prob dont want to go above  10 before double flush
 				timer_strobe_each.attach_ms(strobePeriod, shutterOpenCallback); //, busidx);
 			}
 		} else { // 0, clean up
@@ -152,11 +167,16 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 		}
 		ch_strobe_last_value = functions[CH_STROBE];
 	}
-	if(buses[busidx].bus) {
-		brightness = functions[CH_DIMMER];
-		if(brightness < 8) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
-		if(shutterOpen) buses[busidx].bus->SetBrightness(brightness);
-		buses[busidx].bus->Show();
+	brightness = functions[CH_DIMMER];
+	if(brightness < 12) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
+	if(shutterOpen)  {
+		if(buses[busidx].bus) {
+			buses[busidx].bus->SetBrightness(brightness);
+			buses[busidx].bus->Show();
+		}	else if(buses[busidx].busW) {
+			buses[busidx].busW->SetBrightness(brightness);
+			buses[busidx].busW->Show();
+		}
 	}
 }
 
@@ -171,24 +191,27 @@ void loop() {
 void shutterCloseCallback() { //uint8_t idx) {
 	shutterOpen = false;
 	for(uint8_t i = 0; i < cfg_universes.get(); i++) { // flush all at once, don't wait for DMX packets...
-		buses[i].bus->SetBrightness(0);
-		buses[i].bus->Show();
+		if(buses[i].bus) {
+			buses[i].bus->SetBrightness(0);
+			buses[i].bus->Show();
+		}	else if(buses[i].busW) {
+			buses[i].busW->SetBrightness(0);
+			buses[i].busW->Show();
+		}
 	}
-	// if(buses[idx].bus) {
-	// 	buses[idx].bus->SetBrightness(0);
-	// 	buses[idx].bus->Show();
-	// 	}
 }
+
 void shutterOpenCallback() { //uint8_t idx) {
 	shutterOpen = true;
 	for(uint8_t i = 0; i < cfg_universes.get(); i++) { // flush all at once, don't wait for DMX packets...
-		buses[i].bus->SetBrightness(brightness);
-		buses[i].bus->Show();
+		if(buses[i].bus) {
+			buses[i].bus->SetBrightness(brightness);
+			buses[i].bus->Show();
+		}	else if(buses[i].busW) {
+			buses[i].busW->SetBrightness(brightness);
+			buses[i].busW->Show();
+		}
 	}
-	// if(buses[idx].bus) {
-	// 	buses[idx].bus->SetBrightness(brightness);
-	// 	buses[idx].bus->Show();
-	// }
 	timer_strobe_on_for.once_ms(onTime, shutterCloseCallback); //, idx);
 }
 
