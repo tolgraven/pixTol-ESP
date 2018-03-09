@@ -8,9 +8,10 @@
 
 // D1=5, D2=4, D3=0, D4=2  D0=16, D55=14, D6=12, D7=13, D8=15
 #define LED_PIN D1
+#define RX_PIN 3
 #define ARTNET_PORT 6454
 
-#define DMX_FN_CHS 8
+#define DMX_FN_CHS 12
 #define CH_DIMMER 1
 #define CH_STROBE 2
 #define CH_STROBE_CURVES 3
@@ -19,9 +20,14 @@
 #define CH_BLEED 6
 #define CH_NOISE 7
 #define CH_ROTATE_FWD 8
+#define CH_DIMMER_ATTACK 10
+#define CH_DIMMER_RELEASE 11
+#define CH_CONTROL 12
 #define CH_ROTATE_BACK 9
 
-#define CH_FRAMEGRAB 12
+#define FN_FRAMEGRAB 200
+#define FN_FLIP 1
+#define FN_SAVE 255
 // breakdown above: like 0 nil 1-4/8(?) grab cur to slot, 10-255 some nice enough curve driving x+y in a bilinear blend depending on amt of slots
 
 HomieSetting<long> cfg_log_artnet(   "log_artnet", 			"log level for incoming artnet packets");
@@ -43,8 +49,16 @@ HomieSetting<long> cfg_bytes(			"bytes_per_pixel", 		"3 for RGB, 4 for RGBW");
 HomieSetting<long> cfg_universes(	"universes", 					"number of DMX universes");
 HomieSetting<long> cfg_start_uni(	"starting_universe", 	"index of first DMX universe used");
 HomieSetting<long> cfg_start_addr("starting_address", 	"index of beginning of strip, within starting_universe."); // individual pixel control starts after x function channels offset (for strobing etc)
+uint8_t last_brightness = 0;
+float attack, rls;
+Ticker timer_inter_pixels;
 
 uint8_t bytes_per_pixel, start_uni, universes;
+NeoGamma<NeoGammaTableMethod> colorGamma;
+uint8_t last_data[512] = {0};
+uint8_t* last_functions = &last_data[-1];  // take care of DMX ch offset...
+RgbwColor black = RgbwColor(0, 0, 0, 0);
+float blendBaseline = 1.00f / 2; // for now, make dynamic...
 uint16_t led_count;
 bool mirror, folded;
 uint8_t log_artnet;
@@ -61,8 +75,8 @@ ArtnetnodeWifi artnet;
 busState* buses = new busState[2]();
 bool shutterOpen = true;
 Ticker timer_strobe_predelay, timer_strobe_each, timer_strobe_on_for;
-float onFraction = 5;
-uint16_t onTime;
+float onFraction = 4;
+uint16_t onTime, strobePeriod;
 uint8_t ch_strobe_last_value = 0;
 
 void setupOTA();
