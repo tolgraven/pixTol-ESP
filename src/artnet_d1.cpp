@@ -33,6 +33,10 @@ HomieSetting<long> cfg_strobe_hz_max("strobe_hz_max", 	"highest strobe frequency
 // HomieSetting<long> cfg_strips(		"strips", 						"number of LED strips being controlled");
 HomieSetting<bool> cfg_mirror(		"mirror_second_half", "whether to mirror strip back onto itself, for controlling folded strips >1 uni as if one");
 HomieSetting<bool> cfg_folded_alternating("folded_alternating", "alternating pixels");
+HomieSetting<bool> cfg_clear_on_start(    "clear_on_start",     "clear strip on boot");
+HomieSetting<bool> cfg_flip(        "flip",             "flip strip direction");
+HomieSetting<bool> cfg_clear_on_start(    "clear_on_start",     "clear strip on boot");
+HomieSetting<bool> cfg_flip(        "flip",             "flip strip direction");
 // HomieSetting<long> cfg_pin(				"led_pins", 					"pin to use for LED strip control"); // should be array. D1 = 5 / GPIO05
 HomieSetting<long> cfg_count(			"led_count", 					"number of LEDs in strip"); // rework for multiple strips
 HomieSetting<long> cfg_bytes(			"bytes_per_pixel", 		"3 for RGB, 4 for RGBW");
@@ -66,6 +70,7 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 void shutterCloseCallback(); //uint8_t idx);
 void shutterOpenCallback(); //uint8_t idx);
 
+  cfg_clear_on_start.setDefaultValue(1); cfg_flip.setDefaultValue(0);
 void setup() {
 	Homie.disableResetTrigger(); Homie_setFirmware("artnet", "1.0.1");
   // cfg_pin.setDefaultValue(LED_PIN); 
