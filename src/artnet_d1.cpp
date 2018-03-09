@@ -154,30 +154,92 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 			if(mirror) buses[busidx].busW->SetPixelColor(led_count - pixel - 1, color);
 		} pixel++;
 	}
-	// GLOBAL FUNCTIONS:
-	if(busidx == 0) { // first strip is master (at least for strobe etc)
-		if(functions[CH_STROBE]) {
-			if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
-				// XXX does same stupid thing as ADJ wash when sweeping strobe rate. because it starts instantly I guess. throttle somehow, or offset actual strobe slightly.
-				float hz = ((hzMax - hzMin) * (functions[CH_STROBE] - 1) / (255 - 1)) + hzMin;
-				uint16_t strobePeriod = 1000 / hz;   // 1 = 1 hz, 255 = 10 hz, to test
-				// if(functions[CH_STROBE_CURVES]) { //use non-default fraction
-				// 	// buses[busidx].onFraction = ...
-				// }
-				onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
+}
 
-				timer_strobe_predelay.once_ms(8, shutterOpenCallback); // 1 frame at 40hz = 25 ms so prob dont want to go above  10 before double flush
-				timer_strobe_each.attach_ms(strobePeriod, shutterOpenCallback); //, busidx);
-			}
-		} else { // 0, clean up
-			timer_strobe_on_for.detach();
-			timer_strobe_each.detach();
-			shutterOpen = true;
-		}
-		ch_strobe_last_value = functions[CH_STROBE];
+void updateFunctions(uint8_t busidx, uint8_t* functions) {
+	if(busidx != 0) return; // first strip is master (at least for strobe etc)
+  if(functions[CH_STROBE]) {
+    if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
+      // XXX does same stupid thing as ADJ wash when sweeping strobe rate. because it starts instantly I guess. throttle somehow, or offset actual strobe slightly.
+      float hz = ((hzMax - hzMin) * (functions[CH_STROBE] - 1) / (255 - 1)) + hzMin;
+      strobePeriod = 1000 / hz;   // 1 = 1 hz, 255 = 10 hz, to test
+      // if(functions[CH_STROBE_CURVES]) { //use non-default fraction
+      // 	// buses[busidx].onFraction = ...
+      // }
+      onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
+
+      // timer_strobe_predelay.once_ms(8, shutterOpenCallback); // 1 frame at 40hz = 25 ms so prob dont want to go above  10 before double flush
+      // timer_strobe_each.attach_ms(strobePeriod, shutterOpenCallback); //, busidx);
+      timer_strobe_each.once_ms(strobePeriod, shutterOpenCallback); //, busidx);
+      // shutterOpen = false;
+    }
+  } else { // 0, clean up
+    timer_strobe_on_for.detach();
+    timer_strobe_each.detach();
+    shutterOpen = true;
+  }
+  ch_strobe_last_value = functions[CH_STROBE];
+
+  if(functions[CH_ROTATE_BACK]) { // this is fucked now esp with high release, seperates blob somehow (not a delay thing, stays like that). BUT looks really cool in a way so even if fix, keep curr behavior available...
+		if(buses[busidx].bus)        buses[busidx].bus->RotateLeft(functions[CH_ROTATE_BACK]);
+		else if(buses[busidx].busW)  buses[busidx].busW->RotateLeft(functions[CH_ROTATE_BACK]);
+  } else if(functions[CH_ROTATE_FWD]) {
+		if(buses[busidx].bus)        buses[busidx].bus->RotateRight(functions[CH_ROTATE_FWD]);
+		else if(buses[busidx].busW)  buses[busidx].busW->RotateRight(functions[CH_ROTATE_FWD]);
+  }
+  switch(functions[CH_CONTROL]) {
+    case FN_FRAMEGRAB: break;
+void interpolatePixelsCallback() {
+  uint8_t busidx = 0;
+  updatePixels(busidx, last_data);
+  updateFunctions(busidx, last_functions); // XXX fix so interpolates!!
+  buses[busidx].busW->Show();
+}
+
+
+void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
+	if(universe < start_uni || universe >= start_uni + universes) return; // need to expand with different subnets etc...
+  bool changed = false;
+  for(uint16_t i=0; i < 512; i++) {
+    if(data[i] != last_data[i]) {
+      changed = true; break; // don't process unless something differs
+  } }
+  // if(!changed) return; // decent idea but fucks too much atm, work on other solutions for strobe woes instead...
+
+	if(log_artnet >= 3) Homie.getLogger() << universe;
+	uint8_t* functions = &data[-1];  // take care of DMX ch offset...
+	uint8_t busidx = universe - start_uni; // XXX again watch out for uni 0...
+  rls = blendBaseline + blendBaseline * ((float)functions[CH_RELEASE]/285);
+  if(functions[CH_ATTACK] != last_data[CH_ATTACK - 1]) {
+    attack = blendBaseline + blendBaseline * ((float)functions[CH_ATTACK]/285); // dont ever arrive like this, two runs at max = 75% not 100%...
+    if(log_artnet >= 2) Homie.getLogger() << "Attack: " << functions[CH_ATTACK] << " / " << attack << endl;
+  }
+
+  float dimmer_attack = blendBaseline - (float)functions[CH_DIMMER_ATTACK]/275; //275 tho max is 255 so can use full range without crapping out...
+  float dimmer_rls = blendBaseline - (float)functions[CH_DIMMER_RELEASE]/275;
+
+  updatePixels(busidx, data);
+  updateFunctions(busidx, functions);
+
+  // last_data = data;
+  memcpy(last_data, data, sizeof(uint8_t) * 512);
+  timer_inter_pixels.once_ms((1000/2) / cfg_dmx_hz.get(), interpolatePixelsCallback);
+}
+
+void loopArtNet() {
+  switch(artnet.read()) { // check opcode for logging purposes, actual logic in callback function
+    case OpDmx:  if(log_artnet >= 3) Homie.getLogger() << "DMX "; 					 break;
+    case OpPoll: if(log_artnet >= 1) Homie.getLogger() << "Art Poll Packet"; break;
 	}
-	brightness = functions[CH_DIMMER];
-	if(brightness < 12) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
+}
+
+    case FN_FLIP: break;
+  }
+	brightness = last_brightness + (functions[CH_DIMMER] - last_brightness) * blendBaseline;
+  // then interpolate based on last brightness, dimmer_attack/rls
+  // should also get between-frame interpolation!!
+	if(brightness < 8) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
+  last_brightness = brightness;
 	if(shutterOpen)  {
 		if(buses[busidx].bus) {
 			buses[busidx].bus->SetBrightness(brightness);
