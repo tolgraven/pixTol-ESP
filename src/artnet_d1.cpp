@@ -357,13 +357,84 @@ void loop() {
 
 void setupOTA() {
   ArduinoOTA.setHostname(Homie.getConfiguration().name);
-  ArduinoOTA.onProgress([](unsigned int p, unsigned int tot) { Serial.printf("OTA updating - %u%%\r", p / (tot/100)); });
-  ArduinoOTA.onError([](ota_error_t error) { Serial.printf("OTA Error[%u]: ", error); switch(error) { 
-			case OTA_AUTH_ERROR:		Serial.println("Auth Failed"); 		break;
-			case OTA_BEGIN_ERROR:		Serial.println("Begin Failed");		break;
-			case OTA_CONNECT_ERROR:	Serial.println("Connect Failed");	break;
-			case OTA_RECEIVE_ERROR:	Serial.println("Receive Failed");	break;
-			case OTA_END_ERROR:			Serial.println("End Failed");			break;
+  ArduinoOTA.onProgress([](unsigned int p, unsigned int tot) {
+      // pinMode(RX_PIN, OUTPUT); // try to make a nice lil LED progress bar heheh
+      buses[0].busW->SetPixelColor(p / (tot / led_count), blue);
+      buses[0].busW->Show();
+      Serial.printf("OTA updating - %u%%\r", p / (tot/100));
+      });
+  ArduinoOTA.onError([](ota_error_t error) {
+      Serial.printf("OTA Error[%u]: ", error);
+      switch(error) { 
+        case OTA_AUTH_ERROR:		Serial.println("Auth Failed"); 		break;
+        case OTA_BEGIN_ERROR:		Serial.println("Begin Failed");		break;
+        case OTA_CONNECT_ERROR:	Serial.println("Connect Failed");	break;
+        case OTA_RECEIVE_ERROR:	Serial.println("Receive Failed");	break;
+        case OTA_END_ERROR:			Serial.println("End Failed");			break;
 	}	}); ArduinoOTA.begin();
 }
 
+void blinkStrip(uint8_t busidx, RgbwColor color, uint8_t blinks) {
+  if(!buses[busidx].busW) return;
+  uint8_t counter = blinks;
+  for(uint8_t b=0; b < blinks; b++) {
+    for(uint8_t i=0; i < led_count; i++) {
+      buses[busidx].busW->SetPixelColor(i, color);
+    }
+    buses[busidx].busW->Show();
+    if(!--counter) return;
+    delay(100);
+    for(uint8_t i=0; i < led_count; i++) {
+      buses[busidx].busW->SetPixelColor(i, color);
+    }
+    buses[busidx].busW->Show();
+  }
+
+}
+
+void onHomieEvent(const HomieEvent& event) {
+  switch(event.type) {
+    case HomieEventType::STANDALONE_MODE:
+      break;
+    case HomieEventType::CONFIGURATION_MODE: // blink orange or something?
+      blinkStrip(0, orange, 1);
+      break;
+    case HomieEventType::NORMAL_MODE:
+      blinkStrip(0, blue, 1);
+      break;
+    case HomieEventType::OTA_STARTED:
+      blinkStrip(0, yellow, 1);
+      break;
+    case HomieEventType::OTA_PROGRESS: // can use event.sizeDone and event.sizeTotal
+      buses[0].busW->SetPixelColor(event.sizeDone / (event.sizeTotal / led_count), blue);
+      buses[0].busW->Show();
+      break;
+    case HomieEventType::OTA_FAILED:
+      blinkStrip(0, red, 3);
+      break;
+    case HomieEventType::OTA_SUCCESSFUL:
+      blinkStrip(0, green, 2);
+      break;
+    case HomieEventType::ABOUT_TO_RESET:
+      blinkStrip(0, yellow, 1);
+      // blinkStrip(0, orange, 1);
+      break;
+    case HomieEventType::WIFI_CONNECTED: // normal mode, can use event.ip, event.gateway, event.mask
+      break;
+    case HomieEventType::WIFI_DISCONNECTED: // normal mode, can use event.wifiReason
+      // blinkStrip(0, red, 1);
+      blinkStrip(0, orange, 1);
+      // blinkStrip(0, black, 1);
+      // blinkStrip(0, yellow, 1);
+      // blinkStrip(0, red, 1);
+      break;
+    case HomieEventType::MQTT_READY:
+      break;
+    case HomieEventType::MQTT_DISCONNECTED: // can use event.mqttReason
+      break;
+    case HomieEventType::MQTT_PACKET_ACKNOWLEDGED: // MQTT packet with QoS > 0 is acknowledged by the broker, can use event.packetId
+      break;
+    case HomieEventType::READY_TO_SLEEP: // After calling prepareToSleep() the event is triggered when MQTT is disconnected
+      break;
+  }
+}
