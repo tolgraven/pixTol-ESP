@@ -250,12 +250,43 @@ void updateFunctions(uint8_t busidx, uint8_t* functions) {
 		else if(buses[busidx].busW)  buses[busidx].busW->RotateRight(functions[CH_ROTATE_FWD]);
   }
   switch(functions[CH_CONTROL]) {
-    case FN_FRAMEGRAB: break;
+    case FN_FRAMEGRAB_1 ... FN_FRAMEGRAB_4: break;
+    case FN_FLIP: break;
+  }
+  float dimmer_attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_ATTACK]/285); // dont ever arrive like this, two runs at max = 75% not 100%...
+  float dimmer_release = blendBaseline + (1.00f - blendBaseline) * (float)functions[CH_DIMMER_RELEASE]/285;
+  bool brighter = brightness > last_brightness;
+	brightness = last_brightness + (functions[CH_DIMMER] - last_brightness) * (brighter ? attack : rls);
+	if(brightness < 4) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
+	if(shutterOpen) {
+		if(buses[busidx].bus) buses[busidx].bus->SetBrightness(brightness);
+		else if(buses[busidx].busW) {
+      buses[busidx].busW->SetBrightness(brightness);
+      buses[busidx].busW2->SetBrightness(brightness);
+    }
+	} else buses[busidx].busW->SetBrightness(0);
+
+  last_brightness = brightness;
+}
+
 void interpolatePixelsCallback() {
   uint8_t busidx = 0;
   updatePixels(busidx, last_data);
   updateFunctions(busidx, last_functions); // XXX fix so interpolates!!
   buses[busidx].busW->Show();
+  buses[busidx].busW2->Show();
+
+	// if(log_artnet >= 2) Homie.getLogger() << "i ";
+}
+
+uint8_t interCounter;
+
+void interpolateCallback() {
+  if(interCounter > 1) { // XXX figure out on its own whether will overflow, so can just push towards max always
+    timer_inter_pixels.once_ms((1000/interFrames / cfg_dmx_hz.get()), interpolateCallback);
+  }
+  interpolatePixelsCallback(); // should def try proper temporal dithering here...
+  interCounter--;
 }
 
 
@@ -271,21 +302,27 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 	if(log_artnet >= 3) Homie.getLogger() << universe;
 	uint8_t* functions = &data[-1];  // take care of DMX ch offset...
 	uint8_t busidx = universe - start_uni; // XXX again watch out for uni 0...
-  rls = blendBaseline + blendBaseline * ((float)functions[CH_RELEASE]/285);
-  if(functions[CH_ATTACK] != last_data[CH_ATTACK - 1]) {
-    attack = blendBaseline + blendBaseline * ((float)functions[CH_ATTACK]/285); // dont ever arrive like this, two runs at max = 75% not 100%...
+  if(functions[CH_ATTACK] != last_functions[CH_ATTACK]) {
+    attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_ATTACK]/285); // dont ever arrive like this, two runs at max = 75% not 100%...
     if(log_artnet >= 2) Homie.getLogger() << "Attack: " << functions[CH_ATTACK] << " / " << attack << endl;
   }
-
-  float dimmer_attack = blendBaseline - (float)functions[CH_DIMMER_ATTACK]/275; //275 tho max is 255 so can use full range without crapping out...
-  float dimmer_rls = blendBaseline - (float)functions[CH_DIMMER_RELEASE]/275;
+  if(functions[CH_RELEASE] != last_functions[CH_RELEASE]) {
+    rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_RELEASE]/285);
+    if(log_artnet >= 2) Homie.getLogger() << "Release: " << functions[CH_RELEASE] << " / " << rls << endl;
+  }
 
   updatePixels(busidx, data);
   updateFunctions(busidx, functions);
 
-  // last_data = data;
+  if(buses[busidx].bus) buses[busidx].bus->Show();
+  else if(buses[busidx].busW) {
+    buses[busidx].busW->Show();
+    buses[busidx].busW2->Show();
+  }
+  // if(log_artnet >= 2) Homie.getLogger() << micros() - renderMicros << " ";
   memcpy(last_data, data, sizeof(uint8_t) * 512);
-  timer_inter_pixels.once_ms((1000/2) / cfg_dmx_hz.get(), interpolatePixelsCallback);
+  interCounter = interFrames;
+  if(interCounter) timer_inter_pixels.once_ms((1000/interFrames / cfg_dmx_hz.get()), interpolateCallback);
 }
 
 void loopArtNet() {
