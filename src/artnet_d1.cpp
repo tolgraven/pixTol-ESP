@@ -159,11 +159,46 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
       // Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
 
 		} else if(bytes_per_pixel == 4) { 
-			RgbwColor color = RgbwColor(data[t], data[t+1], data[t+2], data[t+3]);
-      RgbwColor lastColor = buses[busidx].busW->GetPixelColor(pixelidx);
-      bool brighter = color.CalculateBrightness() > lastColor.CalculateBrightness();
-      color = RgbwColor::LinearBlend(lastColor, color, (brighter ? attack : rls));
-			if(color.CalculateBrightness() < 8) color.Darken(8); // avoid bitcrunch
+      // NOISE / DITHERING BS
+      uint8_t maxNoise = 24; // test, actually get from fn ch
+      if(functions[CH_NOISE]) {
+        maxNoise = functions[CH_NOISE] / 4 + maxNoise;
+      }
+      uint8_t subPixel[4];
+      for(uint8_t i=0; i < 4; i++) {
+        if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
+        else if(iteration >= interFrames * 10) iteration = 0;
+        iteration++;
+
+        subPixel[i] = data[t+i];
+        if(subPixel[i] > 16) {
+          int16_t tot = subPixel[i] + subPixelNoise[pixelidx][i];
+          if(tot >= 0 && tot <= 255) subPixel[i] = tot;
+          else if(tot < 0) subPixel[i] = 0;
+          else subPixel[i] = 255;
+        }
+      }
+
+			RgbwColor color = RgbwColor(subPixel[0], subPixel[1], subPixel[2], subPixel[3]);
+
+      if(functions[CH_BLEED]) {
+        RgbwColor prev = color; // same concept just others rub off on it instead of other way...
+        RgbwColor next = color;
+        if(t - 4 >= DMX_FN_CHS) prev = RgbwColor(data[t-4], data[t-3], data[t-2], data[t-1]); // could grab last pixelidx but then weight not even vs next hmm
+        if(t + 7 < data_size) next = RgbwColor(data[t+4], data[t+5], data[t+6], data[t+7]);
+        // float amount = (float)functions[CH_BLEED]/(256*2);  //this way only ever go half way = before starts decreasing again
+        float amount = 0.20f; //test
+        color = RgbwColor::BilinearBlend(color, next, prev, color, amount, amount);
+      }
+
+      uint8_t pixelBrightness = color.CalculateBrightness();
+      RgbwColor lastColor = buses[busidx].busW->GetPixelColor(pixelidx);  // get from pixelbus since we can resolve dimmer-related changes
+      bool brighter = color.CalculateBrightness() > (255/brightness) * lastColor.CalculateBrightness(); // handle any offset from lowering dimmer
+      color = RgbwColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
+			if(color.CalculateBrightness() < 4) { color.Darken(4); // avoid bitcrunch
+      } else { // HslColor(); //no go from rgbw...
+      }
+      // color = colorGamma.Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
 			buses[busidx].busW->SetPixelColor(pixelidx, color);
 			if(mirror) buses[busidx].busW->SetPixelColor(led_count - pixel - 1, color);
 		} pixel++;
