@@ -216,15 +216,28 @@ void updateFunctions(uint8_t busidx, uint8_t* functions) {
       // 	// buses[busidx].onFraction = ...
       // }
       onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
+      // XXX instead of timers, use counter and strobe on frames? even 10hz would just be 1 on 3 off, easy...  more precise then use inter frames, yeah?
+      strobeTickerClosed = interFrames * strobePeriod / cfg_dmx_hz.get(); // take heed of interframes...
+      strobeTickerOpen = interFrames * onTime / cfg_dmx_hz.get();
+      shutterOpen = false;
 
       // timer_strobe_predelay.once_ms(8, shutterOpenCallback); // 1 frame at 40hz = 25 ms so prob dont want to go above  10 before double flush
       // timer_strobe_each.attach_ms(strobePeriod, shutterOpenCallback); //, busidx);
-      timer_strobe_each.once_ms(strobePeriod, shutterOpenCallback); //, busidx);
-      // shutterOpen = false;
+      // timer_strobe_each.once_ms(strobePeriod, shutterOpenCallback); //, busidx);
+    } else { // decr tickers
+      if(shutterOpen) strobeTickerOpen--;
+      else strobeTickerClosed--;
+      if(!strobeTickerClosed) {
+        shutterOpen = true;
+        strobeTickerClosed = strobePeriod / cfg_dmx_hz.get();
+      } else if(!strobeTickerOpen) {
+        shutterOpen = false;
+        strobeTickerOpen = onTime / cfg_dmx_hz.get();
+      }
     }
   } else { // 0, clean up
-    timer_strobe_on_for.detach();
-    timer_strobe_each.detach();
+    // timer_strobe_on_for.detach();
+    // timer_strobe_each.detach();
     shutterOpen = true;
   }
   ch_strobe_last_value = functions[CH_STROBE];
@@ -308,39 +321,39 @@ void loop() {
 	// yield(); // should use?
 }
 
-void shutterCloseCallback() { //uint8_t idx) {
-  if(log_artnet >= 2) Homie.getLogger() << "Closed, opening in " << strobePeriod - onTime << endl;
-	shutterOpen = false;
-	for(uint8_t i = 0; i < universes; i++) { // flush all at once, don't wait for DMX packets...
-		if(buses[i].bus) {
-			buses[i].bus->SetBrightness(0);
-			buses[i].bus->Show();
-		}	else if(buses[i].busW) {
-			buses[i].busW->SetBrightness(0);
-			// buses[i].busW->Dirty();
-			buses[i].busW->Show();
-		}
-	}
-  timer_strobe_each.once_ms(strobePeriod - onTime, shutterOpenCallback);
-}
-
-void shutterOpenCallback() { //uint8_t idx) {
-  if(log_artnet >= 2) Homie.getLogger() << "Opened, closing in " << onTime << endl;
-	shutterOpen = true;
-	for(uint8_t i = 0; i < universes; i++) { // flush all at once, don't wait for DMX packets...
-		if(buses[i].bus) {
-			buses[i].bus->SetBrightness(brightness);
-			buses[i].bus->Show();
-		}	else if(buses[i].busW) {
-			// buses[i].busW->SetBrightness(brightness);
-			buses[i].busW->SetBrightness(255);
-			buses[i].busW->Dirty();
-
-			buses[i].busW->Show();
-		}
-	}
-	timer_strobe_on_for.once_ms(onTime, shutterCloseCallback); //, idx);
-}
+// void shutterCloseCallback() { //uint8_t idx) {
+//   if(log_artnet >= 2) Homie.getLogger() << "Closed, opening in " << strobePeriod - onTime << endl;
+// 	shutterOpen = false;
+// 	for(uint8_t i = 0; i < universes; i++) { // flush all at once, don't wait for DMX packets...
+// 		if(buses[i].bus) {
+// 			buses[i].bus->SetBrightness(0);
+// 			buses[i].bus->Show();
+// 		}	else if(buses[i].busW) {
+// 			buses[i].busW->SetBrightness(0);
+// 			// buses[i].busW->Dirty();
+// 			buses[i].busW->Show();
+// 		}
+// 	}
+//   timer_strobe_each.once_ms(strobePeriod - onTime, shutterOpenCallback);
+// }
+//
+// void shutterOpenCallback() { //uint8_t idx) {
+//   if(log_artnet >= 2) Homie.getLogger() << "Opened, closing in " << onTime << endl;
+// 	shutterOpen = true;
+// 	for(uint8_t i = 0; i < universes; i++) { // flush all at once, don't wait for DMX packets...
+// 		if(buses[i].bus) {
+// 			buses[i].bus->SetBrightness(brightness);
+// 			buses[i].bus->Show();
+// 		}	else if(buses[i].busW) {
+// 			// buses[i].busW->SetBrightness(brightness);
+// 			buses[i].busW->SetBrightness(255);
+// 			buses[i].busW->Dirty();
+//
+// 			buses[i].busW->Show();
+// 		}
+// 	}
+// 	timer_strobe_on_for.once_ms(onTime, shutterCloseCallback); //, idx);
+// }
 
 void setupOTA() {
   ArduinoOTA.setHostname(Homie.getConfiguration().name);
