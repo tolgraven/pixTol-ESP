@@ -74,10 +74,10 @@ ArtnetnodeWifi artnet;
 // XXX didnt get Uart mode working, Dma works but iffy with concurrent bitbanging - stick to bang?  +REMEMBER: DMA and UART must ->Begin() after BitBang...
 busState* buses = new busState[2]();
 bool shutterOpen = true;
-Ticker timer_strobe_predelay, timer_strobe_each, timer_strobe_on_for;
 float onFraction = 4;
 uint16_t onTime, strobePeriod;
 uint8_t ch_strobe_last_value = 0;
+uint8_t strobeTickerClosed, strobeTickerOpen;
 
 void setupOTA();
 void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data);
@@ -207,26 +207,21 @@ void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint
 
 void updateFunctions(uint8_t busidx, uint8_t* functions) {
 	if(busidx != 0) return; // first strip is master (at least for strobe etc)
+
   if(functions[CH_STROBE]) {
     if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
-      // XXX does same stupid thing as ADJ wash when sweeping strobe rate. because it starts instantly I guess. throttle somehow, or offset actual strobe slightly.
       float hz = ((hzMax - hzMin) * (functions[CH_STROBE] - 1) / (255 - 1)) + hzMin;
       strobePeriod = 1000 / hz;   // 1 = 1 hz, 255 = 10 hz, to test
       // if(functions[CH_STROBE_CURVES]) { //use non-default fraction
-      // 	// buses[busidx].onFraction = ...
       // }
       onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
       // XXX instead of timers, use counter and strobe on frames? even 10hz would just be 1 on 3 off, easy...  more precise then use inter frames, yeah?
       strobeTickerClosed = interFrames * strobePeriod / cfg_dmx_hz.get(); // take heed of interframes...
       strobeTickerOpen = interFrames * onTime / cfg_dmx_hz.get();
       shutterOpen = false;
-
-      // timer_strobe_predelay.once_ms(8, shutterOpenCallback); // 1 frame at 40hz = 25 ms so prob dont want to go above  10 before double flush
-      // timer_strobe_each.attach_ms(strobePeriod, shutterOpenCallback); //, busidx);
-      // timer_strobe_each.once_ms(strobePeriod, shutterOpenCallback); //, busidx);
     } else { // decr tickers
       if(shutterOpen) strobeTickerOpen--;
-      else strobeTickerClosed--;
+      else            strobeTickerClosed--;
       if(!strobeTickerClosed) {
         shutterOpen = true;
         strobeTickerClosed = strobePeriod / cfg_dmx_hz.get();
@@ -236,8 +231,6 @@ void updateFunctions(uint8_t busidx, uint8_t* functions) {
       }
     }
   } else { // 0, clean up
-    // timer_strobe_on_for.detach();
-    // timer_strobe_each.detach();
     shutterOpen = true;
   }
   ch_strobe_last_value = functions[CH_STROBE];
