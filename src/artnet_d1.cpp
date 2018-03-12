@@ -351,39 +351,6 @@ void loop() {
 	// yield(); // should use?
 }
 
-// void shutterCloseCallback() { //uint8_t idx) {
-//   if(log_artnet >= 2) Homie.getLogger() << "Closed, opening in " << strobePeriod - onTime << endl;
-// 	shutterOpen = false;
-// 	for(uint8_t i = 0; i < universes; i++) { // flush all at once, don't wait for DMX packets...
-// 		if(buses[i].bus) {
-// 			buses[i].bus->SetBrightness(0);
-// 			buses[i].bus->Show();
-// 		}	else if(buses[i].busW) {
-// 			buses[i].busW->SetBrightness(0);
-// 			// buses[i].busW->Dirty();
-// 			buses[i].busW->Show();
-// 		}
-// 	}
-//   timer_strobe_each.once_ms(strobePeriod - onTime, shutterOpenCallback);
-// }
-//
-// void shutterOpenCallback() { //uint8_t idx) {
-//   if(log_artnet >= 2) Homie.getLogger() << "Opened, closing in " << onTime << endl;
-// 	shutterOpen = true;
-// 	for(uint8_t i = 0; i < universes; i++) { // flush all at once, don't wait for DMX packets...
-// 		if(buses[i].bus) {
-// 			buses[i].bus->SetBrightness(brightness);
-// 			buses[i].bus->Show();
-// 		}	else if(buses[i].busW) {
-// 			// buses[i].busW->SetBrightness(brightness);
-// 			buses[i].busW->SetBrightness(255);
-// 			buses[i].busW->Dirty();
-//
-// 			buses[i].busW->Show();
-// 		}
-// 	}
-// 	timer_strobe_on_for.once_ms(onTime, shutterCloseCallback); //, idx);
-// }
 
 void setupOTA() {
   ArduinoOTA.setHostname(Homie.getConfiguration().name);
