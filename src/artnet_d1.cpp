@@ -36,22 +36,24 @@ HomieSetting<bool> cfg_log_to_mqtt(  "log_to_mqtt", 		"whether to log to mqtt");
 HomieSetting<long> cfg_dmx_hz(       "dmx_hz", 	        "dmx frame rate");      // use to calculate strobe and interpolation stuff
 HomieSetting<long> cfg_strobe_hz_min("strobe_hz_min", 	"lowest strobe frequency");
 HomieSetting<long> cfg_strobe_hz_max("strobe_hz_max", 	"highest strobe frequency");
-// HomieSetting<long> cfg_strips(		"strips", 						"number of LED strips being controlled");
-HomieSetting<bool> cfg_mirror(		"mirror_second_half", "whether to mirror strip back onto itself, for controlling folded strips >1 uni as if one");
+HomieSetting<bool> cfg_mirror(		   "mirror_second_half", "whether to mirror strip back onto itself, for controlling folded strips >1 uni as if one");
 HomieSetting<bool> cfg_folded_alternating("folded_alternating", "alternating pixels");
 HomieSetting<bool> cfg_clear_on_start(    "clear_on_start",     "clear strip on boot");
 HomieSetting<bool> cfg_flip(        "flip",             "flip strip direction");
-HomieSetting<bool> cfg_clear_on_start(    "clear_on_start",     "clear strip on boot");
-HomieSetting<bool> cfg_flip(        "flip",             "flip strip direction");
-// HomieSetting<long> cfg_pin(				"led_pins", 					"pin to use for LED strip control"); // should be array. D1 = 5 / GPIO05
+HomieSetting<bool> cfg_gamma_correct("gamma_correct",   "shitty gamma correction that sucks");
 HomieSetting<long> cfg_count(			"led_count", 					"number of LEDs in strip"); // rework for multiple strips
 HomieSetting<long> cfg_bytes(			"bytes_per_pixel", 		"3 for RGB, 4 for RGBW");
 HomieSetting<long> cfg_universes(	"universes", 					"number of DMX universes");
 HomieSetting<long> cfg_start_uni(	"starting_universe", 	"index of first DMX universe used");
 HomieSetting<long> cfg_start_addr("starting_address", 	"index of beginning of strip, within starting_universe."); // individual pixel control starts after x function channels offset (for strobing etc)
-uint8_t last_brightness = 0;
-float attack, rls;
-Ticker timer_inter_pixels;
+// HomieSetting<long> cfg_strips(		"strips", 						"number of LED strips being controlled");
+
+// FN_SAVE writes all current (savable) DMX settings to config.json
+// then make cues in afterglow or buttons in max/mira to control settings per strip = no config file bs
+// should also set up OSC support tho so can go that way = no fiddling with mapping out and translating shitty 8-bit numbers
+// but stuff like flip could be both a config thing and performance effect so makes sense. anything else?
+// bitcrunch, pixelate (halving resolution + zoom around where is grabbing)
+RgbwColor black =   RgbwColor(0, 0, 0, 0);
 
 uint8_t bytes_per_pixel, start_uni, universes;
 NeoGamma<NeoGammaTableMethod> colorGamma;
@@ -89,6 +91,7 @@ void setup() {
 	Homie.disableResetTrigger(); Homie_setFirmware("artnet", "1.0.1");
   // cfg_pin.setDefaultValue(LED_PIN); 
 	cfg_start_uni.setDefaultValue(1); cfg_start_addr.setDefaultValue(1); cfg_dmx_hz.setDefaultValue(40);
+  cfg_clear_on_start.setDefaultValue(true); cfg_flip.setDefaultValue(false); cfg_gamma_correct.setDefaultValue(false);
 
 	Serial.begin(115200);
 	Homie.setup();
