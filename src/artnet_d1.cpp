@@ -417,48 +417,13 @@ void loop() {
   ArduinoOTA.handle();
   yield();
 	Homie.loop();
-}
-
-void onHomieEvent(const HomieEvent& event) {
-  switch(event.type) {
-    case HomieEventType::STANDALONE_MODE:
-      break;
-    case HomieEventType::CONFIGURATION_MODE: // blink orange or something?
-      // blinkStrip(led_count, orange, 5);
-      break;
-    case HomieEventType::NORMAL_MODE:
-      // blinkStatus(blue, 3);
-      break;
-    case HomieEventType::OTA_STARTED:
-      // blinkStrip(led_count, yellow, 0);
-      break;
-    case HomieEventType::OTA_PROGRESS: // can use event.sizeDone and event.sizeTotal
-      // buses[0].busW->SetPixelColor(event.sizeDone / (event.sizeTotal / led_count), blue);
-      // buses[0].busW->Show();
-      break;
-    case HomieEventType::OTA_FAILED:
-      // blinkStrip(led_count, red, 2);
-      break;
-    case HomieEventType::OTA_SUCCESSFUL:
-      // blinkStrip(led_count, green, 2);
-      break;
-    case HomieEventType::ABOUT_TO_RESET:
-      // blinkStrip(led_count, orange, 0);
-      break;
-    case HomieEventType::WIFI_CONNECTED: // normal mode, can use event.ip, event.gateway, event.mask
-      // blinkStrip(led_count, green, 1);
-      break;
-    case HomieEventType::WIFI_DISCONNECTED: // normal mode, can use event.wifiReason
-      // blinkStrip(led_count, red, 0);
-      break;
-    case HomieEventType::MQTT_READY:
-      break;
-    case HomieEventType::MQTT_DISCONNECTED: // can use event.mqttReason
-      break;
-    case HomieEventType::MQTT_PACKET_ACKNOWLEDGED: // MQTT packet with QoS > 0 is acknowledged by the broker, can use event.packetId
-      break;
-    case HomieEventType::READY_TO_SLEEP: // After calling prepareToSleep() the event is triggered when MQTT is disconnected
-      break;
+  if(Homie.isConnected()) {
+    // kill any existing go-into-wifi-finder timer, etc
+    loopArtNet(); // if this doesn't result in anything, or mode aint dmx, do a timer/callback based loop
+    ArduinoOTA.handle();
+  } else {
+    // set a timer if not already exists, yada yada
+    // blink statusled for sure...
   }
 }
 
