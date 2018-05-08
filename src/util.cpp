@@ -71,3 +71,120 @@ void setupOTA(uint8_t numLeds) {
   ArduinoOTA.begin();
 }
 
+
+bool globalInputHandler(const HomieNode& node, const String& property, const HomieRange& range, const String& value) {
+  Homie.getLogger() << "Received on node " << node.getId() << ": " << property << " = " << value << endl;
+  // char* msg = "Received on node ", node.getId(), ": " , property , " = " , value;
+  // logNode.setProperty("log").send(msg);
+  logNode.setProperty("log").send("Received msg on node: ");
+  logNode.setProperty("log").send(node.getId());
+  logNode.setProperty("log").send(", property: ");
+  logNode.setProperty("log").send(property);
+  logNode.setProperty("log").send(", value: ");
+  logNode.setProperty("log").send(value);
+
+  if(property.equals("command")) {
+		if(value.equals("reset")) Homie.reset();
+		else if(value.equals("ledoff")) Homie.disableLedFeedback();
+	} else if(property.equals("mode")) {
+		if(value.equals("dmx")) {
+			// eventually multiple input/output types etc, LTP/HTP/average/prio, specific mergin like
+			// animation over serial, DMX FN CH from artnet
+			// animation over artnet, fn ch overrides from mqtt
+
+		} else if(value.equals("mqtt")) {
+
+		} else if(value.equals("standalone")) {
+
+		}
+  } else {
+    return false;
+  }
+  return true;
+}
+
+
+void onHomieEvent(const HomieEvent& event) {
+  switch(event.type) {
+    case HomieEventType::STANDALONE_MODE: {
+      break;
+    }
+    case HomieEventType::CONFIGURATION_MODE: // blink orange or something?
+      // blinkStrip(leds, orange, 5);
+      break;
+    case HomieEventType::NORMAL_MODE:
+      // blinkStatus(blue, 1);
+      break;
+    case HomieEventType::OTA_STARTED: {
+      Serial.println("\nOTA flash starting...");
+      logNode.setProperty("log").send("OTA IS ON YO");
+      LN.logf("OTA", LoggerNode::INFO, "Ota ON OTA ON!!!");
+      // if(buses[0].bus) {
+      //     buses[0].bus->ClearTo(blueZ);
+      // yield();
+      //     buses[0].bus->Show();
+      // }
+      // if(buses[0].busW) {
+      //     buses[0].busW->ClearTo(blue);
+      // yield();
+      //     buses[0].busW->Show();
+      // }
+
+      // OTAbus = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>(5);
+      // OTAbus->Begin();
+      // OTAbus->Show();
+      // otaColor = &blue;
+      break;
+    }
+    case HomieEventType::OTA_PROGRESS: { // can use event.sizeDone and event.sizeTotal
+      uint8_t pixel = event.sizeDone / (event.sizeTotal / leds);
+      if(pixel == prevPixel) break; // called multiple times each percent of upload...
+    //   if(pixel) {
+    //     RgbwColor prevPixelColor = OTAbus->GetPixelColor(prevPixel);
+    //     prevPixelColor.Darken(80);
+    //     OTAbus->SetPixelColor(prevPixel, prevPixelColor);
+    //   }
+    //   OTAbus->SetPixelColor(pixel, *otaColor);
+    //   OTAbus->Show();
+    //   prevPixel = pixel;
+      Serial.printf("OTA updating - %u%%\r", event.sizeDone / (event.sizeTotal / leds));
+    //   // buses[0].busW->SetPixelColor(event.sizeDone / (event.sizeTotal / leds), blue);
+    //   // buses[0].busW->Show();
+      break;
+    }
+    case HomieEventType::OTA_FAILED: {
+      Homie.setIdle(false);
+      LN.logf("OTA", LoggerNode::WARNING, "OTA FAILED");
+      // blinkStrip(leds, red, 2);
+      Homie.setIdle(true);
+      break;
+    }
+    case HomieEventType::OTA_SUCCESSFUL: {
+      Homie.setIdle(false);
+      LN.logf("OTA", LoggerNode::INFO, "OTA GOODE");
+      // blinkStrip(leds, green, 1);
+      // yield();
+      // delay(50);
+      Homie.setIdle(true);
+      break;
+    }
+    case HomieEventType::ABOUT_TO_RESET:
+      // blinkStrip(leds, orange, 0);
+      break;
+    case HomieEventType::WIFI_CONNECTED: // normal mode, can use event.ip, event.gateway, event.mask
+      // blinkStrip(leds, green, 1);
+      break;
+    case HomieEventType::WIFI_DISCONNECTED: // normal mode, can use event.wifiReason
+      // blinkStrip(leds, red, 0);
+      break;
+    case HomieEventType::MQTT_READY:
+      break;
+    case HomieEventType::MQTT_DISCONNECTED: // can use event.mqttReason
+      break;
+    case HomieEventType::MQTT_PACKET_ACKNOWLEDGED: // MQTT packet with QoS > 0 is acknowledged by the broker, can use event.packetId
+      break;
+    case HomieEventType::READY_TO_SLEEP: // After calling prepareToSleep() the event is triggered when MQTT is disconnected
+      break;
+  }
+}
+
