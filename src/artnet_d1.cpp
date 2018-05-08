@@ -100,8 +100,15 @@ void initHomie() {
   logNode.advertise("level").settable();
 }
 
-void setup() {
-	Serial.begin(115200);
+void initArtnet() {
+  artnet.setName(Homie.getConfiguration().name);
+  artnet.setNumPorts(universes);
+	artnet.setStartingUniverse(start_uni);
+	for(uint8_t i=0; i < universes; i++) artnet.enableDMXOutput(i);
+  artnet.enableDMXOutput(0);
+	artnet.begin();
+	artnet.setArtDmxCallback(onDmxFrame);
+  // udp.begin(ARTNET_PORT); // done by artnetnode
 
   initHomie();
 	Homie.setup();
