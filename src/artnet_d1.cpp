@@ -327,10 +327,22 @@ void updateFunctions(uint8_t busidx, uint8_t* functions, bool isKeyframe) {
     case FN_FRAMEGRAB_1 ... FN_FRAMEGRAB_4: break;
     case FN_FLIP: flipped = !flipped; break;
   }
-  float dimmer_attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_ATTACK]/285); // dont ever arrive like this, two runs at max = 75% not 100%...
-  float dimmer_release = blendBaseline + (1.00f - blendBaseline) * (float)functions[CH_DIMMER_RELEASE]/285;
+
+  //WTF: when not enough current and strips yellow, upping atttack makes them less yellow. Also happens in general, but less noticable?
+  if(functions[CH_ATTACK] != last_functions[CH_ATTACK]) {
+    attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
+    if(log_artnet >= 2) Homie.getLogger() << "Attack: " << functions[CH_ATTACK] << " / " << attack << endl;
+  }
+  if(functions[CH_RELEASE] != last_functions[CH_RELEASE])
+    rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_RELEASE]/285);
+
+  if(functions[CH_DIMMER_ATTACK] != last_functions[CH_DIMMER_ATTACK])
+    dimmer_attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
+  if(functions[CH_DIMMER_RELEASE] != last_functions[CH_DIMMER_RELEASE])
+    dimmer_rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_RELEASE]/285);
+
   bool brighter = brightness > last_brightness;
-	brightness = last_brightness + (functions[CH_DIMMER] - last_brightness) * (brighter ? dimmer_attack : dimmer_release);
+	brightness = last_brightness + (functions[CH_DIMMER] - last_brightness) * (brighter ? dimmer_attack : dimmer_rls);
 	if(brightness < 4) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
   else if(brightness > 255) brightness = 255;
 	if(shutterOpen) {
@@ -377,16 +389,6 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
   //   if(data[i] != last_data[i]) {
   //     changed = true; break; // don't process unless something differs
   // } } if(!changed) return; // decent idea but fucks too much atm, work on other solutions for strobe woes instead...
-
-  //WTF: when not enough current and strips yellow, upping atttack makes them less yellow. Also happens in general, but less noticable?
-  if(functions[CH_ATTACK] != last_functions[CH_ATTACK]) {
-    attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
-    if(log_artnet >= 2) Homie.getLogger() << "Attack: " << functions[CH_ATTACK] << " / " << attack << endl;
-  }
-  if(functions[CH_RELEASE] != last_functions[CH_RELEASE]) {
-    rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_RELEASE]/285);
-    if(log_artnet >= 2) Homie.getLogger() << "Release: " << functions[CH_RELEASE] << " / " << rls << endl;
-  }
 
   updatePixels(busidx, data);
   updateFunctions(busidx, functions, true);
