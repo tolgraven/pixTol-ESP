@@ -40,8 +40,19 @@ startAddr("starting_address", "index of beginning of strip, within starting_univ
 
   clearOnStart.setDefaultValue(false);
 
-  bytesPerLed.setDefaultValue(4);
-  ledCount.setDefaultValue(120);
+  bytesPerLed.setDefaultValue(4).setValidator([] (long candidate) {
+			return (candidate > 0 && candidate < 7);});
+
+  ledCount.setDefaultValue(120).setValidator([] (long candidate) {
+			return (candidate > 0 && candidate <= bytesPerLed.get() * (universes.get() * ledCount.get()));}); // XXX check
+
+  universes.setDefaultValue(1).setValidator([] (long candidate) {
+			return (candidate > 0 && candidate <= 4);});
+
+	startUni.setDefaultValue(1).setValidator([] (long candidate) {
+			return (candidate > 0 && candidate <= 16);}); // for now, one artnet subnet...
+  startAddr.setDefaultValue(1).setValidator([] (long candidate) {
+			return (candidate > 0 && candidate <= 512);});
 
   universes.setDefaultValue(1);
 	startUni.setDefaultValue(1);
