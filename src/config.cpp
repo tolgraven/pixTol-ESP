@@ -61,7 +61,9 @@ startAddr("starting_address", "index of beginning of strip, within starting_univ
   // advertise("debug").settable(); //don't need this cause can update settings ocer mqtt anyways
 }
 
-bool handleInput(const String& property, const HomieRange& range, const String& value) {
-  Homie.getLogger() << "Property: " << property << ", " << "value: " << value;
+bool ConfigNode::handleInput(const String& property, const HomieRange& range, const String& value) {
+  // Homie.getLogger() << "Property: " << property << ", " << "value: " << value;
+ 	LN.logf(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
+  // write to json or whatever, makes sense to can update straight mqtt no json-over-mqtt?
 
 }

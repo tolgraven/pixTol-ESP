@@ -2,7 +2,7 @@
 #define PIXTOL_CONFIG
 
 #include <Homie.h>
-// #include <HomieNode.hpp>
+#include <LoggerNode.h>
 
 class ConfigNode: public HomieNode {
  public:

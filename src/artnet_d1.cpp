@@ -2,10 +2,7 @@
 
 WiFiUDP udp;
 ArtnetnodeWifi artnet;
-HomieNode pixtolNode("pixtol", "settings");
-HomieNode modeNode("dmx", "switch");
-HomieNode logNode("log", "level");
-// NODES: ConfigNode, StateNode, more?
+ConfigNode* cfg;
 
 // NODES: ConfigNode, StateNode, more?
 // also encapsulate renderer, input, output
@@ -70,10 +67,12 @@ void initHomie() {
   cfg = new ConfigNode();
 
   // if(!cfg_debug.get()) Homie.disableLogging();
-  Homie.setGlobalInputHandler(globalInputHandler);
-  pixtolNode.advertise("on").settable();
-  modeNode.advertise("on").settable();
-	modeNode.advertise("brightness").settable();
+  modeNode.advertise("on").settable(onHandler);
+	modeNode.advertise("brightness").settable(brightnessHandler);
+	modeNode.advertise("color").settable(colorHandler);
+  // activityNode.advertise("artnet");
+  // logNode.advertise("log").settable();
+  logNode.advertise("log");
 
 	Homie.setup();
 }
@@ -95,12 +94,8 @@ void setup() {
 	while(!Serial);
   randomSeed(analogRead(0));
 
-	// TODO use led_count to calculate aprox possible frame rate, then use interpolation to fade (say dmx 40 fps, we can run 120 = 3) regardless of/in addition to rls<Plug>/fade stuff
-  led_count       = cfg_count.get();          if(mirror) led_count *= 2;	// actual leds is twice conf XXX IMPORTANT: heavier dithering when mirroring
-	bytes_per_pixel = cfg_bytes.get();          log_artnet = cfg_log_artnet.get();
-  mirror          = cfg_mirror.get();         folded     = cfg_folded_alternating.get();  flipped = cfg_flip.get();
-  hzMin           = cfg_strobe_hz_min.get();  hzMax      = cfg_strobe_hz_max.get();  // should these be setable through dmx control ch?                                                      
-  start_uni       = cfg_start_uni.get();      universes  = cfg_universes.get();
+  LN.log(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Before Homie setup())");
+  initHomie();
 
   // mirror    = strip.setMirrored.get();
   mirror    = false;
@@ -151,13 +146,16 @@ void setup() {
 	initArtnet();
 
 	setupOTA(led_count);
-  if(cfg_debug.get()){
+
+  if(cfg->debug.get()) {
     Homie.getLogger() << "Chance to flash OTA before entering main loop";
     for(int8_t i = 0; i < 5; i++) {
       ArduinoOTA.handle(); // give chance to flash new code in case loop is crashing
       delay(100);
       Homie.getLogger() << ".";
+	  LN.setLoglevel(LoggerNode::DEBUG);
     }
+	  LN.setLoglevel(LoggerNode::DEBUG);
   }
   // XXX check wifi status, if not up for long try like, reset config but first set default values of everything to curr values of everything, so no need touch rest. or just stash somewhere on fs, read back and replace wifi. always gotta be able to recover fully from auto soft-reset, in case of just eg router power went out temp...
   // other potential, scan wifi for other pixtol APs. if none avail, create (inc mqtt broker). if one is, connect...
@@ -165,17 +163,6 @@ void setup() {
   // put it in a setup mode then once setup keep AP  upuntil rest have switched to correct net
 
 	Homie.getLogger() << endl << "Setup completed" << endl << endl;
-  // THIS is why startup has been so slow?  "the connection to the MQTT broker is blocking during ~5 seconds in case the server is unreachable. This is an Arduino for ESP8266 limitation, and we can't do anything on our side to solve this issue, not even a timeout."
-}
-
-bool globalInputHandler(const HomieNode& node, const String& property, const HomieRange& range, const String& value) {
-  Homie.getLogger() << "Received on node " << node.getId() << ": " << property << " = " << value << endl;
-  if(value=="reset") Homie.reset();
-//switch(value) {
-//  case "reset": Homie.reset(); break;
-//}
-
-  return true;
 }
 
 int getPixelIndex(int pixel) { // XXX also handle matrix back-and-forth setups etc
@@ -350,6 +337,7 @@ void updateFunctions(uint8_t busidx, uint8_t* functions, bool isKeyframe) {
   if(functions[CH_ATTACK] != last_functions[CH_ATTACK]) {
     attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
     if(log_artnet >= 2) Homie.getLogger() << "Attack: " << functions[CH_ATTACK] << " / " << attack << endl;
+    LN.logf("updateFunctions", LoggerNode::DEBUG, "Attack: %d", functions[CH_ATTACK]);
   }
   if(functions[CH_RELEASE] != last_functions[CH_RELEASE])
     rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_RELEASE]/285);
@@ -396,9 +384,23 @@ void interCallback() {
 
 void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
 	if(universe < start_uni || universe >= start_uni + universes) return; // need to expand with different subnets etc...
-  // if(modeNode.) // is set to dmx control
-	if(log_artnet >= 3) Homie.getLogger() << universe;
-  // if(log_artnet >= 2) renderMicros = micros();
+  // if(modeNode.) // is set to dmx control. tho just kill then instead prob and never reach here
+
+  static int first = millis();
+  static int dmxFrameCounter = 0;
+  static int totalTime = 0;
+  dmxFrameCounter++;
+
+  if(dmxFrameCounter >= cfg->dmxHz.get() * 10) {
+    totalTime = millis() - first;
+      // logNode.setProperty("log").send("Frames incoming. ");
+      LN.logf("onDmxFrame()", LoggerNode::INFO, "DMX 10s, avg %dhz", dmxFrameCounter / (totalTime / 1000));
+      dmxFrameCounter = 0;
+      first = millis();
+  }
+	if(log_artnet >= 2) {
+    Homie.getLogger() << universe;
+  }
 	uint8_t* functions = &data[-1];  // take care of DMX ch offset...
 	uint8_t busidx = universe - start_uni; // XXX again watch out for uni 0...
 
@@ -415,6 +417,9 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
   else if(buses[busidx].busW) {
     buses[busidx].busW->Show();
     buses[busidx].busW2->Show();
+// int countMicros = 0;
+// int iterations = 0;
+
   }
   // if(log_artnet >= 2) Homie.getLogger() << micros() - renderMicros << " ";
   memcpy(last_data, data, sizeof(uint8_t) * 512);
@@ -424,16 +429,36 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
 
 void loopArtNet() {
   switch(artnet.read()) { // check opcode for logging purposes, actual logic in callback function
-    case OpDmx:  if(log_artnet >= 3) Homie.getLogger() << "DMX "; 					 break;
-    case OpPoll: if(log_artnet >= 1) Homie.getLogger() << "Art Poll Packet"; break;
+      LN.logf("loopArtNet()", LoggerNode::INFO, "whatever");
+    case OpDmx:
+      if(log_artnet >= 4) Homie.getLogger() << "DMX ";
+      break;
+    case OpPoll:
+
+//   iterations++;
+//   countMicros += micros() - last;
+//   if (iterations >= 1000000) {
+//     LN.logf("loop()", LoggerNode::INFO, "1000000 loop avg: %d micros", countMicros / 1000000);
+//     countMicros = 0;
+//     iterations = 0;
+//  }
+  // make something proper so can estimate interpolation etc, and never crashing from getting overwhelmed...
+  
+  // yield();
+      if(log_artnet >= 1) Homie.getLogger() << "Art Poll Packet";
+      LN.logf("loopArtNet()", LoggerNode::INFO, "Art Poll Packet");
+      break;
 	}
 }
 
 void loop() {
-  // Homie.reset
-	loopArtNet(); // if this doesn't result in anything it should still call updatePixels a few times to finish fades etc.
-  ArduinoOTA.handle();
-  yield();
+  // static int countMillis = 0;
+  // static int iterations = 0;
+
+  // static int last = 0;
+  // last = micros();
+    loopArtNet(); // if this doesn't result in anything, or mode aint dmx, do a timer/callback based loop
+
 	Homie.loop();
   if(Homie.isConnected()) {
     // kill any existing go-into-wifi-finder timer, etc
