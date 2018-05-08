@@ -209,13 +209,37 @@ void updatePixels(uint8_t busidx, uint8_t* data) { // XXX also pass fraction in 
   for(int t = DMX_FN_CHS; t < data_size; t += bytes_per_pixel) {
     pixelidx = getPixelIndex(pixel);
     
-		if(bytes_per_pixel == 3) {  // create wrapper possibly so dont need this repeat shit.
-      // use ColorObject base class etc...
-			RgbColor color 	= RgbColor(data[t], data[t+1], data[t+2]);
-      color = RgbColor::LinearBlend(buses[busidx].bus->GetPixelColor(pixelidx), color, attack);
-      if(color.CalculateBrightness() < 12) color.Darken(12); // avoid bitcrunch
-			buses[busidx].bus->SetPixelColor(pixelidx, color); // TODO apply light dithering if resolution can sustain it, say brightness > 20%
-			if(mirror) buses[busidx].bus->SetPixelColor(led_count - pixel - 1, color);
+		if(bytes_per_pixel == 3) {  // create wrapper possibly so dont need this repeat shit.  use ColorObject base class etc...
+      uint8_t maxNoise = 32; //baseline, 10 either direction
+      if(functions[CH_NOISE]) maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
+
+      uint8_t subPixel[3];
+      for(uint8_t i=0; i < 3; i++) {
+        if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
+        else if(iteration >= interFrames * 10) iteration = 0;
+      if(cfg_gamma_correct.get()) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
+
+      if(!flipped) bus->SetPixelColor(pixelidx, color);
+      else         bus->SetPixelColor(led_count-1 - pixelidx, color);
+
+			if(mirror) bus->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
+        iteration++;
+
+        subPixel[i] = data[t+i];
+        if(subPixel[i] > 16) {
+          int16_t tot = subPixel[i] + subPixelNoise[pixelidx][i];
+          if(tot >= 0 && tot <= 255) subPixel[i] = tot;
+          else if(tot < 0) subPixel[i] = 0;
+          else subPixel[i] = 255;
+        }
+      }
+			RgbColor color = RgbColor(subPixel[0], subPixel[1], subPixel[2]);
+      RgbColor lastColor = bus->GetPixelColor(pixelidx);  // get from pixelbus since we can resolve dimmer-related changes
+      bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
+      color = RgbwColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
+			if(color.CalculateBrightness() < 6) { // avoid bitcrunch
+        color.Darken(6); // XXX should rather flag pixel for temporal dithering yeah?
+      }
 
 
 		} else if(bytes_per_pixel == 4) { 
