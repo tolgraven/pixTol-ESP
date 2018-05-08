@@ -383,19 +383,20 @@ void updateFunctions(uint8_t busidx, uint8_t* functions, bool isKeyframe) {
   if(functions[CH_DIMMER_RELEASE] != last_functions[CH_DIMMER_RELEASE])
     dimmer_rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_RELEASE]/285);
 
-  bool brighter = brightness > last_brightness;
-	brightness = last_brightness + (functions[CH_DIMMER] - last_brightness) * (brighter ? dimmer_attack : dimmer_rls);
-	if(brightness < 4) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
-  else if(brightness > 255) brightness = 255;
-	if(shutterOpen) {
-		if(buses[busidx].bus) buses[busidx].bus->SetBrightness(brightness);
-		else if(buses[busidx].busW) {
-      buses[busidx].busW->SetBrightness(brightness);
-      buses[busidx].busW2->SetBrightness(brightness);
-    }
-	} else buses[busidx].busW->SetBrightness(0);
+  if(!brightnessOverride) {
+    bool brighter = brightness > last_brightness;
+    brightness = last_brightness + (functions[CH_DIMMER] - last_brightness) * (brighter ? dimmer_attack : dimmer_rls);
+    if(brightness < 4) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
+    else if(brightness > 255) brightness = 255;
+  
+    last_brightness = brightness;
+  } else {
+    brightness = brightnessOverride;
+  }
+  uint8_t outBrightness = shutterOpen? brightness: 0;
 
-  last_brightness = brightness;
+  if(buses[0].bus) buses[0].bus->SetBrightness(outBrightness);
+  else if(buses[0].busW) buses[0].busW->SetBrightness(outBrightness);
 }
 
 void renderInterFrame() {
