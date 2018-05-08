@@ -53,6 +53,42 @@ uint8_t strobeTickerClosed, strobeTickerOpen;
 uint8_t brightness;
 uint8_t last_brightness = 0;
 float attack, rls;
+uint8_t brightnessOverride;
+
+bool brightnessHandler(const HomieRange& range, const String& value) {
+  modeNode.setProperty("brightness").send(value);
+  brightnessOverride = value.toInt();
+  if(buses[0].bus) {
+      buses[0].bus->SetBrightness(brightnessOverride);
+      buses[0].bus->Show();
+  }
+  if(buses[0].busW) {
+      buses[0].busW->SetBrightness(brightnessOverride);
+      buses[0].busW->Show();
+  }
+  logNode.setProperty("log").send("BRIGHTNESS SET FFS");
+  return true;
+}
+bool colorHandler(const HomieRange& range, const String& value) {
+  modeNode.setProperty("color").send(value);
+  if(value.equals("blue")) {
+  if(buses[0].bus) {
+      buses[0].bus->ClearTo(blueZ);
+      buses[0].bus->Show();
+  }
+  if(buses[0].busW) {
+      buses[0].busW->ClearTo(blue);
+      buses[0].busW->Show();
+  }
+    // blinkStrip(120, blue, 5);
+  }
+  return true;
+}
+bool onHandler(const HomieRange& range, const String& value) {
+  modeNode.setProperty("on").send(value);
+  Homie.reset();
+  return true;
+}
 
 void initHomie() {
   Homie_setFirmware(FW_NAME, FW_VERSION); Homie_setBrand(FW_BRAND);
