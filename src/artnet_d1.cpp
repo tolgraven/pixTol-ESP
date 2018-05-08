@@ -81,9 +81,15 @@ uint8_t last_brightness = 0;
 float attack, rls;
 
 void initHomie() {
-  Homie_setFirmware(FW_NAME, FW_VERSION); Homie_setBrand("tolgrAVen");
-  // Homie.disableLedFeedback(); Homie.enableBuiltInLedIndicator(false); //newer way to go?
-  // Homie.setLedPin(15, HIGH);
+  Homie_setFirmware(FW_NAME, FW_VERSION); Homie_setBrand(FW_BRAND);
+	Homie.setConfigurationApPassword(FW_NAME);
+  
+  // Homie.setLedPin(D2, HIGH); // Homie.disableLedFeedback();
+  Homie.setGlobalInputHandler(globalInputHandler);
+  // Homie.setBroadcastHandler(broadcastHandler);
+  // Homie.setSetupFunction(homieSetup).setLoopFunction(homieLoop);
+	// Homie.setLoggingPrinter(); //only takes Serial objects. Mod for mqtt?
+
   Homie.onEvent(onHomieEvent);
 	cfg_start_uni.setDefaultValue(1); cfg_start_addr.setDefaultValue(1); cfg_universes.setDefaultValue(1);
   cfg_clear_on_start.setDefaultValue(true); cfg_flip.setDefaultValue(false); cfg_gamma_correct.setDefaultValue(false);
@@ -97,7 +103,9 @@ void initHomie() {
   Homie.setGlobalInputHandler(globalInputHandler);
   pixtolNode.advertise("on").settable();
   modeNode.advertise("on").settable();
-  logNode.advertise("level").settable();
+	modeNode.advertise("brightness").settable();
+
+	Homie.setup();
 }
 
 void initArtnet() {
@@ -107,12 +115,14 @@ void initArtnet() {
 	for(uint8_t i=0; i < universes; i++) artnet.enableDMXOutput(i);
   artnet.enableDMXOutput(0);
 	artnet.begin();
+  initHomie();
+
 	artnet.setArtDmxCallback(onDmxFrame);
   // udp.begin(ARTNET_PORT); // done by artnetnode
 
-  initHomie();
-	Homie.setup();
-
+void setup() {
+	Serial.begin(SERIAL_BAUD);
+	while(!Serial);
   randomSeed(analogRead(0));
 
 	// TODO use led_count to calculate aprox possible frame rate, then use interpolation to fade (say dmx 40 fps, we can run 120 = 3) regardless of/in addition to rls<Plug>/fade stuff
@@ -144,13 +154,7 @@ void initArtnet() {
     buses[0].busW2->Begin(); //if(cfg_clear_on_start.get()) buses[0].busW2->Show();
   }
 
-  artnet.setName(Homie.getConfiguration().name);
-  artnet.setNumPorts(universes);  artnet.setStartingUniverse(start_uni);
-	// uint8_t uniidx = start_uni - 1; // starting universe must be > 0
-	// for(uint8_t i=uniidx; i < uniidx + universes; i++) artnet.enableDMXOutput(i); //this is fucked, doesnt count from 0 but from startingUniverse
-  artnet.enableDMXOutput(0);
-	artnet.begin();   artnet.setArtDmxCallback(onDmxFrame);
-  udp.begin(ARTNET_PORT);
+	initArtnet();
 
 	setupOTA(led_count);
   if(cfg_debug.get()){
