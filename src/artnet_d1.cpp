@@ -29,12 +29,9 @@ uint8_t hzMin, hzMax;
 // NEOPIXELBUS
 NeoGamma<NeoGammaTableMethod> *colorGamma;
 struct busState {
-	// NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266Dma800KbpsMethod>       *bus;	// this way we can (re!)init off config values, post boot
-  DmaGRB *bus;
-	// NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>       *busW;
+	DmaGRB *bus;
   DmaGRBW *busW;
-	// NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266AsyncUart800KbpsMethod> *busW2;
-  UartGRBW *busW2;
+  // UartGRBW *busW2; // NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266AsyncUart800KbpsMethod> *busW2;
 }; busState* buses = new busState[1](); // XXX didnt get Uart mode working, Dma works but iffy with concurrent bitbanging - stick to bang?  +REMEMBER: DMA and UART must ->Begin() after BitBang...
 
 uint8_t last_data[512] = {0};
@@ -160,24 +157,9 @@ void setup() {
     buses[0].bus = new DmaGRB(led_count);
     buses[0].bus->Begin();
 	} else if(bytes_per_pixel == 4) {
-      if(cfg_clear_on_start.get()) { // why is this not picked up?
-        DmaGRBW tempbus(288);
-        tempbus.Begin(); tempbus.Show();
-        delay(10); // no idea why the .Show() doesn't seem to take without this? somehow doesnt latch or something?
-        Homie.getLogger() << "Cleared up to 288 LEDs" << endl;
-      }
-    // buses[0].busW = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>(led_count);
-    // buses[0].busW2 = new NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266AsyncUart800KbpsMethod>(led_count);
 		buses[0].busW  = new DmaGRBW(led_count);
-		buses[0].busW2 = new UartGRBW(led_count);
+    buses[0].busW->Begin();
 	}
-  if(buses[0].bus) {
-    buses[0].bus->Begin(); //if(cfg_clear_on_start.get()) buses[0].bus->Show();
-  }
-  if(buses[0].busW) {
-    buses[0].busW->Begin(); //if(cfg_clear_on_start.get()) buses[0].busW->Show();
-    buses[0].busW2->Begin(); //if(cfg_clear_on_start.get()) buses[0].busW2->Show();
-  }
 
 	initArtnet();
 
@@ -208,39 +190,25 @@ int getPixelIndex(int pixel) { // XXX also handle matrix back-and-forth setups e
   } else     return pixel;
 }
 
-int getPixelFromIndex(int pixelidx) {
-
-}
-
 uint8_t iteration = 0;
 int8_t subPixelNoise[125][4] = {0};
 
-void updatePixels(uint8_t busidx, uint8_t* data) { // XXX also pass fraction in case interpolating >2 frames
+void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolating >2 frames
   uint8_t* functions = &data[-1];
-  int data_size = bytes_per_pixel * cfg_count.get() + DMX_FN_CHS;
+  int data_size = bytes_per_pixel * led_count + DMX_FN_CHS;
 	int pixel = 0; //512/bytes_per_pixel * (universe - 1);  // for one-strip-multiple-universes
   int pixelidx;
-	NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> *busW = buses[busidx].busW;
+	DmaGRBW *busW = buses[0].busW;
+	DmaGRB *bus = buses[0].bus;
   float brightnessFraction = 255 / (brightness ? brightness : 1);     // ahah can't believe divide by zero got me
 
   for(int t = DMX_FN_CHS; t < data_size; t += bytes_per_pixel) {
     pixelidx = getPixelIndex(pixel);
     
 		if(bytes_per_pixel == 3) {  // create wrapper possibly so dont need this repeat shit.  use ColorObject base class etc...
-      uint8_t maxNoise = 32; //baseline, 10 either direction
-      if(functions[CH_NOISE]) maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
 
       uint8_t subPixel[3];
       for(uint8_t i=0; i < 3; i++) {
-        if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
-        else if(iteration >= interFrames * 10) iteration = 0;
-      if(cfg_gamma_correct.get()) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
-
-      if(!flipped) bus->SetPixelColor(pixelidx, color);
-      else         bus->SetPixelColor(led_count-1 - pixelidx, color);
-
-			if(mirror) bus->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
-        iteration++;
 
         subPixel[i] = data[t+i];
         if(subPixel[i] > 16) {
@@ -253,18 +221,20 @@ void updatePixels(uint8_t busidx, uint8_t* data) { // XXX also pass fraction in 
 			RgbColor color = RgbColor(subPixel[0], subPixel[1], subPixel[2]);
       RgbColor lastColor = bus->GetPixelColor(pixelidx);  // get from pixelbus since we can resolve dimmer-related changes
       bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
-      color = RgbwColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
+      color = RgbColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
 			if(color.CalculateBrightness() < 6) { // avoid bitcrunch
         color.Darken(6); // XXX should rather flag pixel for temporal dithering yeah?
       }
 
+      if(!flipped) bus->SetPixelColor(pixelidx, color);
+      else         bus->SetPixelColor(led_count-1 - pixelidx, color);
+
+			if(mirror) bus->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
 
 		} else if(bytes_per_pixel == 4) { 
-      // NOISE / DITHERING BS
       uint8_t maxNoise = 32; //baseline, 10 either direction
-      if(functions[CH_NOISE]) {
-        maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
-      }
+      if(functions[CH_NOISE]) maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
+
       uint8_t subPixel[4];
       for(uint8_t i=0; i < 4; i++) {
         if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
@@ -279,73 +249,66 @@ void updatePixels(uint8_t busidx, uint8_t* data) { // XXX also pass fraction in 
           else subPixel[i] = 255;
         }
       }
-
 			RgbwColor color = RgbwColor(subPixel[0], subPixel[1], subPixel[2], subPixel[3]);
-
-      uint8_t pixelBrightness = color.CalculateBrightness();
       RgbwColor lastColor = busW->GetPixelColor(pixelidx);  // get from pixelbus since we can resolve dimmer-related changes
       bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
       // XXX need to actually restore lastColor to its original brightness before mixing tho...
       color = RgbwColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
 			if(color.CalculateBrightness() < 6) { // avoid bitcrunch
         color.Darken(6); // XXX should rather flag pixel for temporal dithering yeah?
-      } else { // HslColor(); //no go from rgbw...
       }
 
-      if(cfg_gamma_correct.get()) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
+      if(gammaCorrect) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
 
       // all below prob go in own func so dont have to think about them and can reuse in next loop...
       if(!flipped) busW->SetPixelColor(pixelidx, color);
       else         busW->SetPixelColor(led_count-1 - pixelidx, color);
-			buses[busidx].busW2->SetPixelColor(led_count-1 - pixelidx, color); //test, mirror so can see whether works...
 
 			if(mirror) busW->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
 		} pixel++;
 	}
 
   if(functions[CH_BLEED]) { // loop through again...
+    if(bytes_per_pixel == 3) return; // XXX would crash below when RGB and no busW...
+
     for(pixel = 0; pixel < led_count; pixel++) {
-      pixelidx = getPixelIndex(pixel);
-			RgbwColor color = busW->GetPixelColor(pixelidx);
+			RgbwColor color = busW->GetPixelColor(getPixelIndex(pixel));
+			uint8_t thisBrightness = color.CalculateBrightness();
       RgbwColor prevPixelColor = color; // same concept just others rub off on it instead of other way...
       RgbwColor nextPixelColor = color;
       // def cant look at data, remember pixelidx hey. I guess make two runs, first setting all pixels then run blend?
       if(pixel - 1) prevPixelColor = busW->GetPixelColor(getPixelIndex(pixel - 1));
       if(pixel + 1 < led_count) nextPixelColor = busW->GetPixelColor(getPixelIndex(pixel + 1));
       float amount = (float)functions[CH_BLEED]/(256*2);  //this way only ever go half way = before starts decreasing again
-      // float amount = 0.50f; //test
       color = RgbwColor::BilinearBlend(color, nextPixelColor, prevPixelColor, color, amount, amount);
 
-      busW->SetPixelColor(pixelidx, color); // XXX handle flip and that
+      busW->SetPixelColor(getPixelIndex(pixel), color); // XXX handle flip and that
 
     }
   }
 
 }
 
-void updateFunctions(uint8_t busidx, uint8_t* functions, bool isKeyframe) {
-	if(busidx != 0) return; // first strip is master (at least for strobe etc)
+void updateFunctions(uint8_t* functions, bool isKeyframe) {
 
   if(functions[CH_STROBE]) {
     if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
       float hz = ((hzMax - hzMin) * (functions[CH_STROBE] - 1) / (255 - 1)) + hzMin;
       strobePeriod = 1000 / hz;   // 1 = 1 hz, 255 = 10 hz, to test
-      // if(functions[CH_STROBE_CURVES]) { //use non-default fraction
-      // }
       onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
       // XXX instead of timers, use counter and strobe on frames? even 10hz would just be 1 on 3 off, easy...  more precise then use inter frames, yeah?
-      strobeTickerClosed = interFrames * strobePeriod / cfg_dmx_hz.get(); // take heed of interframes...
-      strobeTickerOpen = interFrames * onTime / cfg_dmx_hz.get();
+      strobeTickerClosed = interFrames * strobePeriod / cfg->dmxHz.get(); // take heed of interframes...
+      strobeTickerOpen = interFrames * onTime / cfg->dmxHz.get();
       shutterOpen = false;
     } else { // decr tickers
       if(shutterOpen) strobeTickerOpen--;
       else            strobeTickerClosed--;
       if(!strobeTickerClosed) {
         shutterOpen = true;
-        strobeTickerClosed = strobePeriod / cfg_dmx_hz.get();
+        strobeTickerClosed = strobePeriod / cfg->dmxHz.get();
       } else if(!strobeTickerOpen) {
         shutterOpen = false;
-        strobeTickerOpen = onTime / cfg_dmx_hz.get();
+        strobeTickerOpen = onTime / cfg->dmxHz.get();
       }
     }
   } else { // 0, clean up
@@ -353,15 +316,13 @@ void updateFunctions(uint8_t busidx, uint8_t* functions, bool isKeyframe) {
   }
   ch_strobe_last_value = functions[CH_STROBE];
 
-  // if(functions[CH_ROTATE_FWD && isKeyframe]) { // why the fuck is this working? :O (note fucked brace) guess just returns true and tada
-  if(functions[CH_ROTATE_FWD]) {
-  // if(functions[CH_ROTATE_FWD] && isKeyframe) {
-		if(buses[busidx].bus)        buses[busidx].bus->RotateRight(led_count * ((float)functions[CH_ROTATE_FWD] / 255));
-		else if(buses[busidx].busW)  buses[busidx].busW->RotateRight(led_count * ((float)functions[CH_ROTATE_FWD] / 255));
+  if(functions[CH_ROTATE_FWD]) { // if(functions[CH_ROTATE_FWD] && isKeyframe) {
+		if(buses[0].bus)        buses[0].bus->RotateRight(led_count * ((float)functions[CH_ROTATE_FWD] / 255));
+		else if(buses[0].busW)  buses[0].busW->RotateRight(led_count * ((float)functions[CH_ROTATE_FWD] / 255));
   // } if(isKeyframe && functions[CH_ROTATE_BACK] && (functions[CH_ROTATE_BACK] != last_functions[CH_ROTATE_BACK])) { // so what happens is since this gets called in interpolation it shifts like five extra times
   } if(functions[CH_ROTATE_BACK]) { // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
-		if(buses[busidx].bus)        buses[busidx].bus->RotateLeft(led_count * ((float)functions[CH_ROTATE_BACK] / 255));
-		else if(buses[busidx].busW)  buses[busidx].busW->RotateLeft(led_count * ((float)functions[CH_ROTATE_BACK] / 255));
+		if(buses[0].bus)        buses[0].bus->RotateLeft(led_count * ((float)functions[CH_ROTATE_BACK] / 255));
+	else if(buses[0].busW)  buses[0].busW->RotateLeft(led_count * ((float)functions[CH_ROTATE_BACK] / 255));
   }
 
   switch(functions[CH_CONTROL]) {
@@ -400,18 +361,17 @@ void updateFunctions(uint8_t busidx, uint8_t* functions, bool isKeyframe) {
 }
 
 void renderInterFrame() {
-  uint8_t busidx = 0;
-  updatePixels(busidx, last_data);
-  updateFunctions(busidx, last_functions, false); // XXX fix so interpolates!!
-  buses[busidx].busW->Show();
-  buses[busidx].busW2->Show();
+  updatePixels(last_data);
+  updateFunctions(last_functions, false); // XXX fix so interpolates!!
+  if(buses[0].bus) buses[0].bus->Show();
+  else if(buses[0].busW) buses[0].busW->Show();
 }
 
 uint8_t interCounter;
 
 void interCallback() {
   if(interCounter > 1) { // XXX figure out on its own whether will overflow, so can just push towards max always
-    timer_inter.once_ms((1000/interFrames / cfg_dmx_hz.get()), interCallback);
+    timer_inter.once_ms((1000/interFrames / cfg->dmxHz.get()), interCallback);
   }
   renderInterFrame(); // should def try proper temporal dithering here...
   interCounter--;
@@ -439,29 +399,19 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
     Homie.getLogger() << universe;
   }
 	uint8_t* functions = &data[-1];  // take care of DMX ch offset...
-	uint8_t busidx = universe - start_uni; // XXX again watch out for uni 0...
 
-  // bool changed = false;
-  // for(uint16_t i=0; i < 512; i++) {
-  //   if(data[i] != last_data[i]) {
-  //     changed = true; break; // don't process unless something differs
-  // } } if(!changed) return; // decent idea but fucks too much atm, work on other solutions for strobe woes instead...
+  updatePixels(data);
+  updateFunctions(functions, true);
 
-  updatePixels(busidx, data);
-  updateFunctions(busidx, functions, true);
-
-  if(buses[busidx].bus) buses[busidx].bus->Show();
-  else if(buses[busidx].busW) {
-    buses[busidx].busW->Show();
-    buses[busidx].busW2->Show();
-// int countMicros = 0;
-// int iterations = 0;
-
+  if(buses[0].bus)
+		buses[0].bus->Show();
+  else if(buses[0].busW) {
+    buses[0].busW->Show();
   }
   // if(log_artnet >= 2) Homie.getLogger() << micros() - renderMicros << " ";
   memcpy(last_data, data, sizeof(uint8_t) * 512);
   interCounter = interFrames;
-  if(interCounter) timer_inter.once_ms((1000/interFrames / cfg_dmx_hz.get()), interCallback);
+  if(interCounter) timer_inter.once_ms((1000/interFrames / cfg->dmxHz.get()), interCallback);
 }
 
 void loopArtNet() {
