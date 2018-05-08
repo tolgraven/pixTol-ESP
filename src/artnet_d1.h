@@ -1,17 +1,28 @@
+#ifndef PIXTOL_ARTNET_D1
+#define PIXTOL_ARTNET_D1
+
 #include <Arduino.h> 	//needed by linters
 #include <ArduinoOTA.h>
 #include <Homie.h>
+#include <LoggerNode.h>
 #include <WiFiUdp.h>
 #include <ArtnetnodeWifi.h>
 #include <NeoPixelBrightnessBus.h>
 #include <Ticker.h>
+#include "util.h"
+#include "config.h"
+#include "strip.h"
 // #include <ArdOSC.h>
 
-// D1=5, D2=4, D3=0, D4=2  D0=16, D55=14, D6=12, D7=13, D8=15
-#define LED_PIN   D1
+#define FW_BRAND "tolgrAVen"
+#define FW_NAME "pixTol"
+#define FW_VERSION "1.0.6"
+
+#define LED_PIN   D1  // D1=5, D2=4, D3=0, D4=2  D0=16, D55=14, D6=12, D7=13, D8=15
 #define RX_PIN    3
 #define TX_PIN    1
 #define ARTNET_PORT     6454
+#define SERIAL_BAUD    74880 // same rate as bootloader...
 
 #define DMX_FN_CHS        12
 #define CH_DIMMER          1
@@ -38,6 +49,7 @@
 #define FN_UNIVERSE_3     5
 #define FN_UNIVERSE_4     6
 #define FN_FRAMEGRAB_1    7
+#endif
 #define FN_FRAMEGRAB_2    8
 #define FN_FRAMEGRAB_3    9
 #define FN_FRAMEGRAB_4   10
@@ -45,7 +57,12 @@
 // then like 100-255 some nice enough curve driving x+y in a bilinear blend depending on amt of slots?
 // BTW: Use bit in fun ch for some sort of midi clock equiv? Would potentially enable "loop last bar", "strobe 1/16" etc...
 
-void setupOTA();
-void onHomieEvent(const HomieEvent& event);
-void flushNeoPixelBus(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data);
+/* Magic sequence for Autodetectable Binary Upload */
+const char *__FLAGGED_FW_NAME = "\xbf\x84\xe4\x13\x54" FW_NAME "\x93\x44\x6b\xa7\x75";
+const char *__FLAGGED_FW_VERSION = "\x6a\x3f\x3e\x0e\xe1" FW_VERSION "\xb0\x30\x48\xd4\x1a";
+/* End of magic sequence for Autodetectable Binary Upload */
+
+
+void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data);
+
 
