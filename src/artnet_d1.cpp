@@ -7,31 +7,8 @@ HomieNode modeNode("dmx", "switch");
 HomieNode logNode("log", "level");
 // NODES: ConfigNode, StateNode, more?
 
-HomieSetting<bool> cfg_debug("debug", 
-    "debug mode, extra logging and pause at start to allow OTA flash even if unit is crashing").setDefaultValue(true);
-HomieSetting<long> cfg_log_artnet(   "log_artnet", 			"log level for incoming artnet packets");
-HomieSetting<bool> cfg_log_to_serial("log_to_serial", 	"whether to log to serial");
-HomieSetting<bool> cfg_log_to_mqtt(  "log_to_mqtt", 		"whether to log to mqtt");
-HomieSetting<long> cfg_dmx_hz(       "dmx_hz", 	        "dmx frame rate");      // use to calculate strobe and interpolation stuff
-HomieSetting<long> cfg_strobe_hz_min("strobe_hz_min", 	"lowest strobe frequency");
-HomieSetting<long> cfg_strobe_hz_max("strobe_hz_max", 	"highest strobe frequency");
-HomieSetting<bool> cfg_mirror(		   "mirror_second_half", "whether to mirror strip back onto itself, for controlling folded strips >1 uni as if one");
-HomieSetting<bool> cfg_folded_alternating("folded_alternating", "alternating pixels");
-HomieSetting<bool> cfg_clear_on_start("clear_on_start",     "clear strip on boot");
-HomieSetting<bool> cfg_flip(        "flip",             "flip strip direction");
-HomieSetting<bool> cfg_gamma_correct("gamma_correct",   "shitty gamma correction that sucks");
-HomieSetting<long> cfg_count(			"led_count", 					"number of LEDs in strip"); // rework for multiple strips
-HomieSetting<long> cfg_bytes(			"bytes_per_pixel", 		"3 for RGB, 4 for RGBW");
-HomieSetting<long> cfg_universes(	"universes", 					"number of DMX universes");
-HomieSetting<long> cfg_start_uni(	"starting_universe", 	"index of first DMX universe used");
-HomieSetting<long> cfg_start_addr("starting_address", 	"index of beginning of strip, within starting_universe."); // individual pixel control starts after x function channels offset (for strobing etc)
-// HomieSetting<long> cfg_strips(		"strips", 						"number of LED strips being controlled");
-
-// FN_SAVE writes all current (savable) DMX settings to config.json
-// then make cues in afterglow or buttons in max/mira to control settings per strip = no config file bs
-// should also set up OSC support tho so can go that way = no fiddling with mapping out and translating shitty 8-bit numbers
-// but stuff like flip could be both a config thing and performance effect so makes sense. anything else?
-// bitcrunch, pixelate (halving resolution + zoom around where is grabbing)
+// NODES: ConfigNode, StateNode, more?
+// also encapsulate renderer, input, output
 
 /* INPUT METHODS:
  * DMX: XLR, IP: Artnet/sACN(?), 
@@ -90,14 +67,7 @@ void initHomie() {
   // Homie.setSetupFunction(homieSetup).setLoopFunction(homieLoop);
 	// Homie.setLoggingPrinter(); //only takes Serial objects. Mod for mqtt?
 
-  Homie.onEvent(onHomieEvent);
-	cfg_start_uni.setDefaultValue(1); cfg_start_addr.setDefaultValue(1); cfg_universes.setDefaultValue(1);
-  cfg_clear_on_start.setDefaultValue(true); cfg_flip.setDefaultValue(false); cfg_gamma_correct.setDefaultValue(false);
-  cfg_mirror.setDefaultValue(false); cfg_folded_alternating.setDefaultValue(false);
-  cfg_log_to_mqtt.setDefaultValue(true); cfg_log_to_serial.setDefaultValue(false);
-  cfg_log_artnet.setDefaultValue(2); cfg_debug.setDefaultValue(true);
-  cfg_strobe_hz_min.setDefaultValue(1); cfg_strobe_hz_max.setDefaultValue(10);  cfg_dmx_hz.setDefaultValue(40);
-  cfg_count.setDefaultValue(120); cfg_bytes.setDefaultValue(4);
+  cfg = new ConfigNode();
 
   // if(!cfg_debug.get()) Homie.disableLogging();
   Homie.setGlobalInputHandler(globalInputHandler);
@@ -132,8 +102,32 @@ void setup() {
   hzMin           = cfg_strobe_hz_min.get();  hzMax      = cfg_strobe_hz_max.get();  // should these be setable through dmx control ch?                                                      
   start_uni       = cfg_start_uni.get();      universes  = cfg_universes.get();
 
-  if(cfg_gamma_correct.get()) colorGamma = new NeoGamma<NeoGammaTableMethod>;
-	if(bytes_per_pixel == 3) { buses[0].bus = new DmaGRB(led_count);	// actually RX pin when DMA
+  // mirror    = strip.setMirrored.get();
+  mirror    = false;
+  led_count = cfg->ledCount.get();// TODO use led_count to calculate aprox possible frame rate
+  if(mirror) led_count *= 2;	// actual leds is twice conf XXX IMPORTANT: heavier dithering when mirroring
+	bytes_per_pixel = cfg->bytesPerLed.get();
+  log_artnet = cfg->logArtnet.get();
+  // folded     = strip.setFolded.get();
+  folded = false;
+  // flipped = strip.setFlipped.get();
+  flipped = false;
+  gammaCorrect = false;
+  hzMin           = cfg->strobeHzMin.get();
+  hzMax      = cfg->strobeHzMax.get();  // should these be setable through dmx control ch?                                                      
+  start_uni       = cfg->startUni.get();
+  universes  = cfg->universes.get();
+
+  if(cfg->clearOnStart.get()) {
+    DmaGRBW tempbus(144);
+    tempbus.Begin();
+    tempbus.Show();
+    delay(50); // no idea why the .Show() doesn't seem to take without this? somehow doesnt latch or something?
+    Homie.getLogger() << "Cleared up to 288 LEDs" << endl;
+  }
+	if(bytes_per_pixel == 3) {
+    buses[0].bus = new DmaGRB(led_count);
+    buses[0].bus->Begin();
 	} else if(bytes_per_pixel == 4) {
       if(cfg_clear_on_start.get()) { // why is this not picked up?
         DmaGRBW tempbus(288);
