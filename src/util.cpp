@@ -10,22 +10,22 @@ const RgbwColor blue =    RgbwColor(20, 60, 180, 20);
 
 const RgbwColor* otaColor;
 
+// put in animation class for strip, or at least pass a bus object lol
 void blinkStrip(uint8_t numLeds, RgbwColor color, uint8_t blinks) {
-  // NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> tempbus(numLeds);
-  NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> tempbus(288); // want to clear any previous garbage as well...
+  DmaGRBW tempbus(numLeds); // want to clear any previous garbage as well...
   tempbus.Begin(); tempbus.Show();
-  delay(100);
+  delay(100); // XXX use callbacks instead of delays, then mqtt-ota will prob work? Also move this sorta routine into Strip class, or some animation class?
   for(int8_t b = 0; b < blinks; b++) {
     tempbus.ClearTo(color); tempbus.Show();
-    delay(300);
+    delay(100);
     tempbus.ClearTo(black); tempbus.Show();
-    delay(200);
+    delay(100);
   }
 }
 
-NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod> *OTAbus; //(numLeds);
+DmaGRBW *OTAbus;
 uint16_t leds;
-int16_t prevPixel = -1;
+int prevPixel = -1;
 
 void setupOTA(uint8_t numLeds) {
   ArduinoOTA.setHostname(Homie.getConfiguration().name);
