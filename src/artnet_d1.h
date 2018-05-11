@@ -16,7 +16,7 @@
 
 #define FW_BRAND "tolgrAVen"
 #define FW_NAME "pixTol"
-#define FW_VERSION "1.0.6"
+#define FW_VERSION "1.0.11"
 
 #define LED_PIN   D1  // D1=5, D2=4, D3=0, D4=2  D0=16, D55=14, D6=12, D7=13, D8=15
 #define RX_PIN    3
@@ -24,10 +24,11 @@
 #define ARTNET_PORT     6454
 #define SERIAL_BAUD    74880 // same rate as bootloader...
 
+// these as enums instead? best if simply property of controlled thing, so fw then dynamically exposes correct fn chs
 #define DMX_FN_CHS        12
 #define CH_DIMMER          1
 #define CH_STROBE          2 // maybe use for strobe curves etc as well? 1-100 prob enough considering now approach without timers and limited to when rendering happens...
-#define CH_CURVES          3 //for strobe, maybe A/R, 
+#define CH_HUE             3 // hue shift instead of strobe curvbes...
 #define CH_ATTACK          4
 #define CH_RELEASE         5
 #define CH_BLEED           6
@@ -41,7 +42,11 @@
 // #define CH_CHOPSHIT_INHALF_ASSEMBLE_BACKWARDS_THENAGAIN_ETC
 
 #define CH_CONTROL        12
-
+// FN_SAVE writes all current (savable) DMX settings to config.json
+// then make cues in afterglow or buttons in max/mira to control settings per strip = no config file bs
+// should also set up OSC support tho so can go that way = no fiddling with mapping out and translating shitty 8-bit numbers
+// but stuff like flip could be both a config thing and performance effect so makes sense. anything else?
+// bitcrunch, pixelate (halving resolution + zoom around where is grabbing)
 #define FN_SAVE           1
 #define FN_FLIP           2
 #define FN_UNIVERSE_1     3 //within current subnet...
@@ -49,7 +54,6 @@
 #define FN_UNIVERSE_3     5
 #define FN_UNIVERSE_4     6
 #define FN_FRAMEGRAB_1    7
-#endif
 #define FN_FRAMEGRAB_2    8
 #define FN_FRAMEGRAB_3    9
 #define FN_FRAMEGRAB_4   10
@@ -66,3 +70,4 @@ const char *__FLAGGED_FW_VERSION = "\x6a\x3f\x3e\x0e\xe1" FW_VERSION "\xb0\x30\x
 void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data);
 
 
+#endif

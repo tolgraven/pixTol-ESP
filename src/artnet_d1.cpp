@@ -14,7 +14,8 @@ ConfigNode* cfg;
  *
  * OUTPUTS:
  * DMX: XLR, IP
- * LEDstrips: 24/32 bits,
+ * LEDstrips: 8/24/32+ bits,
+ * Lights: Milight, etcetc
  * GPIO for other stuff? use a pixtol to mod fog machine to run DMX etc.
  * */
 
@@ -25,6 +26,7 @@ uint16_t led_count;
 bool mirror, folded, flipped;
 uint8_t log_artnet;
 uint8_t hzMin, hzMax;
+bool gammaCorrect;
 
 // NEOPIXELBUS
 NeoGamma<NeoGammaTableMethod> *colorGamma;
@@ -38,7 +40,9 @@ uint8_t last_data[512] = {0};
 uint8_t* last_functions = &last_data[-1];  // take care of DMX ch offset...
 
 Ticker timer_inter;
-const uint8_t interFrames = 3; // ~40 us/led gives 5 ms for 1 universe of 125 leds. so around 4-5 frames per frame should be alright.
+const uint8_t interFrames = 2; // ~40 us/led gives 5 ms for 1 universe of 125 leds
+// so around 4-5 frames per frame should be alright.
+// XXX NOT if mirrored remember! make dybamic!!!
 const float blendBaseline = 1.00f - 1.00f / (1 + interFrames); // for now, make dynamic...
 
 bool shutterOpen = true;
@@ -49,8 +53,8 @@ uint8_t strobeTickerClosed, strobeTickerOpen;
 
 uint8_t brightness;
 uint8_t last_brightness = 0;
-float attack, rls;
 uint8_t brightnessOverride;
+float attack, rls, dimmer_attack, dimmer_rls;
 
 bool brightnessHandler(const HomieRange& range, const String& value) {
   modeNode.setProperty("brightness").send(value);
@@ -63,24 +67,25 @@ bool brightnessHandler(const HomieRange& range, const String& value) {
       buses[0].busW->SetBrightness(brightnessOverride);
       buses[0].busW->Show();
   }
-  logNode.setProperty("log").send("BRIGHTNESS SET FFS");
+  // logNode.setProperty("log").send("BRIGHTNESS SET FFS");
   return true;
 }
 bool colorHandler(const HomieRange& range, const String& value) {
   modeNode.setProperty("color").send(value);
   if(value.equals("blue")) {
-  if(buses[0].bus) {
-      buses[0].bus->ClearTo(blueZ);
-      buses[0].bus->Show();
-  }
-  if(buses[0].busW) {
-      buses[0].busW->ClearTo(blue);
-      buses[0].busW->Show();
-  }
-    // blinkStrip(120, blue, 5);
+    if(buses[0].bus) {
+        buses[0].bus->ClearTo(blueZ);
+        buses[0].bus->Show();
+    }
+    if(buses[0].busW) {
+        buses[0].busW->ClearTo(blue);
+        buses[0].busW->Show();
+    }
   }
   return true;
 }
+
+=======
 bool onHandler(const HomieRange& range, const String& value) {
   modeNode.setProperty("on").send(value);
   Homie.reset();
@@ -92,6 +97,7 @@ void initHomie() {
 	Homie.setConfigurationApPassword(FW_NAME);
   
   // Homie.setLedPin(D2, HIGH); // Homie.disableLedFeedback();
+  Homie.onEvent(onHomieEvent);
   Homie.setGlobalInputHandler(globalInputHandler);
   // Homie.setBroadcastHandler(broadcastHandler);
   // Homie.setSetupFunction(homieSetup).setLoopFunction(homieLoop);
@@ -104,7 +110,6 @@ void initHomie() {
 	modeNode.advertise("brightness").settable(brightnessHandler);
 	modeNode.advertise("color").settable(colorHandler);
   // activityNode.advertise("artnet");
-  // logNode.advertise("log").settable();
   logNode.advertise("log");
 
 	Homie.setup();
@@ -112,15 +117,14 @@ void initHomie() {
 
 void initArtnet() {
   artnet.setName(Homie.getConfiguration().name);
-  artnet.setNumPorts(universes);
-	artnet.setStartingUniverse(start_uni);
-	for(uint8_t i=0; i < universes; i++) artnet.enableDMXOutput(i);
+  artnet.setNumPorts(cfg->universes.get());
+	artnet.setStartingUniverse(cfg->startUni.get());
+	for(uint8_t i=0; i < cfg->universes.get(); i++) artnet.enableDMXOutput(i);
   artnet.enableDMXOutput(0);
 	artnet.begin();
-  initHomie();
-
 	artnet.setArtDmxCallback(onDmxFrame);
-  // udp.begin(ARTNET_PORT); // done by artnetnode
+  // udp.begin(ARTNET_PORT); // done by artnetnode // yup shouldnt need
+}
 
 void setup() {
 	Serial.begin(SERIAL_BAUD);
@@ -130,28 +134,25 @@ void setup() {
   LN.log(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Before Homie setup())");
   initHomie();
 
-  // mirror    = strip.setMirrored.get();
-  mirror    = false;
+  mirror    = false; //strip.setMirrored.get();
   led_count = cfg->ledCount.get();// TODO use led_count to calculate aprox possible frame rate
   if(mirror) led_count *= 2;	// actual leds is twice conf XXX IMPORTANT: heavier dithering when mirroring
 	bytes_per_pixel = cfg->bytesPerLed.get();
   log_artnet = cfg->logArtnet.get();
-  // folded     = strip.setFolded.get();
-  folded = false;
-  // flipped = strip.setFlipped.get();
-  flipped = false;
-  gammaCorrect = false;
-  hzMin           = cfg->strobeHzMin.get();
-  hzMax      = cfg->strobeHzMax.get();  // should these be setable through dmx control ch?                                                      
-  start_uni       = cfg->startUni.get();
-  universes  = cfg->universes.get();
+  folded = false; // folded     = strip.setFolded.get();
+  flipped = false; // flipped = strip.setFlipped.get();
+  gammaCorrect = false; // strip.setGammaCorrect.get();
+  hzMin = cfg->strobeHzMin.get();
+  hzMax = cfg->strobeHzMax.get();  // should these be setable through dmx control ch?                                                      
+  start_uni = cfg->startUni.get();
+  universes = cfg->universes.get();
 
   if(cfg->clearOnStart.get()) {
     DmaGRBW tempbus(144);
     tempbus.Begin();
     tempbus.Show();
     delay(50); // no idea why the .Show() doesn't seem to take without this? somehow doesnt latch or something?
-    Homie.getLogger() << "Cleared up to 288 LEDs" << endl;
+    Homie.getLogger() << "Cleared >1 universe of LEDs" << endl;
   }
 	if(bytes_per_pixel == 3) {
     buses[0].bus = new DmaGRB(led_count);
@@ -162,7 +163,6 @@ void setup() {
 	}
 
 	initArtnet();
-
 	setupOTA(led_count);
 
   if(cfg->debug.get()) {
@@ -171,9 +171,8 @@ void setup() {
       ArduinoOTA.handle(); // give chance to flash new code in case loop is crashing
       delay(100);
       Homie.getLogger() << ".";
-	  LN.setLoglevel(LoggerNode::DEBUG);
     }
-	  LN.setLoglevel(LoggerNode::DEBUG);
+	  // LN.setLoglevel(LoggerNode::DEBUG); //default?
   }
   // XXX check wifi status, if not up for long try like, reset config but first set default values of everything to curr values of everything, so no need touch rest. or just stash somewhere on fs, read back and replace wifi. always gotta be able to recover fully from auto soft-reset, in case of just eg router power went out temp...
   // other potential, scan wifi for other pixtol APs. if none avail, create (inc mqtt broker). if one is, connect...
@@ -206,9 +205,14 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
     pixelidx = getPixelIndex(pixel);
     
 		if(bytes_per_pixel == 3) {  // create wrapper possibly so dont need this repeat shit.  use ColorObject base class etc...
+      // uint8_t maxNoise = 32; //baseline, 10 either direction
+      // if(functions[CH_NOISE]) maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
 
       uint8_t subPixel[3];
       for(uint8_t i=0; i < 3; i++) {
+        // if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
+        // else if(iteration >= interFrames * 10) iteration = 0;
+        // iteration++;
 
         subPixel[i] = data[t+i];
         if(subPixel[i] > 16) {
@@ -226,6 +230,7 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
         color.Darken(6); // XXX should rather flag pixel for temporal dithering yeah?
       }
 
+      // if(gammaCorrect) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
       if(!flipped) bus->SetPixelColor(pixelidx, color);
       else         bus->SetPixelColor(led_count-1 - pixelidx, color);
 
@@ -247,6 +252,7 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
           if(tot >= 0 && tot <= 255) subPixel[i] = tot;
           else if(tot < 0) subPixel[i] = 0;
           else subPixel[i] = 255;
+					// subPixel[i] = (tot < 0? 0: (tot > 255? 255: tot));
         }
       }
 			RgbwColor color = RgbwColor(subPixel[0], subPixel[1], subPixel[2], subPixel[3]);
@@ -276,9 +282,20 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
 			uint8_t thisBrightness = color.CalculateBrightness();
       RgbwColor prevPixelColor = color; // same concept just others rub off on it instead of other way...
       RgbwColor nextPixelColor = color;
-      // def cant look at data, remember pixelidx hey. I guess make two runs, first setting all pixels then run blend?
-      if(pixel - 1) prevPixelColor = busW->GetPixelColor(getPixelIndex(pixel - 1));
-      if(pixel + 1 < led_count) nextPixelColor = busW->GetPixelColor(getPixelIndex(pixel + 1));
+			float weightPrev;
+			float weightNext;
+      if(pixel-1 >= 0) {
+				prevPixelColor = busW->GetPixelColor(getPixelIndex(pixel-1));
+				weightPrev = prevPixelColor.CalculateBrightness() / thisBrightness+1;
+			}
+      if(pixel+1 < led_count) {
+				nextPixelColor = busW->GetPixelColor(getPixelIndex(pixel+1));
+				weightNext = nextPixelColor.CalculateBrightness() / thisBrightness+1;
+				// if(nextPixelColor.CalculateBrightness() < thisBrightness * 0.7) // skip if dark, test
+				// 	nextPixelColor = color;
+					// do some more shit tho. Important thing is mixing colors, so maybe look at saturation as well as brightness dunno
+					// since we have X and Y should weight towards more interesting.
+			}
       float amount = (float)functions[CH_BLEED]/(256*2);  //this way only ever go half way = before starts decreasing again
       color = RgbwColor::BilinearBlend(color, nextPixelColor, prevPixelColor, color, amount, amount);
 
@@ -286,7 +303,9 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
 
     }
   }
+	if(functions[CH_HUE]) { // rotate hue around, simple. global desat as well?
 
+	}
 }
 
 void updateFunctions(uint8_t* functions, bool isKeyframe) {
@@ -314,6 +333,7 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
   } else { // 0, clean up
     shutterOpen = true;
   }
+
   ch_strobe_last_value = functions[CH_STROBE];
 
   if(functions[CH_ROTATE_FWD]) { // if(functions[CH_ROTATE_FWD] && isKeyframe) {
@@ -325,10 +345,10 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
 	else if(buses[0].busW)  buses[0].busW->RotateLeft(led_count * ((float)functions[CH_ROTATE_BACK] / 255));
   }
 
-  switch(functions[CH_CONTROL]) {
-    case FN_FRAMEGRAB_1 ... FN_FRAMEGRAB_4: break;
-    case FN_FLIP: flipped = !flipped; break;
-  }
+  // switch(functions[CH_CONTROL]) {
+  //   case FN_FRAMEGRAB_1 ... FN_FRAMEGRAB_4: break;
+  //   case FN_FLIP: flipped = !flipped; break;
+  // }
 
   //WTF: when not enough current and strips yellow, upping atttack makes them less yellow. Also happens in general, but less noticable?
   if(functions[CH_ATTACK] != last_functions[CH_ATTACK]) {
@@ -356,8 +376,10 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
   }
   uint8_t outBrightness = shutterOpen? brightness: 0;
 
-  if(buses[0].bus) buses[0].bus->SetBrightness(outBrightness);
-  else if(buses[0].busW) buses[0].busW->SetBrightness(outBrightness);
+  // if(buses[0].bus) buses[0].bus->SetBrightness(outBrightness);
+  // else if(buses[0].busW) buses[0].busW->SetBrightness(outBrightness);
+  if(buses[0].bus) buses[0].bus->SetBrightness(brightness);
+  else if(buses[0].busW) buses[0].busW->SetBrightness(brightness);
 }
 
 void renderInterFrame() {
@@ -368,7 +390,6 @@ void renderInterFrame() {
 }
 
 uint8_t interCounter;
-
 void interCallback() {
   if(interCounter > 1) { // XXX figure out on its own whether will overflow, so can just push towards max always
     timer_inter.once_ms((1000/interFrames / cfg->dmxHz.get()), interCallback);
@@ -379,8 +400,10 @@ void interCallback() {
 
 // unsigned long renderMicros; // seems just over 10us per pixel, since 125 gave around 1370... much faster than WS??
 
+
+// seems just over 10us per pixel, since 125 gave around 1370... much faster than WS??
 void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
-	if(universe < start_uni || universe >= start_uni + universes) return; // need to expand with different subnets etc...
+	if(universe < start_uni || universe >= start_uni + universes) return; // lib takes care of this no?
   // if(modeNode.) // is set to dmx control. tho just kill then instead prob and never reach here
 
   static int first = millis();
@@ -390,37 +413,81 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
 
   if(dmxFrameCounter >= cfg->dmxHz.get() * 10) {
     totalTime = millis() - first;
-      // logNode.setProperty("log").send("Frames incoming. ");
       LN.logf("onDmxFrame()", LoggerNode::INFO, "DMX 10s, avg %dhz", dmxFrameCounter / (totalTime / 1000));
+      LN.logf("onDmxFrame()", LoggerNode::DEBUG, "Uni%s, data %s", universe, data);
       dmxFrameCounter = 0;
       first = millis();
   }
-	if(log_artnet >= 2) {
-    Homie.getLogger() << universe;
-  }
+	if(log_artnet >= 2) Homie.getLogger() << universe;
+
 	uint8_t* functions = &data[-1];  // take care of DMX ch offset...
 
-  updatePixels(data);
-  updateFunctions(functions, true);
+  // all this should see is data is handed to one or more outputs
+  // Strip, SerialDMX (via max485), non-IP wireless, a fadecandy?/any hw/software endpoint with
+  // no fn ch capability so pixtol runs as basically an effect box?  or sniffer/tester
+  // so might send as artnet cause actually came in by XLR, or fwd wifi by CAT or versa? neither end shall give any damns
+  //
+  // these should call strip/output directly
+    updatePixels(data); //XXX gotta send kength along too really no?
+    updateFunctions(functions, true);
 
-  if(buses[0].bus)
-		buses[0].bus->Show();
-  else if(buses[0].busW) {
-    buses[0].busW->Show();
+    // this should be a scheduler calling outputter to actually render/write
+    // frames can and do stutter, interpolation and minor buffering can help that
+    // plus remember animation retiming off music tempo etc, that's for like a pi tho
+    if(buses[0].bus) buses[0].bus->Show();
+    else if(buses[0].busW) buses[0].busW->Show();
+
+    // above entity should keep track of all incoming data sources and merge appropriately
+    // depending on prio, LTP/HTP/mymuchbetterideaofweightedaverages
+    // and schedule interpolation
+    memcpy(last_data, data, sizeof(uint8_t) * 512);
+    interCounter = interFrames;
+    if(interCounter) timer_inter.once_ms((1000/interFrames / cfg->dmxHz.get()), interCallback);
   }
-  // if(log_artnet >= 2) Homie.getLogger() << micros() - renderMicros << " ";
-  memcpy(last_data, data, sizeof(uint8_t) * 512);
-  interCounter = interFrames;
-  if(interCounter) timer_inter.once_ms((1000/interFrames / cfg->dmxHz.get()), interCallback);
-}
 
 void loopArtNet() {
+  doNodeReport();
+  artRDM.handler();
+  
+  yield();
+
   switch(artnet.read()) { // check opcode for logging purposes, actual logic in callback function
       LN.logf("loopArtNet()", LoggerNode::INFO, "whatever");
     case OpDmx:
       if(log_artnet >= 4) Homie.getLogger() << "DMX ";
       break;
     case OpPoll:
+      if(log_artnet >= 2) Homie.getLogger() << "Art Poll Packet";
+      LN.logf("loopArtNet()", LoggerNode::INFO, "Art Poll Packet");
+      break;
+  }
+}
+
+  // int countMicros = 0;
+// int iterations = 0;
+
+void loop() {
+  // static int countMillis = 0;
+  // static int iterations = 0;
+
+  // static int last = 0;
+  // last = micros();
+  loopArtNet(); // if this doesn't result in anything, or mode aint dmx, do a timer/callback based loop
+
+  // XXX Idea: every 10s grab a frame. save last minute or so. mqtt/dmx ctrl both to manually save a frame
+  // and to grab frame afterthefact from that buffer.
+  // then do the animation fades between saved frames
+
+  // XXX write bluetooth receiver for raspberry, can also send commands that way (fwded to esps by wifi)
+	Homie.loop();
+  if(Homie.isConnected()) {
+    // kill any existing go-into-wifi-finder timer, etc
+    ArduinoOTA.handle(); // soon entirely redundant due to homie
+  } else {
+    // stays stuck in this state for a while on boot
+    // LN.logf("loop()", LoggerNode::INFO, "OMG NO CONNECT");
+    // set a timer if not already exists, yada yada blink statusled for sure...
+  }
 
 //   iterations++;
 //   countMicros += micros() - last;
@@ -430,30 +497,4 @@ void loopArtNet() {
 //     iterations = 0;
 //  }
   // make something proper so can estimate interpolation etc, and never crashing from getting overwhelmed...
-  
-  // yield();
-      if(log_artnet >= 1) Homie.getLogger() << "Art Poll Packet";
-      LN.logf("loopArtNet()", LoggerNode::INFO, "Art Poll Packet");
-      break;
-	}
 }
-
-void loop() {
-  // static int countMillis = 0;
-  // static int iterations = 0;
-
-  // static int last = 0;
-  // last = micros();
-    loopArtNet(); // if this doesn't result in anything, or mode aint dmx, do a timer/callback based loop
-
-	Homie.loop();
-  if(Homie.isConnected()) {
-    // kill any existing go-into-wifi-finder timer, etc
-    loopArtNet(); // if this doesn't result in anything, or mode aint dmx, do a timer/callback based loop
-    ArduinoOTA.handle();
-  } else {
-    // set a timer if not already exists, yada yada
-    // blink statusled for sure...
-  }
-}
-
