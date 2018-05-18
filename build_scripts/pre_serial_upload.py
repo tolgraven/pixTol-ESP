@@ -10,13 +10,14 @@ from subprocess import call
 # env.AddPreAction("buildprog", callback...)
 # env.AddPostAction("buildprog", callback...)
 
-# env.AddPreAction("upload", env.VerboseAction(" ".join(["kill", 
-#     "(lsof -t /dev/tty.wchusbserial14530)", 
+# env.AddPreAction("upload", env.VerboseAction(" ".join(["kill",
+#     "(lsof -t /dev/tty.wchusbserial14530)",
 #     ]), "killing serial monitor..."))
 
-#
+
 # Custom actions for specific files/objects
-#
+
+
 def kill_monitor(source, target, env):
     call("fish -c 'kill (lsof -t /dev/tty.*usbserial*)'")
 
