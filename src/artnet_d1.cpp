@@ -23,10 +23,10 @@ BatteryNode* battery;
 uint8_t bytes_per_pixel, start_uni, universes;
 uint16_t led_count;
 bool mirror, folded, flipped;
+bool gammaCorrect;
 uint8_t log_artnet;
 bool debug;
 uint8_t hzMin, hzMax;
-bool gammaCorrect;
 
 // NEOPIXELBUS
 NeoGamma<NeoGammaTableMethod> *colorGamma;
@@ -71,30 +71,23 @@ bool brightnessHandler(const HomieRange& range, const String& value) {
       buses[0].busW->SetBrightness(brightnessOverride);
       buses[0].busW->Show();
   }
-  // logNode.setProperty("log").send("BRIGHTNESS SET FFS");
   return true;
 }
 bool colorHandler(const HomieRange& range, const String& value) {
   modeNode.setProperty("color").send(value);
   if(value.equals("blue")) {
     if(buses[0].bus) {
-        buses[0].bus->ClearTo(blueZ);
-        buses[0].bus->Show();
+      buses[0].bus->ClearTo(blueZ);
+      buses[0].bus->Show();
     }
     if(buses[0].busW) {
-        buses[0].busW->ClearTo(blue);
-        buses[0].busW->Show();
+      buses[0].busW->ClearTo(blue);
+      buses[0].busW->Show();
     }
   }
   return true;
 }
 
-=======
-bool onHandler(const HomieRange& range, const String& value) {
-  modeNode.setProperty("on").send(value);
-  Homie.reset();
-  return true;
-}
 
 void initHomie() {
   Homie_setFirmware(FW_NAME, FW_VERSION); Homie_setBrand(FW_BRAND);
@@ -111,7 +104,6 @@ void initHomie() {
   cfg = new ConfigNode();
 
   // if(!cfg_debug.get()) Homie.disableLogging();
-  modeNode.advertise("on").settable(onHandler);
 	modeNode.advertise("brightness").settable(brightnessHandler);
 	modeNode.advertise("color").settable(colorHandler);
 
@@ -161,13 +153,13 @@ void setup() {
   led_count = cfg->ledCount.get(); // TODO use led_count to calculate aprox possible frame rate
   source_led_count = led_count; //cfg->sourceLedCount.get();
   if(mirror) led_count *= 2;	// actual leds is twice conf XXX IMPORTANT: heavier dithering when mirroring
+
 	bytes_per_pixel = cfg->bytesPerLed.get();
 
   hzMin = 1; //cfg->strobeHzMin.get();
   hzMax = 10; //cfg->strobeHzMax.get();  // should these be setable through dmx control ch?                                                      
   start_uni = cfg->startUni.get();
   universes = 1; //cfg->universes.get();
-
 
   if(cfg->clearOnStart.get()) {
     DmaGRBW tempbus(144);
@@ -176,6 +168,7 @@ void setup() {
     delay(50); // no idea why the .Show() doesn't seem to take without this? somehow doesnt latch or something?
     Homie.getLogger() << "Cleared >1 universe of LEDs" << endl;
   }
+
 	if(bytes_per_pixel == 3) {
     buses[0].bus = new DmaGRB(led_count);
     buses[0].bus->Begin();
@@ -206,9 +199,14 @@ void setup() {
 
 int getPixelIndex(int pixel) { // XXX also handle matrix back-and-forth setups etc
   if(folded) { // pixelidx differs from pixel recieved
-    if(pixel % 2) return pixel/2;  // since every other pixel is from opposite end
-    else          return led_count-1 - pixel/2;
-  } else     return pixel;
+    if(pixel % 2) {
+      return pixel/2;  // since every other pixel is from opposite end
+    } else {
+      return led_count-1 - pixel/2;
+    }
+  } else {
+    return pixel;
+  }
 }
 
 void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolating >2 frames
@@ -273,10 +271,7 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
         subPixel[i] = data[t+i];
         if(subPixel[i] > 16) {
           int16_t tot = subPixel[i] + subPixelNoise[pixelidx][i];
-          if(tot >= 0 && tot <= 255) subPixel[i] = tot;
-          else if(tot < 0) subPixel[i] = 0;
-          else subPixel[i] = 255;
-					// subPixel[i] = (tot < 0? 0: (tot > 255? 255: tot));
+					subPixel[i] = (tot < 0? 0: (tot > 255? 255: tot));
         }
       }
 			RgbwColor color = RgbwColor(subPixel[0], subPixel[1], subPixel[2], subPixel[3]);
@@ -336,7 +331,7 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
 
   if(functions[CH_STROBE]) {
     if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
-      float hz = ((hzMax - hzMin) * (functions[CH_STROBE] - 1) / (255 - 1)) + hzMin;
+      float hz = (hzMax-hzMin) * (functions[CH_STROBE]-1) / (255-1) + hzMin;
       strobePeriod = 1000 / hz;   // 1 = 1 hz, 255 = 10 hz, to test
       onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
       // XXX instead of timers, use counter and strobe on frames? even 10hz would just be 1 on 3 off, easy...  more precise then use inter frames, yeah?
@@ -377,7 +372,6 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
   //WTF: when not enough current and strips yellow, upping atttack makes them less yellow. Also happens in general, but less noticable?
   if(functions[CH_ATTACK] != last_functions[CH_ATTACK]) {
     attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
-    if(log_artnet >= 2) Homie.getLogger() << "Attack: " << functions[CH_ATTACK] << " / " << attack << endl;
     LN.logf("updateFunctions", LoggerNode::DEBUG, "Attack: %d", functions[CH_ATTACK]);
   }
   if(functions[CH_RELEASE] != last_functions[CH_RELEASE]) {
@@ -473,9 +467,11 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
   // Strip, SerialDMX (via max485), non-IP wireless, a fadecandy?/any hw/software endpoint with
   // no fn ch capability so pixtol runs as basically an effect box?  or sniffer/tester
   // so might send as artnet cause actually came in by XLR, or fwd wifi by CAT or versa? neither end shall give any damns
-  //
-  // these should call strip/output directly
-    updatePixels(data); //XXX gotta send kength along too really no?
+
+  // ^^ WRONG. First pass to intermediate buffer, eg got multiple unis = dont flush til got all
+  // also easier to manipulate rotation etc BEFORE mapping onto strip, so dont have to convert back and forth
+
+    updatePixels(data); //XXX gotta send length along too really no?
     updateFunctions(functions, true);
 
     // this should be a scheduler calling outputter to actually render/write
@@ -508,13 +504,12 @@ void loopArtNet() {
   yield();
 
   switch(artnet.read()) { // check opcode for logging purposes, actual logic in callback function
-      LN.logf("loopArtNet()", LoggerNode::INFO, "whatever");
     case OpDmx:
       if(log_artnet >= 4) Homie.getLogger() << "DMX ";
       break;
     case OpPoll:
       if(log_artnet >= 2) Homie.getLogger() << "Art Poll Packet";
-      LN.logf("loopArtNet()", LoggerNode::INFO, "Art Poll Packet");
+      // LN.logf("artnet", LoggerNode::DEBUG, "Art Poll Packet");
       break;
   }
 }
