@@ -304,17 +304,18 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
 			uint8_t thisBrightness = color.CalculateBrightness();
       RgbwColor prevPixelColor = color; // same concept just others rub off on it instead of other way...
       RgbwColor nextPixelColor = color;
-			float weightPrev;
-			float weightNext;
+			float prevWeight, nextWeight;
       if(pixel-1 >= 0) {
 				prevPixelColor = busW->GetPixelColor(getPixelIndex(pixel-1));
-				weightPrev = prevPixelColor.CalculateBrightness() / thisBrightness+1;
+				prevWeight = prevPixelColor.CalculateBrightness() / thisBrightness+1;
+				if(prevPixelColor.CalculateBrightness() < thisBrightness * 0.5) // skip if dark, test
+					prevPixelColor = color;
 			}
       if(pixel+1 < led_count) {
 				nextPixelColor = busW->GetPixelColor(getPixelIndex(pixel+1));
-				weightNext = nextPixelColor.CalculateBrightness() / thisBrightness+1;
-				// if(nextPixelColor.CalculateBrightness() < thisBrightness * 0.7) // skip if dark, test
-				// 	nextPixelColor = color;
+				nextWeight = nextPixelColor.CalculateBrightness() / thisBrightness+1;
+				if(nextPixelColor.CalculateBrightness() < thisBrightness * 0.5) // skip if dark, test
+					nextPixelColor = color;
 					// do some more shit tho. Important thing is mixing colors, so maybe look at saturation as well as brightness dunno
 					// since we have X and Y should weight towards more interesting.
 			}
