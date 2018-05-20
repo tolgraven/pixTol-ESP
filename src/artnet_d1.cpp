@@ -3,6 +3,7 @@
 WiFiUDP udp;
 ArtnetnodeWifi artnet;
 ConfigNode* cfg;
+BatteryNode* battery;
 
 // NODES: ConfigNode, StateNode, more?
 // also encapsulate renderer, input, output
@@ -109,8 +110,8 @@ void initHomie() {
   modeNode.advertise("on").settable(onHandler);
 	modeNode.advertise("brightness").settable(brightnessHandler);
 	modeNode.advertise("color").settable(colorHandler);
-  // activityNode.advertise("artnet");
-  logNode.advertise("log");
+
+  battery = new BatteryNode();
 
 	Homie.setup();
 }

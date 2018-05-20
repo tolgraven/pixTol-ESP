@@ -10,6 +10,7 @@
 #include <NeoPixelBrightnessBus.h>
 #include <Ticker.h>
 #include "util.h"
+#include "battery.h"
 #include "config.h"
 #include "strip.h"
 // #include <ArdOSC.h>
