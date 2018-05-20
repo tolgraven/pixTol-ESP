@@ -211,12 +211,14 @@ int getPixelIndex(int pixel) { // XXX also handle matrix back-and-forth setups e
   } else     return pixel;
 }
 
-uint8_t iteration = 0;
-int8_t subPixelNoise[125][4] = {0};
-
 void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolating >2 frames
+  static uint8_t iteration = 0;
+  static int8_t subPixelNoise[125][4] = {0};
+
   uint8_t* functions = &data[-1];
-  int data_size = bytes_per_pixel * led_count + DMX_FN_CHS;
+  // int data_size = bytes_per_pixel * cfg->sourceLedCount.get() + DMX_FN_CHS; // TODO use led_count to calculate aprox possible frame rate
+  int data_size = bytes_per_pixel * source_led_count + DMX_FN_CHS; // TODO use led_count to calculate aprox possible frame rate
+  // cant do the up/downsampling earlier since need to mix colors and stuff...
 	int pixel = 0; //512/bytes_per_pixel * (universe - 1);  // for one-strip-multiple-universes
   int pixelidx;
 	DmaGRBW *busW = buses[0].busW;
@@ -378,13 +380,16 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
     if(log_artnet >= 2) Homie.getLogger() << "Attack: " << functions[CH_ATTACK] << " / " << attack << endl;
     LN.logf("updateFunctions", LoggerNode::DEBUG, "Attack: %d", functions[CH_ATTACK]);
   }
-  if(functions[CH_RELEASE] != last_functions[CH_RELEASE])
-    rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_RELEASE]/285);
+  if(functions[CH_RELEASE] != last_functions[CH_RELEASE]) {
+      rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_RELEASE]/285);
+  }
 
-  if(functions[CH_DIMMER_ATTACK] != last_functions[CH_DIMMER_ATTACK])
-    dimmer_attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
-  if(functions[CH_DIMMER_RELEASE] != last_functions[CH_DIMMER_RELEASE])
-    dimmer_rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_RELEASE]/285);
+  if(functions[CH_DIMMER_ATTACK] != last_functions[CH_DIMMER_ATTACK]) {
+      dimmer_attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
+  }
+  if(functions[CH_DIMMER_RELEASE] != last_functions[CH_DIMMER_RELEASE]) {
+      dimmer_rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_RELEASE]/285);
+  }
 
   if(brightnessOverride <= 0) {
     LN.logf("brightness", LoggerNode::INFO, "%s", "no override");
@@ -476,8 +481,16 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
     // this should be a scheduler calling outputter to actually render/write
     // frames can and do stutter, interpolation and minor buffering can help that
     // plus remember animation retiming off music tempo etc, that's for like a pi tho
-    if(buses[0].bus) buses[0].bus->Show();
-    else if(buses[0].busW) buses[0].busW->Show();
+    // + like "if safe mode: check each pixel brightness, calculate approx total mA, dim all if needed (running off usb, straight offa ESP etc)"
+
+    if(buses[0].bus) {
+      if(buses[0].bus->CanShow()) buses[0].bus->Show();
+    }
+    else if(buses[0].busW) {
+      if(buses[0].busW->CanShow()) {
+          buses[0].busW->Show();
+      }
+    }
 
     // above entity should keep track of all incoming data sources and merge appropriately
     // depending on prio, LTP/HTP/mymuchbetterideaofweightedaverages
