@@ -5,6 +5,9 @@
 #include <NeoPixelAnimator.h>
 #include <Homie.h>
 #include <LoggerNode.h>
+#include <ArtnetnodeWifi.h>
+#include <WiFiUdp.h>
+#include <Ticker.h>
 #include <ArduinoOTA.h>
 #include "strip.h"
 
@@ -17,8 +20,17 @@ const extern RgbwColor green;
 const extern RgbwColor blue;
 
 extern HomieNode modeNode;
-extern HomieNode activityNode;
-extern HomieNode logNode;
+
+extern HomieNode outputNode;
+extern HomieNode inputNode;
+
+
+extern ArtnetnodeWifi artnet;
+extern WiFiUDP udp;
+
+bool outputHandler(const String& property, const HomieRange& range, const String& value);
+bool inputHandler(const String& property, const HomieRange& range, const String& value);
+void initArtnet(const String& name, uint8_t numPorts, uint8_t startingUniverse, void (*callback)(uint16_t, uint16_t, uint8_t, uint8_t*));
 
 void blinkStrip(uint8_t numLeds, RgbwColor color, uint8_t blinks);
 void blinkStatus(RgbColor color, uint8_t blinks);

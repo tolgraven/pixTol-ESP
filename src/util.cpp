@@ -10,6 +10,69 @@ const RgbwColor blue =    RgbwColor(20, 60, 180, 20);
 
 const RgbwColor* otaColor;
 
+ArtnetnodeWifi artnet;
+WiFiUDP udp;
+
+HomieNode modeNode("mode", "mode");
+
+HomieNode outputNode("io", "outputs", outputHandler);
+HomieNode inputNode("io", "inputs", inputHandler);
+
+bool outputHandler(const String& property, const HomieRange& range, const String& value) {
+  outputNode.setProperty(property).send(value);
+ 	LN.logf(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
+
+  if(property.equals("strip")) {
+    if(value.equals("on")) {
+      pinMode(RX, OUTPUT);
+    } else {
+      pinMode(RX, INPUT);
+    }
+  }
+  // else if(property.equals("serial")) {
+  //
+  // }
+}
+
+bool inputHandler(const String& property, const HomieRange& range, const String& value) {
+  inputNode.setProperty(property).send(value);
+ 	LN.logf(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
+
+  if(property.equals("artnet")) {
+    if(value.equals("on")) {
+      artnet.enableDMX();
+      // for(uint8_t i=0; i < cfg->universes.get(); i++) {
+      //     artnet.enableDMXOutput(i);
+      // }
+    } else {
+      artnet.disableDMX();
+      // for(uint8_t i=0; i < cfg->universes.get(); i++) {
+      //     artnet.disableDMXOutput(i);
+      // }
+    }
+  // } else if(property.equals("serial")) {
+  //   if(value.equals("on")) { //configure serial port for data input
+  //
+  //   } else {
+  //
+  //   }
+  // } else if(property.equals("mqtt")) {
+  //   if(value.equals("on")) {
+  //
+  //   } else {
+  //
+  //   }
+  // } else if(property.equals("dmx")) {
+  //   if(value.equals("on")) {
+  //
+  //   } else {
+  //
+  //   }
+  }
+	return true;
+}
+
+
 // put in animation class for strip, or at least pass a bus object lol
 void blinkStrip(uint8_t numLeds, RgbwColor color, uint8_t blinks) {
   DmaGRBW tempbus(numLeds); // want to clear any previous garbage as well...
@@ -22,6 +85,18 @@ void blinkStrip(uint8_t numLeds, RgbwColor color, uint8_t blinks) {
     delay(100);
   }
 }
+
+void initArtnet(const String& name, uint8_t numPorts, uint8_t startingUniverse, void (*callback)(uint16_t, uint16_t, uint8_t, uint8_t*) ) {
+  artnet.setName(name.c_str());
+  artnet.setNumPorts(numPorts);
+	artnet.setStartingUniverse(startingUniverse);
+	for(uint8_t i=0; i < numPorts; i++) {
+      artnet.enableDMXOutput(i);
+  }
+	artnet.begin();
+	artnet.setArtDmxCallback(callback);
+}
+
 
 DmaGRBW *OTAbus;
 uint16_t leds;

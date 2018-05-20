@@ -1,7 +1,5 @@
 #include "artnet_d1.h"
 
-WiFiUDP udp;
-ArtnetnodeWifi artnet;
 ConfigNode* cfg;
 BatteryNode* battery;
 
@@ -163,7 +161,7 @@ void setup() {
     buses[0].busW->Begin();
 	}
 
-	initArtnet();
+	initArtnet(Homie.getConfiguration().name, universes, cfg->startUni.get(), onDmxFrame);
 	setupOTA(led_count);
 
   if(cfg->debug.get()) {
