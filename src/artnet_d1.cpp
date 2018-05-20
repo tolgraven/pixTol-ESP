@@ -24,6 +24,7 @@ uint8_t bytes_per_pixel, start_uni, universes;
 uint16_t led_count;
 bool mirror, folded, flipped;
 uint8_t log_artnet;
+bool debug;
 uint8_t hzMin, hzMax;
 bool gammaCorrect;
 
@@ -139,18 +140,19 @@ void setup() {
   flipped = false; //cfg->setFlipped.get(); // flipped = strip.setFlipped.get();
   gammaCorrect = false; // strip.setGammaCorrect.get();
 
-  mirror    = false; //strip.setMirrored.get();
-  led_count = cfg->ledCount.get();// TODO use led_count to calculate aprox possible frame rate
+  log_artnet = cfg->logArtnet.get();
+  debug = true; //cfg->debug.get();
+
+  led_count = cfg->ledCount.get(); // TODO use led_count to calculate aprox possible frame rate
+  source_led_count = led_count; //cfg->sourceLedCount.get();
   if(mirror) led_count *= 2;	// actual leds is twice conf XXX IMPORTANT: heavier dithering when mirroring
 	bytes_per_pixel = cfg->bytesPerLed.get();
-  log_artnet = cfg->logArtnet.get();
-  folded = false; // folded     = strip.setFolded.get();
-  flipped = false; // flipped = strip.setFlipped.get();
-  gammaCorrect = false; // strip.setGammaCorrect.get();
-  hzMin = cfg->strobeHzMin.get();
-  hzMax = cfg->strobeHzMax.get();  // should these be setable through dmx control ch?                                                      
+
+  hzMin = 1; //cfg->strobeHzMin.get();
+  hzMax = 10; //cfg->strobeHzMax.get();  // should these be setable through dmx control ch?                                                      
   start_uni = cfg->startUni.get();
-  universes = cfg->universes.get();
+  universes = 1; //cfg->universes.get();
+
 
   if(cfg->clearOnStart.get()) {
     DmaGRBW tempbus(144);
@@ -170,7 +172,7 @@ void setup() {
 	initArtnet(Homie.getConfiguration().name, universes, cfg->startUni.get(), onDmxFrame);
 	setupOTA(led_count);
 
-  if(cfg->debug.get()) {
+  if(debug) {
     Homie.getLogger() << "Chance to flash OTA before entering main loop";
     for(int8_t i = 0; i < 5; i++) {
       ArduinoOTA.handle(); // give chance to flash new code in case loop is crashing

@@ -8,24 +8,31 @@ class ConfigNode: public HomieNode {
  public:
     ConfigNode();
 
-    HomieSetting<bool> debug;              
+    // seems homie (now?) has a 10 settings limit. scale down settings, or patch homie?
+    // HomieSetting<bool> debug;              
     HomieSetting<long> logArtnet;         
-    HomieSetting<bool> logToMqtt;        
-    HomieSetting<bool> logToSerial;      
+    // HomieSetting<bool> logToMqtt;        
+    // HomieSetting<bool> logToSerial;      
 
     HomieSetting<long> dmxHz;
-    HomieSetting<long> strobeHzMin;
-    HomieSetting<long> strobeHzMax;
+    // HomieSetting<double> strobeHzMin;
+    // HomieSetting<double> strobeHzMax;
 
     HomieSetting<bool> clearOnStart;
 
     HomieSetting<long> bytesPerLed;
     HomieSetting<long> interFrames;
     HomieSetting<long> ledCount;
+    // HomieSetting<long> sourceLedCount;
 
-    HomieSetting<long> universes;
+    // HomieSetting<long> universes;
     HomieSetting<long> startUni;
-    HomieSetting<long> startAddr;
+    // HomieSetting<long> startAddr;
+
+    //temp til strip class in action
+    HomieSetting<bool> setMirrored;             
+    HomieSetting<bool> setFolded; 
+    // HomieSetting<bool> setFlipped;
 
  protected:
   virtual bool handleInput(const String& property, const HomieRange& range, const String& value);

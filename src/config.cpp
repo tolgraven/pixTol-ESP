@@ -11,53 +11,68 @@
 
 ConfigNode::ConfigNode():
 HomieNode("pixTol", "config"),
-debug("debug", "debug mode, extra logging, chance to reflash ota on boot"),
+// debug("debug", "debug mode, extra logging, chance to reflash ota on boot"),
 logArtnet("log_artnet", "log level for incoming artnet packets"),
-logToSerial("log_to_serial", "whether to log to serial"),
-logToMqtt("log_to_mqtt", "whether to log to mqtt"),
-                                                                                                                                                                                
+// logToMqtt("log_to_mqtt", "whether to log to mqtt"),
+// logToSerial("log_to_serial", "whether to log to serial"),
+
 dmxHz("dmx_hz", "dmx frame rate"),      // use to calculate strobe and interpolation stuff
-strobeHzMin("strobe_hz_min", "lowest strobe frequency"),
-strobeHzMax("strobe_hz_max", "highest strobe frequency"),
-                                                                                                                                                                                
+// strobeHzMin("strobe_hz_min", "lowest strobe frequency"),
+// strobeHzMax("strobe_hz_max", "highest strobe frequency"),
+
 clearOnStart("clear_on_start", "clear strip on boot"),
-                                                                                                                                                                                
+
 bytesPerLed("bytes_per_pixel", "3 for RGB, 4 for RGBW"),
 interFrames("inter_frames", "how many frames of interpolation"),
 ledCount("led_count", "number of LEDs in strip"), // rework for multiple strips
-                                                                                                                                                                                
-universes("universes", "number of DMX universes"),
+// sourceLedCount("source_led_count", "number of pixels in source animation data, will be mapped onto led_count"), // rework for multiple strips
+
+// universes("universes", "number of DMX universes"),
 startUni("starting_universe", "index of first DMX universe used"),
-startAddr("starting_address", "index of beginning of strip, within starting_universe.") // individual pixel control starts after x function channels offset (for strobing etc)
+// startAddr("starting_address", "index of beginning of strip, within starting_universe."), // individual pixel control starts after x function channels offset (for strobing etc)
+
+
+setMirrored("mirror_second_half", "whether to mirror strip back onto itself, for controlling folded strips >1 uni as if one"),
+setFolded("folded_alternating", "alternating pixels")
+// setFlipped("flip", "flip strip direction")
 {
-  debug.setDefaultValue(true);
+    setMirrored.setDefaultValue(false);
+    setFolded.setDefaultValue(false);
+    // setFlipped.setDefaultValue(false);
+  // + like freeze("freeze", "stops all inputs and outputs") to try to flick if having a hard time flashing ota?
+  // debug.setDefaultValue(true);
   logArtnet.setDefaultValue(2);
-  logToMqtt.setDefaultValue(true);
-  logToSerial.setDefaultValue(false);
+  // logToMqtt.setDefaultValue(true);
+  // logToSerial.setDefaultValue(false);
 
   dmxHz.setDefaultValue(40);
   strobeHzMin.setDefaultValue(1);
   strobeHzMax.setDefaultValue(10);
 
-  clearOnStart.setDefaultValue(false);
-
-  bytesPerLed.setDefaultValue(4).setValidator([] (long candidate) {
-			return (candidate > 0 && candidate < 7);});
+  // strobeHzMin.setDefaultValue(1).setValidator([] (double val) {
+  //     return (val > 0.1 && val < 20);});
+  // strobeHzMax.setDefaultValue(10).setValidator([] (double val) {
+	// 		return (val > 0.1 && val < 20);});
 
   ledCount.setDefaultValue(120).setValidator([] (long candidate) {
 			return (candidate > 0 && candidate <= bytesPerLed.get() * (universes.get() * ledCount.get()));}); // XXX check
 
-  universes.setDefaultValue(1).setValidator([] (long candidate) {
-			return (candidate > 0 && candidate <= 4);});
+  bytesPerLed.setDefaultValue(4).setValidator([] (long val) {
+			return (val > 0 && val < 7);});
+  ledCount.setDefaultValue(120).setValidator([] (long val) {
+			// return (val > 0 && val <= bytesPerLed.get() * (universes.get() * ledCount.get()));}); // XXX check
+			return (val > 0 && val <= 288);});
+  // sourceLedCount.setDefaultValue(120).setValidator([] (long val) {
+	// 		return (val > 0 && val <= 288);});
 
-	startUni.setDefaultValue(1).setValidator([] (long candidate) {
-			return (candidate > 0 && candidate <= 16);}); // for now, one artnet subnet...
-  startAddr.setDefaultValue(1).setValidator([] (long candidate) {
-			return (candidate > 0 && candidate <= 512);});
+  // universes.setDefaultValue(1).setValidator([] (long val) {
+	// 		return (val > 0 && val <= 4);});
+	startUni.setDefaultValue(1).setValidator([] (long val) {
+			return (val > 0 && val <= 16);}); // for now, one artnet subnet...
+  // startAddr.setDefaultValue(1).setValidator([] (long val) {
+	// 		return (val > 0 && val <= 512);});
 
-  universes.setDefaultValue(1);
-	startUni.setDefaultValue(1);
-  startAddr.setDefaultValue(1);
+  interFrames.setDefaultValue(2);
 
   // advertise("debug").settable(); //don't need this cause can update settings ocer mqtt anyways
 }
