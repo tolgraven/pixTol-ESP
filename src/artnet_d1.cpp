@@ -112,16 +112,6 @@ void initHomie() {
 	Homie.setup();
 }
 
-void initArtnet() {
-  artnet.setName(Homie.getConfiguration().name);
-  artnet.setNumPorts(cfg->universes.get());
-	artnet.setStartingUniverse(cfg->startUni.get());
-	for(uint8_t i=0; i < cfg->universes.get(); i++) artnet.enableDMXOutput(i);
-  artnet.enableDMXOutput(0);
-	artnet.begin();
-	artnet.setArtDmxCallback(onDmxFrame);
-  // udp.begin(ARTNET_PORT); // done by artnetnode // yup shouldnt need
-}
 
 void setup() {
 	Serial.begin(SERIAL_BAUD);
