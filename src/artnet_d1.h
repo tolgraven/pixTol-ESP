@@ -11,11 +11,14 @@
 #include "battery.h"
 #include "config.h"
 #include "strip.h"
+#include "pixelbuffer.h"
+#include "outputnode.h"
+#include "inputnode.h"
 // #include <ArdOSC.h>
 
 #define FW_BRAND "tolgrAVen"
 #define FW_NAME "pixTol"
-#define FW_VERSION "1.0.11"
+#define FW_VERSION "1.0.16"
 
 #define LED_PIN             5  // D1=5, D2=4, D3=0, D4=2  D0=16, D55=14, D6=12, D7=13, D8=15
 #define LED_STATUS_PIN      2
