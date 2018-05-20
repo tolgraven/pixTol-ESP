@@ -52,7 +52,8 @@ uint8_t strobeTickerClosed, strobeTickerOpen;
 
 uint8_t brightness;
 uint8_t last_brightness = 0;
-uint8_t brightnessOverride;
+uint8_t brightnessOverride = 255;
+uint8_t outBrightness = 255;
 float attack, rls, dimmer_attack, dimmer_rls;
 
 BitBangGRB statusRing(D4, 12);
@@ -99,10 +100,11 @@ void initHomie() {
   Homie_setFirmware(FW_NAME, FW_VERSION); Homie_setBrand(FW_BRAND);
 	Homie.setConfigurationApPassword(FW_NAME);
   
-  // Homie.setLedPin(D2, HIGH); // Homie.disableLedFeedback();
+  // Homie.setLedPin(D2, HIGH);
+ // Homie.disableLedFeedback();
   Homie.onEvent(onHomieEvent);
   Homie.setGlobalInputHandler(globalInputHandler);
-  // Homie.setBroadcastHandler(broadcastHandler);
+  Homie.setBroadcastHandler(broadcastHandler);
   // Homie.setSetupFunction(homieSetup).setLoopFunction(homieLoop);
 	// Homie.setLoggingPrinter(); //only takes Serial objects. Mod for mqtt?
 
@@ -384,22 +386,21 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
   if(functions[CH_DIMMER_RELEASE] != last_functions[CH_DIMMER_RELEASE])
     dimmer_rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_RELEASE]/285);
 
-  if(!brightnessOverride) {
+  if(brightnessOverride <= 0) {
+    LN.logf("brightness", LoggerNode::INFO, "%s", "no override");
     bool brighter = brightness > last_brightness;
     brightness = last_brightness + (functions[CH_DIMMER] - last_brightness) * (brighter ? dimmer_attack : dimmer_rls);
-    if(brightness < 4) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
-    else if(brightness > 255) brightness = 255;
-  
-    last_brightness = brightness;
+    // if(brightness < 4) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
+    // else if(brightness > 255) brightness = 255;
+
   } else {
     brightness = brightnessOverride;
   }
-  uint8_t outBrightness = shutterOpen? brightness: 0;
+  last_brightness = brightness;
+  outBrightness = (shutterOpen? brightness: 0);
 
-  // if(buses[0].bus) buses[0].bus->SetBrightness(outBrightness);
-  // else if(buses[0].busW) buses[0].busW->SetBrightness(outBrightness);
-  if(buses[0].bus) buses[0].bus->SetBrightness(brightness);
-  else if(buses[0].busW) buses[0].busW->SetBrightness(brightness);
+  if(buses[0].bus) buses[0].bus->SetBrightness(outBrightness);
+  else if(buses[0].busW) buses[0].busW->SetBrightness(outBrightness);
 }
 
 void renderInterFrame() {
@@ -433,8 +434,8 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
   // if(modeNode.) // is set to dmx control. tho just kill then instead prob and never reach here
 
   static int first = millis();
-  static int dmxFrameCounter = 0;
-  static int totalTime = 0;
+  static long dmxFrameCounter = 0;
+  static bool dmxLed = false;
   dmxFrameCounter++;
 
   if(!(dmxFrameCounter % 10)) {
@@ -448,11 +449,16 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
     // brightnessOverride = statusBrightness;
   }
   if(dmxFrameCounter >= cfg->dmxHz.get() * 10) {
+    int totalTime = 0;
     totalTime = millis() - first;
-      LN.logf("onDmxFrame()", LoggerNode::INFO, "DMX 10s, avg %dhz", dmxFrameCounter / (totalTime / 1000));
-      LN.logf("onDmxFrame()", LoggerNode::DEBUG, "Uni%s, data %s", universe, data);
+      if(length > 12) {
+        LN.logf("DMX", LoggerNode::INFO, "avg %dhz, Uni%d, fns %d, %d %d, %d/%d, %d %d, %d/%d, %d/%d", dmxFrameCounter / (totalTime / 1000),
+            universe, data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8], data[9], data[10]);
+      }
       dmxFrameCounter = 0;
       first = millis();
+      LN.logf("brightness", LoggerNode::DEBUG, "b var: %d, override: %d, out: %d",
+          brightness, brightnessOverride, outBrightness);
   }
 	if(log_artnet >= 2) Homie.getLogger() << universe;
 
@@ -517,8 +523,7 @@ void loop() {
 
   // XXX write bluetooth receiver for raspberry, can also send commands that way (fwded to esps by wifi)
 	Homie.loop();
-  if(Homie.isConnected()) {
-    // kill any existing go-into-wifi-finder timer, etc
+  if(Homie.isConnected()) { // kill any existing go-into-wifi-finder timer, etc
     ArduinoOTA.handle(); // soon entirely redundant due to homie
   } else {
     // stays stuck in this state for a while on boot
