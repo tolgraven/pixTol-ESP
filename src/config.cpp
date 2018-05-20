@@ -23,6 +23,7 @@ strobeHzMax("strobe_hz_max", "highest strobe frequency"),
 clearOnStart("clear_on_start", "clear strip on boot"),
                                                                                                                                                                                 
 bytesPerLed("bytes_per_pixel", "3 for RGB, 4 for RGBW"),
+interFrames("inter_frames", "how many frames of interpolation"),
 ledCount("led_count", "number of LEDs in strip"), // rework for multiple strips
                                                                                                                                                                                 
 universes("universes", "number of DMX universes"),

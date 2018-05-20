@@ -39,10 +39,9 @@ uint8_t last_data[512] = {0};
 uint8_t* last_functions = &last_data[-1];  // take care of DMX ch offset...
 
 Ticker timer_inter;
-const uint8_t interFrames = 2; // ~40 us/led gives 5 ms for 1 universe of 125 leds
-// so around 4-5 frames per frame should be alright.
-// XXX NOT if mirrored remember! make dybamic!!!
-const float blendBaseline = 1.00f - 1.00f / (1 + interFrames); // for now, make dynamic...
+uint8_t interFrames; // ~40 us/led gives 5 ms for 1 universe of 125 leds. mirrored 144 rgb a 30 is 9 so 1-2 inters
+// so around 4-5 frames per frame should be alright.  XXX NOT if mirrored remember! make dynamic!!!
+float blendBaseline;  // float blendBaseline = 1.00f - 1.00f / (1 + interFrames); // for now, make dynamic...
 
 bool shutterOpen = true;
 float onFraction = 4;
@@ -132,6 +131,13 @@ void setup() {
 
   LN.log(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Before Homie setup())");
   initHomie();
+  interFrames = cfg->interFrames.get();
+  blendBaseline = 1.00f - 1.00f / (1 + interFrames);
+
+  mirror    = cfg->setMirrored.get(); //strip.setMirrored.get();
+  folded = cfg->setFolded.get(); // folded     = strip.setFolded.get();
+  flipped = false; //cfg->setFlipped.get(); // flipped = strip.setFlipped.get();
+  gammaCorrect = false; // strip.setGammaCorrect.get();
 
   mirror    = false; //strip.setMirrored.get();
   led_count = cfg->ledCount.get();// TODO use led_count to calculate aprox possible frame rate
@@ -323,10 +329,10 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
       else            strobeTickerClosed--;
       if(!strobeTickerClosed) {
         shutterOpen = true;
-        strobeTickerClosed = strobePeriod / cfg->dmxHz.get();
+        strobeTickerClosed = interFrames * strobePeriod / cfg->dmxHz.get();
       } else if(!strobeTickerOpen) {
         shutterOpen = false;
-        strobeTickerOpen = onTime / cfg->dmxHz.get();
+        strobeTickerOpen = interFrames * onTime / cfg->dmxHz.get();
       }
     }
   } else { // 0, clean up
@@ -384,14 +390,18 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
 void renderInterFrame() {
   updatePixels(last_data);
   updateFunctions(last_functions, false); // XXX fix so interpolates!!
-  if(buses[0].bus) buses[0].bus->Show();
-  else if(buses[0].busW) buses[0].busW->Show();
+  if(buses[0].bus) {
+      if(buses[0].bus->CanShow()) buses[0].bus->Show();
+  }
+  else if(buses[0].busW) {
+      if(buses[0].busW->CanShow()) buses[0].busW->Show();
+  }
 }
 
 uint8_t interCounter;
 void interCallback() {
   if(interCounter > 1) { // XXX figure out on its own whether will overflow, so can just push towards max always
-    timer_inter.once_ms((1000/interFrames / cfg->dmxHz.get()), interCallback);
+    timer_inter.once_ms((1000/(interFrames+1)) / cfg->dmxHz.get(), interCallback);
   }
   renderInterFrame(); // should def try proper temporal dithering here...
   interCounter--;
@@ -399,8 +409,10 @@ void interCallback() {
 
 // unsigned long renderMicros; // seems just over 10us per pixel, since 125 gave around 1370... much faster than WS??
 
-
-// seems just over 10us per pixel, since 125 gave around 1370... much faster than WS??
+// seems just over 10us per pixel, since 125 gave around 1370... much faster than WS??  or something off with measurement
+//keyframe as TARGET: can be overshot; keep it moving
+//calculating diff for(color1-color2)/interFrames and simply adding this static amount each inter
+//faster + solves issue of uneven interpolation, and never quite arriving at incoming frame
 void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
 	if(universe < start_uni || universe >= start_uni + universes) return; // lib takes care of this no?
   // if(modeNode.) // is set to dmx control. tho just kill then instead prob and never reach here
@@ -441,7 +453,8 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
     // and schedule interpolation
     memcpy(last_data, data, sizeof(uint8_t) * 512);
     interCounter = interFrames;
-    if(interCounter) timer_inter.once_ms((1000/interFrames / cfg->dmxHz.get()), interCallback);
+    // 1000/interFrames / hz is wrong no?  if 1 inter 40 hz then should be at 12.5 ms, not 25, so add 1? 
+    if(interCounter) timer_inter.once_ms((1000/(interFrames+1)) / cfg->dmxHz.get(), interCallback);
   }
 
 void loopArtNet() {

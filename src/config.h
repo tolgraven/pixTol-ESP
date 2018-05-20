@@ -20,6 +20,7 @@ class ConfigNode: public HomieNode {
     HomieSetting<bool> clearOnStart;
 
     HomieSetting<long> bytesPerLed;
+    HomieSetting<long> interFrames;
     HomieSetting<long> ledCount;
 
     HomieSetting<long> universes;
