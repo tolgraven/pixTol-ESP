@@ -21,7 +21,7 @@ BatteryNode* battery;
 
 // GLOBALS FROM SETTINGS
 uint8_t bytes_per_pixel, start_uni, universes;
-uint16_t led_count;
+uint16_t led_count, source_led_count;
 bool mirror, folded, flipped;
 bool gammaCorrect;
 uint8_t log_artnet;
@@ -33,6 +33,7 @@ NeoGamma<NeoGammaTableMethod> *colorGamma;
 struct busState {
 	DmaGRB *bus;
   DmaGRBW *busW;
+  // NeoPixelBrightnessBus<T_COLOR_FEATURE, T_METHOD> *busActive;
   // UartGRBW *busW2; // NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266AsyncUart800KbpsMethod> *busW2;
 }; busState* buses = new busState[1](); // XXX didnt get Uart mode working, Dma works but iffy with concurrent bitbanging - stick to bang?  +REMEMBER: DMA and UART must ->Begin() after BitBang...
 
@@ -217,43 +218,37 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
   float brightnessFraction = 255 / (brightness ? brightness : 1);     // ahah can't believe divide by zero got me
 
   for(int t = DMX_FN_CHS; t < data_size; t += bytes_per_pixel) {
+    uint8_t maxNoise = 32; //baseline, 10 either direction
+    if(functions[CH_NOISE]) maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
     pixelidx = getPixelIndex(pixel);
     
 		if(bytes_per_pixel == 3) {  // create wrapper possibly so dont need this repeat shit.  use ColorObject base class etc...
-      // uint8_t maxNoise = 32; //baseline, 10 either direction
-      // if(functions[CH_NOISE]) maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
 
       uint8_t subPixel[3];
       for(uint8_t i=0; i < 3; i++) {
-        // if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
-        // else if(iteration >= interFrames * 10) iteration = 0;
-        // iteration++;
+        if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
+        else if(iteration >= interFrames * 10) iteration = 0;
+        iteration++;
 
         subPixel[i] = data[t+i];
         if(subPixel[i] > 16) {
           int16_t tot = subPixel[i] + subPixelNoise[pixelidx][i];
-          if(tot >= 0 && tot <= 255) subPixel[i] = tot;
-          else if(tot < 0) subPixel[i] = 0;
-          else subPixel[i] = 255;
+					subPixel[i] = (tot < 0? 0: (tot > 255? 255: tot));
         }
       }
 			RgbColor color = RgbColor(subPixel[0], subPixel[1], subPixel[2]);
       RgbColor lastColor = bus->GetPixelColor(pixelidx);  // get from pixelbus since we can resolve dimmer-related changes
       bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
       color = RgbColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
-			if(color.CalculateBrightness() < 6) { // avoid bitcrunch
-        color.Darken(6); // XXX should rather flag pixel for temporal dithering yeah?
-      }
-
-      // if(gammaCorrect) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
+			// if(color.CalculateBrightness() < 6) { // avoid bitcrunch
+      //   color.Darken(6); // XXX should rather flag pixel for temporal dithering yeah?
+      // }
       if(!flipped) bus->SetPixelColor(pixelidx, color);
-      else         bus->SetPixelColor(led_count-1 - pixelidx, color);
+      else         bus->SetPixelColor(cfg->ledCount.get()-1 - pixelidx, color);
 
 			if(mirror) bus->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
 
-		} else if(bytes_per_pixel == 4) { 
-      uint8_t maxNoise = 32; //baseline, 10 either direction
-      if(functions[CH_NOISE]) maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
+		} else if(bytes_per_pixel == 4) {
 
       uint8_t subPixel[4];
       for(uint8_t i=0; i < 4; i++) {
@@ -271,16 +266,16 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
       RgbwColor lastColor = busW->GetPixelColor(pixelidx);  // get from pixelbus since we can resolve dimmer-related changes
       bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
       // XXX need to actually restore lastColor to its original brightness before mixing tho...
-      color = RgbwColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
-			if(color.CalculateBrightness() < 6) { // avoid bitcrunch
-        color.Darken(6); // XXX should rather flag pixel for temporal dithering yeah?
-      }
+      color = RgbwColor::LinearBlend(color, lastColor, (brighter? attack: rls));
+			// if(color.CalculateBrightness() < 6) { // avoid bitcrunch
+      //   color.Darken(6); // XXX should rather flag pixel for temporal dithering yeah?
+      // }
 
       if(gammaCorrect) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
 
       // all below prob go in own func so dont have to think about them and can reuse in next loop...
       if(!flipped) busW->SetPixelColor(pixelidx, color);
-      else         busW->SetPixelColor(led_count-1 - pixelidx, color);
+      else         busW->SetPixelColor(cfg->ledCount.get()-1 - pixelidx, color);
 
 			if(mirror) busW->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
 		} pixel++;
