@@ -1,6 +1,5 @@
 from base64 import b64decode
 from SCons.Script import ARGUMENTS, AlwaysBuild
-# from subprocess import call
 Import("env")
 # Upload actions
 # def before_upload(source, target, env):
