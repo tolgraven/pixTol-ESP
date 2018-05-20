@@ -162,10 +162,12 @@ void setup() {
   universes = 1; //cfg->universes.get();
 
   if(cfg->clearOnStart.get()) {
-    DmaGRBW tempbus(144);
+    DmaGRBW tempbus(288);
     tempbus.Begin();
+    tempbus.ClearTo(black);
     tempbus.Show();
-    delay(50); // no idea why the .Show() doesn't seem to take without this? somehow doesnt latch or something?
+    delay(20); // no idea why the .Show() doesn't seem to take without this? somehow doesnt latch or something?
+    yield();
     Homie.getLogger() << "Cleared >1 universe of LEDs" << endl;
   }
 
@@ -184,8 +186,9 @@ void setup() {
     Homie.getLogger() << "Chance to flash OTA before entering main loop";
     for(int8_t i = 0; i < 5; i++) {
       ArduinoOTA.handle(); // give chance to flash new code in case loop is crashing
-      delay(100);
+      delay(20);
       Homie.getLogger() << ".";
+      yield();
     }
 	  // LN.setLoglevel(LoggerNode::DEBUG); //default?
   }
