@@ -55,6 +55,10 @@ uint8_t last_brightness = 0;
 uint8_t brightnessOverride;
 float attack, rls, dimmer_attack, dimmer_rls;
 
+BitBangGRB statusRing(D4, 12);
+uint8_t statusBrightness = 15;
+
+
 bool brightnessHandler(const HomieRange& range, const String& value) {
   modeNode.setProperty("brightness").send(value);
   brightnessOverride = value.toInt();
@@ -134,6 +138,15 @@ void setup() {
   initHomie();
   interFrames = cfg->interFrames.get();
   blendBaseline = 1.00f - 1.00f / (1 + interFrames);
+
+  statusRing.Begin();
+  statusRing.ClearTo(RgbColor(0, 0, 0));
+  statusRing.Show();
+  delay(100);
+  statusRing.ClearTo(blueZ);
+  statusRing.Show();
+  delay(10);
+
 
   mirror    = cfg->setMirrored.get(); //strip.setMirrored.get();
   folded = cfg->setFolded.get(); // folded     = strip.setFolded.get();
@@ -424,6 +437,16 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
   static int totalTime = 0;
   dmxFrameCounter++;
 
+  if(!(dmxFrameCounter % 10)) {
+    statusBrightness += (dmxLed? 10: -10);
+    if(statusBrightness <= 10 || statusBrightness > 245) dmxLed = !dmxLed;
+    statusRing.SetBrightness(statusBrightness);
+    statusRing.Show();
+    // LN.logf("DMX", LoggerNode::DEBUG, "statusBrightness: %d", statusBrightness);
+
+    // modeNode.setProperty("brightness").send(String(statusBrightness));
+    // brightnessOverride = statusBrightness;
+  }
   if(dmxFrameCounter >= cfg->dmxHz.get() * 10) {
     totalTime = millis() - first;
       LN.logf("onDmxFrame()", LoggerNode::INFO, "DMX 10s, avg %dhz", dmxFrameCounter / (totalTime / 1000));
