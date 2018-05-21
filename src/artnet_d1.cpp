@@ -53,8 +53,8 @@ uint8_t strobeTickerClosed, strobeTickerOpen;
 
 uint8_t brightness;
 uint8_t last_brightness = 0;
-uint8_t brightnessOverride = 255;
-uint8_t outBrightness = 255;
+int brightnessOverride = -1;
+uint8_t outBrightness;
 float attack, rls, dimmer_attack, dimmer_rls;
 
 BitBangGRB statusRing(D4, 12);
@@ -240,9 +240,9 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
       RgbColor lastColor = bus->GetPixelColor(pixelidx);  // get from pixelbus since we can resolve dimmer-related changes
       bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
       color = RgbColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
-			// if(color.CalculateBrightness() < 6) { // avoid bitcrunch
-      //   color.Darken(6); // XXX should rather flag pixel for temporal dithering yeah?
-      // }
+			if(color.CalculateBrightness() < 8) { // avoid bitcrunch
+        color.Darken(8); // XXX should rather flag pixel for temporal dithering yeah?
+      }
       if(!flipped) bus->SetPixelColor(pixelidx, color);
       else         bus->SetPixelColor(cfg->ledCount.get()-1 - pixelidx, color);
 
@@ -267,9 +267,9 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
       bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
       // XXX need to actually restore lastColor to its original brightness before mixing tho...
       color = RgbwColor::LinearBlend(color, lastColor, (brighter? attack: rls));
-			// if(color.CalculateBrightness() < 6) { // avoid bitcrunch
-      //   color.Darken(6); // XXX should rather flag pixel for temporal dithering yeah?
-      // }
+			if(color.CalculateBrightness() < 8) { // avoid bitcrunch
+        color.Darken(8); // XXX should rather flag pixel for temporal dithering yeah?
+      }
 
       if(gammaCorrect) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
 
@@ -341,7 +341,6 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
   } else { // 0, clean up
     shutterOpen = true;
   }
-
   ch_strobe_last_value = functions[CH_STROBE];
 
   if(functions[CH_ROTATE_FWD]) { // if(functions[CH_ROTATE_FWD] && isKeyframe) {
@@ -353,35 +352,33 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
 	else if(buses[0].busW)  buses[0].busW->RotateLeft(led_count * ((float)functions[CH_ROTATE_BACK] / 255));
   }
 
-  // switch(functions[CH_CONTROL]) {
-  //   case FN_FRAMEGRAB_1 ... FN_FRAMEGRAB_4: break;
-  //   case FN_FLIP: flipped = !flipped; break;
-  // }
-
   //WTF: when not enough current and strips yellow, upping atttack makes them less yellow. Also happens in general, but less noticable?
   if(functions[CH_ATTACK] != last_functions[CH_ATTACK]) {
-    attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
-    LN.logf("updateFunctions", LoggerNode::DEBUG, "Attack: %d", functions[CH_ATTACK]);
+    attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_ATTACK]/295); // dont ever quite arrive like this, two runs at max = 75% not 100%...
+    LN.logf("updateFunctions", LoggerNode::DEBUG, "Attack: %d / %f", functions[CH_ATTACK]);
   }
   if(functions[CH_RELEASE] != last_functions[CH_RELEASE]) {
-      rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_RELEASE]/285);
+      rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_RELEASE]/265);
   }
 
   if(functions[CH_DIMMER_ATTACK] != last_functions[CH_DIMMER_ATTACK]) {
-      dimmer_attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
+      // dimmer_attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
+      dimmer_attack = (1.00f - blendBaseline) - (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_ATTACK]/315); // dont ever quite arrive like this, two runs at max = 75% not 100%...
   }
   if(functions[CH_DIMMER_RELEASE] != last_functions[CH_DIMMER_RELEASE]) {
-      dimmer_rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_RELEASE]/285);
+      dimmer_rls = (1.00f - blendBaseline) - (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_RELEASE]/315);
   }
 
   if(brightnessOverride <= 0) {
-    LN.logf("brightness", LoggerNode::INFO, "%s", "no override");
     bool brighter = brightness > last_brightness;
-    brightness = last_brightness + (functions[CH_DIMMER] - last_brightness) * (brighter ? dimmer_attack : dimmer_rls);
-    // if(brightness < 4) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
-    // else if(brightness > 255) brightness = 255;
+    // LN.logf("brightness", LoggerNode::DEBUG, "%d + (%d - %d) * %f", last_brightness, functions[CH_DIMMER], last_brightness, dimmer_attack);
+    float diff = (functions[CH_DIMMER] - last_brightness) * (brighter ? dimmer_attack : dimmer_rls);
+    if(diff > 0.1f && diff < 1.0f) diff = 1.0f;
+    brightness = last_brightness + diff; // crappy workaround, store dimmer internally as 16bit or float instead.
+    if(brightness < 4) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
+    else if(brightness > 255) brightness = 255;
 
-  } else {
+  } else if(brightnessOverride <= 255){
     brightness = brightnessOverride;
   }
   last_brightness = brightness;
