@@ -4,6 +4,12 @@
 #include <Homie.h>
 #include <LoggerNode.h>
 
+// typedef HomieSetting<> opt;
+typedef HomieSetting<bool> optBool;
+typedef HomieSetting<long> optInt;
+typedef HomieSetting<double> optFloat;
+typedef HomieSetting<const char*> optString;
+
 class ConfigNode: public HomieNode {
  public:
     ConfigNode();
@@ -35,13 +41,13 @@ class ConfigNode: public HomieNode {
     // HomieSetting<bool> setFlipped;
 
  protected:
-  virtual bool handleInput(const String& property, const HomieRange& range, const String& value);
-    // virtual void setup() override;
-    // virtual void loop() override;
+    virtual bool handleInput(const String& property, const HomieRange& range, const String& value);
+    virtual void setup() override;
+    // virtual void loop(); // relevant?
   
 //  private:
 };
 
-// extern ConfigNode cfg;
+// extern ConfigNode* cfg;
 
 #endif

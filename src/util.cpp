@@ -7,6 +7,7 @@ const RgbwColor orange =  RgbwColor(150, 70, 10, 20);
 const RgbwColor yellow =  RgbwColor(150, 150, 20, 30);
 const RgbwColor green =   RgbwColor(20, 170, 40, 20);
 const RgbwColor blue =    RgbwColor(20, 60, 180, 20);
+const RgbColor blueZ =    RgbColor(25, 90, 220);
 
 const RgbwColor* otaColor;
 
@@ -80,9 +81,11 @@ void blinkStrip(uint8_t numLeds, RgbwColor color, uint8_t blinks) {
   delay(100); // XXX use callbacks instead of delays, then mqtt-ota will prob work? Also move this sorta routine into Strip class, or some animation class?
   for(int8_t b = 0; b < blinks; b++) {
     tempbus.ClearTo(color); tempbus.Show();
-    delay(100);
+    yield();
+    delay(50);
     tempbus.ClearTo(black); tempbus.Show();
-    delay(100);
+    yield();
+    delay(50);
   }
 }
 
@@ -148,20 +151,15 @@ void setupOTA(uint8_t numLeds) {
 
 
 bool globalInputHandler(const HomieNode& node, const String& property, const HomieRange& range, const String& value) {
-  Homie.getLogger() << "Received on node " << node.getId() << ": " << property << " = " << value << endl;
-  // char* msg = "Received on node ", node.getId(), ": " , property , " = " , value;
-  // logNode.setProperty("log").send(msg);
-  logNode.setProperty("log").send("Received msg on node: ");
-  logNode.setProperty("log").send(node.getId());
-  logNode.setProperty("log").send(", property: ");
-  logNode.setProperty("log").send(property);
-  logNode.setProperty("log").send(", value: ");
-  logNode.setProperty("log").send(value);
+  // Homie.getLogger() << "Received on node " << node.getId() << ": " << property << " = " << value << endl;
+  LN.logf(node.getId(), LoggerNode::INFO, "%s: %s", property.c_str(), value.c_str());
 
   if(property.equals("command")) {
 		if(value.equals("reset")) Homie.reset();
+		if(value.equals("restart")) ESP.restart();
 		else if(value.equals("ledoff")) Homie.disableLedFeedback();
-	} else if(property.equals("mode")) {
+	}
+  else if(property.equals("mode")) {
 		if(value.equals("dmx")) {
 			// eventually multiple input/output types etc, LTP/HTP/average/prio, specific mergin like
 			// animation over serial, DMX FN CH from artnet
@@ -178,6 +176,12 @@ bool globalInputHandler(const HomieNode& node, const String& property, const Hom
   return true;
 }
 
+bool broadcastHandler(const String& level, const String& value) {
+  // not sure what to use for but will prob get something...
+  LN.logf("BROADCAST", LoggerNode::INFO, "Level %s: %s", level.c_str(), value.c_str());
+  // Serial << "Received broadcast level " << level << ": " << value << endl;
+  return true;
+}
 
 void onHomieEvent(const HomieEvent& event) {
   switch(event.type) {
@@ -188,12 +192,14 @@ void onHomieEvent(const HomieEvent& event) {
       // blinkStrip(leds, orange, 5);
       break;
     case HomieEventType::NORMAL_MODE:
-      // blinkStatus(blue, 1);
+      // blinkStrip(leds, blue, 1);
       break;
     case HomieEventType::OTA_STARTED: {
       Serial.println("\nOTA flash starting...");
-      logNode.setProperty("log").send("OTA IS ON YO");
       LN.logf("OTA", LoggerNode::INFO, "Ota ON OTA ON!!!");
+      artnet.disableDMX();
+      // kill all inputs and outputs, etcetc
+
       // if(buses[0].bus) {
       //     buses[0].bus->ClearTo(blueZ);
       // yield();

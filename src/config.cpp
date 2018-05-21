@@ -45,17 +45,15 @@ setFolded("folded_alternating", "alternating pixels")
   // logToMqtt.setDefaultValue(true);
   // logToSerial.setDefaultValue(false);
 
-  dmxHz.setDefaultValue(40);
-  strobeHzMin.setDefaultValue(1);
-  strobeHzMax.setDefaultValue(10);
+  dmxHz.setDefaultValue(40).setValidator([] (long val) {
+			return (val > 0 && val < 176);}); // 4 x dmx max
 
   // strobeHzMin.setDefaultValue(1).setValidator([] (double val) {
   //     return (val > 0.1 && val < 20);});
   // strobeHzMax.setDefaultValue(10).setValidator([] (double val) {
 	// 		return (val > 0.1 && val < 20);});
 
-  ledCount.setDefaultValue(120).setValidator([] (long candidate) {
-			return (candidate > 0 && candidate <= bytesPerLed.get() * (universes.get() * ledCount.get()));}); // XXX check
+  clearOnStart.setDefaultValue(false);
 
   bytesPerLed.setDefaultValue(4).setValidator([] (long val) {
 			return (val > 0 && val < 7);});
@@ -73,13 +71,21 @@ setFolded("folded_alternating", "alternating pixels")
 	// 		return (val > 0 && val <= 512);});
 
   interFrames.setDefaultValue(2);
-
-  // advertise("debug").settable(); //don't need this cause can update settings ocer mqtt anyways
 }
+/*  FIX somehow: dont drop into config mode off invalid settings, or at least reads rest of config and
+ *  preselect that. Also event blink angry etc
+ */
 
 bool ConfigNode::handleInput(const String& property, const HomieRange& range, const String& value) {
   // Homie.getLogger() << "Property: " << property << ", " << "value: " << value;
  	LN.logf(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
   // write to json or whatever, makes sense to can update straight mqtt no json-over-mqtt?
 
+	return true;
+}
+
+void ConfigNode::setup() {
+  advertise("debug").settable(); //don't need this cause can update settings ocer mqtt anyways
+  // ledCount.setValidator([] (long candidate) {
+	// 		return (candidate > 0 && candidate <= bytesPerLed.get() * (universes.get() * ledCount.get()));}); // XXX check
 }

@@ -1,5 +1,5 @@
-#ifndef PIXTOL_UTIL
-#define PIXTOL_UTIL
+#ifndef PIXTOL_UTIL_H_
+#define PIXTOL_UTIL_H_
 
 #include <NeoPixelBrightnessBus.h>
 #include <NeoPixelAnimator.h>
@@ -10,14 +10,10 @@
 #include <Ticker.h>
 #include <ArduinoOTA.h>
 #include "strip.h"
+#include "config.h"
 
-const extern RgbwColor black;
-const extern RgbwColor white;
-const extern RgbwColor red;
-const extern RgbwColor orange;
-const extern RgbwColor yellow;
-const extern RgbwColor green;
-const extern RgbwColor blue;
+const extern RgbwColor black, white, red, orange, yellow, green, blue;
+const extern RgbColor blueZ;
 
 extern HomieNode modeNode;
 
@@ -35,7 +31,9 @@ void initArtnet(const String& name, uint8_t numPorts, uint8_t startingUniverse, 
 void blinkStrip(uint8_t numLeds, RgbwColor color, uint8_t blinks);
 void blinkStatus(RgbColor color, uint8_t blinks);
 void setupOTA(uint8_t numLeds);
+void logIfChanged(int8_t level, std::string topic, std::string msg);
 extern bool globalInputHandler(const HomieNode& node, const String& property, const HomieRange& range, const String& value);
+extern bool broadcastHandler(const String& level, const String& value);
 extern void onHomieEvent(const HomieEvent& event); //extern since is passed rather than called in artnet_d1,cpp
 
 #endif
