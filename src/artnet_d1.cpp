@@ -45,11 +45,6 @@ uint8_t interFrames; // ~40 us/led gives 5 ms for 1 universe of 125 leds. mirror
 // so around 4-5 frames per frame should be alright.  XXX NOT if mirrored remember! make dynamic!!!
 float blendBaseline;  // float blendBaseline = 1.00f - 1.00f / (1 + interFrames); // for now, make dynamic...
 
-bool shutterOpen = true;
-float onFraction = 4;
-uint16_t onTime, strobePeriod;
-uint8_t ch_strobe_last_value = 0;
-uint8_t strobeTickerClosed, strobeTickerOpen;
 
 uint8_t brightness;
 uint8_t last_brightness = 0;
@@ -318,24 +313,31 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
 
 void updateFunctions(uint8_t* functions, bool isKeyframe) {
 
+  static uint16_t onTime, strobePeriod;
+  static uint8_t ch_strobe_last_value = 0;
+  static bool shutterOpen = true;
+  static uint8_t strobeTickerClosed, strobeTickerOpen;
+  static const float onFraction = 5;
+
+  // XXX strobe existing anim by turn down lightness/using HTP for two sources, fix so can do same straight from afterglow
   if(functions[CH_STROBE]) {
     if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
       float hz = (hzMax-hzMin) * (functions[CH_STROBE]-1) / (255-1) + hzMin;
       strobePeriod = 1000 / hz;   // 1 = 1 hz, 255 = 10 hz, to test
-      onTime = strobePeriod / onFraction; // arbitrary default val. Use as midway point to for period control >127 goes up, < down
-      // XXX instead of timers, use counter and strobe on frames? even 10hz would just be 1 on 3 off, easy...  more precise then use inter frames, yeah?
-      strobeTickerClosed = interFrames * strobePeriod / cfg->dmxHz.get(); // take heed of interframes...
-      strobeTickerOpen = interFrames * onTime / cfg->dmxHz.get();
+      onTime = strobePeriod / onFraction;
+      if(onTime > 200) onTime = 200;
+      strobeTickerClosed = interFrames * strobePeriod / dmxHz; // take heed of interframes...
+      strobeTickerOpen = interFrames * onTime / dmxHz;
       shutterOpen = false;
     } else { // decr tickers
       if(shutterOpen) strobeTickerOpen--;
       else            strobeTickerClosed--;
       if(!strobeTickerClosed) {
         shutterOpen = true;
-        strobeTickerClosed = interFrames * strobePeriod / cfg->dmxHz.get();
+        strobeTickerClosed = interFrames * strobePeriod / dmxHz;
       } else if(!strobeTickerOpen) {
         shutterOpen = false;
-        strobeTickerOpen = interFrames * onTime / cfg->dmxHz.get();
+        strobeTickerOpen = interFrames * onTime / dmxHz;
       }
     }
   } else { // 0, clean up
