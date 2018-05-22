@@ -1,77 +1,72 @@
-#ifndef PIXTOL_BATTERY_H_
-#define PIXTOL_BATTERY_H_
+#pragma once
 
 #include <Homie.hpp>
 #include <LoggerNode.h>
-// #include <Ticker.h>
 
 class BatteryNode: public HomieNode {
 public:
-  BatteryNode(uint16_t readInterval = 10000, int cutoffLevel = 500);
+  BatteryNode(): HomieNode("Battery", "charge") {}
+  BatteryNode(uint16_t readInterval, int cutoffLevel):
+    HomieNode("Battery", "charge"),
+    interval(readInterval),
+    cutoff(cutoffLevel)
+  {}
+
   void setup();
-  void loop();
+  void loop() {
+    if(millis() - timeCounter < interval) return;
+    timeCounter = millis();
+    update();
+  }
 
   uint16_t getDrainRate();
   uint16_t getTimeRemaining();
 
-  bool safe;
+  enum BatteryStatus { Invalid = -1, Danger = 0, Safe = 1 };
+  BatteryStatus status = Invalid;
 
 private:
-  uint16_t firstCharge, lastCharge, rollingAverageCharge;
-  uint16_t cutoff;
+  int lastCharge = -1; 
+  int rollingAverageCharge = -1;
+  uint16_t interval = 10000;
+  uint16_t cutoff = 500;
 
-  unsigned long timeCounter;
-  uint16_t interval;
+  unsigned long timeCounter = 0;
+  BatteryStatus lastStatus = Invalid;
 
   void update();
-
 };
 
-BatteryNode::BatteryNode(uint16_t readInterval, int cutoffLevel): 
-  HomieNode("Battery", "charge"),
-  interval(readInterval),
-  cutoff(cutoffLevel)
-{
-  timeCounter = millis();
-  firstCharge = analogRead(A0);
-  lastCharge = firstCharge;
-  rollingAverageCharge = lastCharge;
-
-  safe = firstCharge > cutoff;
-}
 
 void BatteryNode::setup() {
+  timeCounter = millis();
+
+  lastCharge = analogRead(A0);
+  rollingAverageCharge = lastCharge;
+  status = lastCharge > cutoff? Safe: Danger;
+
   advertise("level");
   advertise("cutoff").settable();
   advertise("safe");
-  // batteryReadTimer.attach_ms(10000, BatteryNode.update())
-}
-
-void BatteryNode::loop() {
-  if(millis() - timeCounter < interval) return;
-  timeCounter = millis();
-  update();
-
+  LN.logf("Battery", LoggerNode::INFO, "BatteryNode initialized.");
 }
 
 void BatteryNode::update() {
   lastCharge = analogRead(A0);
-  rollingAverageCharge = (rollingAverageCharge*10 + lastCharge) / 11;
-  // LN.logf("Battery", LoggerNode::DEBUG, "Charge: last %d / average %d", lastCharge, rollingAverageCharge);
-  setProperty("level").send(String(rollingAverageCharge));
+  rollingAverageCharge = (rollingAverageCharge*9 + lastCharge) / 10;
 
   if(lastCharge < cutoff-100 || rollingAverageCharge < cutoff) {
-    LN.logf("Battery", LoggerNode::ERROR, "Charge too low! %d", rollingAverageCharge);
-    safe = false;
-    // then if remains there for a few minutes, shut off stuff using battery.
-    // But guess that'd be done elsewhere after polling this object? Rather than passing
-    // callback or some shite.
-  } else {
-    LN.logf("Battery", LoggerNode::INFO, "Charge above cutoff! %d", rollingAverageCharge);
-    safe = true;
+    if(lastStatus == Safe)
+      LN.logf("Battery", LoggerNode::ERROR, "Charge CRITICAL, %d, prepare to shutdown...", rollingAverageCharge);
+    status = Danger; // then if remains there for a few minutes, shut off stuff using battery.
+  } else {           // But guess that'd be done elsewhere after polling this object? Rather than passing callback or some shite.
+    if(lastStatus == Danger)
+      LN.logf("Battery", LoggerNode::INFO, "Charge back above cutoff! %d", rollingAverageCharge);
+    status = Safe;
   }
-  setProperty("safe").send(String(safe));
+  setProperty("level").send(String(rollingAverageCharge));
+  if(status != lastStatus) setProperty("safe").send(String(status));
+
+  lastStatus = status;
 }
 
-
-#endif
