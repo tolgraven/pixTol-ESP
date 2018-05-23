@@ -172,14 +172,16 @@ void setup() {
 
 int getPixelIndex(int pixel) { // XXX also handle matrix back-and-forth setups etc
   if(folded) { // pixelidx differs from pixel recieved
-    if(pixel % 2) {
-      return pixel/2;  // since every other pixel is from opposite end
+    if(pixel % 2) { // if uneven
+      pixel /= 2;  // since every other pixel is from opposite end
     } else {
-      return led_count-1 - pixel/2;
+      pixel = led_count-1 - pixel/2;
     }
-  } else {
-    return pixel;
   }
+  if(flipped) {
+    pixel = cfg->ledCount.get()-1 - pixel;
+  }
+  return pixel;
 }
 
 void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolating >2 frames
@@ -224,9 +226,7 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
       color = RgbColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
 			if(color.CalculateBrightness() < 8) color.Darken(8); // avoid bitcrunch XXX should rather flag pixel for temporal dithering yeah?
 
-      if(!flipped) busD->SetPixelColor(pixelidx, color);
-      else         busD->SetPixelColor(cfg->ledCount.get()-1 - pixelidx, color);
-
+      busD->SetPixelColor(pixelidx, color);
 			if(mirror) busD->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
 
 		} else if(bytes_per_pixel == 4) {
@@ -240,10 +240,9 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
 
       if(gammaCorrect) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
 
-      if(!flipped) busD->SetPixelColor(pixelidx, color);
-      else         busD->SetPixelColor(cfg->ledCount.get()-1 - pixelidx, color);
-
+      busD->SetPixelColor(pixelidx, color);
 			if(mirror) busD->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
+
 		} pixel++;
 	}
 
