@@ -5,6 +5,7 @@
 #include <Homie.h>
 #include "modulator.h"
 #include "outputter.h"
+#include "color.h"
  
 // try using blah = whah instead, "Usings can be templatized while typedefs cannot"
 typedef NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266Dma800KbpsMethod>         DmaGRB;
@@ -23,8 +24,9 @@ class iStripDriver {
     virtual void SetBrightness(uint16_t b) = 0;
     virtual void SetPixelColor(uint16_t pixel, RgbColor color) = 0;
     virtual void SetPixelColor(uint16_t pixel, RgbwColor color) = 0;
-    virtual void GetPixelColor(uint16_t pixel) = 0;
-    virtual void ClearTo(RgbColor color) = 0;
+    virtual void GetPixelColor(uint16_t pixel, RgbColor& result) = 0;
+    virtual void GetPixelColor(uint16_t pixel, RgbwColor& result) = 0;
+    virtual void ClearTo(RgbColor color) = 0; // change eg these to return ref to self, chain like d.ClearTo(blue).SetBrightness(100).Show(); ?
     virtual void ClearTo(RgbwColor color) = 0;
     virtual void ClearTo(RgbColor color, uint16_t first, uint16_t last) = 0;
     virtual void ClearTo(RgbwColor color, uint16_t first, uint16_t last) = 0;
@@ -61,7 +63,8 @@ class StripRGB: public iStripDriver {
     virtual void SetPixelColor(uint16_t pixel, RgbwColor color) {
       bus.SetPixelColor(pixel, RgbColor(color.R, color.G, color.B));
     }
-    virtual void GetPixelColor(uint16_t pixel) { bus.GetPixelColor(pixel); }
+    virtual void GetPixelColor(uint16_t pixel, RgbColor& result) { result = bus.GetPixelColor(pixel); }
+    virtual void GetPixelColor(uint16_t pixel, RgbwColor& result) { result = RgbwColor(bus.GetPixelColor(pixel)); }
     virtual void ClearTo(RgbColor color) { bus.ClearTo(color); }
     virtual void ClearTo(RgbwColor color) { ClearTo(RgbColor(color.R, color.G, color.B)); }
     virtual void ClearTo(RgbColor color, uint16_t first, uint16_t last) { bus.ClearTo(color, first, last); }
@@ -79,9 +82,9 @@ class StripRGB: public iStripDriver {
     virtual void ShiftLeft(uint16_t shiftCount) { bus.ShiftLeft(shiftCount); }
     virtual void ShiftLeft(uint16_t shiftCount, uint16_t first, uint16_t last) { bus.ShiftLeft(shiftCount, first, last); }
     virtual void RotateRight(uint16_t rotationCount) { bus.RotateRight(rotationCount); }
-    virtual void RotateRight(uint16_t rotationCount, uint16_t first, uint16_t last) {  bus.RotateRight(rotationCount, first, last);  }
+    virtual void RotateRight(uint16_t rotationCount, uint16_t first, uint16_t last) { bus.RotateRight(rotationCount, first, last); }
     virtual void ShiftRight(uint16_t shiftCount) { bus.ShiftRight(shiftCount); }
-    virtual void ShiftRight(uint16_t shiftCount, uint16_t first, uint16_t last) {  bus.ShiftRight(shiftCount, first, last);  }
+    virtual void ShiftRight(uint16_t shiftCount, uint16_t first, uint16_t last) { bus.ShiftRight(shiftCount, first, last); }
   private:
     DmaGRB bus;
 };
@@ -100,7 +103,11 @@ class StripRGBW: public iStripDriver {
     virtual void SetPixelColor(uint16_t pixel, RgbwColor color) {
       bus.SetPixelColor(pixel, color);
     }
-    virtual void GetPixelColor(uint16_t pixel) { bus.GetPixelColor(pixel); }
+    virtual void GetPixelColor(uint16_t pixel, RgbColor& result) { 
+      RgbwColor rgbw = bus.GetPixelColor(pixel);
+      result = RgbColor(rgbw.R, rgbw.G, rgbw.B);
+    }
+    virtual void GetPixelColor(uint16_t pixel, RgbwColor& result) { result = bus.GetPixelColor(pixel); }
     virtual void ClearTo(RgbColor color) { ClearTo(RgbwColor(color)); }
     virtual void ClearTo(RgbwColor color) { bus.ClearTo(color); }
     virtual void ClearTo(RgbColor color, uint16_t first, uint16_t last) { ClearTo(RgbwColor(color), first, last); }
@@ -154,6 +161,14 @@ class Strip {
     }
     // void SetColor(HslColor color);
 
+    bool Show() {
+      if(driver->CanShow()) {
+        driver->Show();
+        return true;
+      }
+      return false;
+    }
+
     void SetBrightness(uint16_t b) { driver->SetBrightness(b); }
 
 
@@ -162,7 +177,7 @@ class Strip {
       driver->Show();
     }
 
-    iStripDriver* driver; // iStripDriver& driver; // figure out later...  ""As pointed out, failing to make a dtor virtual when a class is deleted through a base pointer could fail to invoke the subclass dtors (undefined behavior).
+    iStripDriver* driver = nullptr; // iStripDriver& driver; // figure out later...  ""As pointed out, failing to make a dtor virtual when a class is deleted through a base pointer could fail to invoke the subclass dtors (undefined behavior).
 
   private:
 
