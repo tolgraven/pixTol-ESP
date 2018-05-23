@@ -26,6 +26,25 @@ class iStripDriver {
     virtual void GetPixelColor(uint16_t pixel) = 0;
     virtual void ClearTo(RgbColor color) = 0;
     virtual void ClearTo(RgbwColor color) = 0;
+    virtual void ClearTo(RgbColor color, uint16_t first, uint16_t last) = 0;
+    virtual void ClearTo(RgbwColor color, uint16_t first, uint16_t last) = 0;
+    virtual bool CanShow() const = 0;                                                                 
+    virtual bool IsDirty() const = 0;                                                                 
+    virtual void Dirty() = 0;                                                                          
+    virtual void ResetDirty() = 0;                                                                     
+    virtual uint8_t* Pixels() = 0;                                                                         
+    virtual size_t PixelsSize() const = 0;                                                               
+    virtual size_t PixelSize() const = 0;                                                                
+    virtual uint16_t PixelCount() const = 0;                                                               
+    virtual void RotateLeft(uint16_t rotationCount) = 0;                                               
+    virtual void RotateLeft(uint16_t rotationCount, uint16_t first, uint16_t last) = 0;                  
+    virtual void ShiftLeft(uint16_t shiftCount) = 0;
+    virtual void ShiftLeft(uint16_t shiftCount, uint16_t first, uint16_t last) = 0;
+    virtual void RotateRight(uint16_t rotationCount) = 0;
+    virtual void RotateRight(uint16_t rotationCount, uint16_t first, uint16_t last) = 0;
+    virtual void ShiftRight(uint16_t shiftCount) = 0;
+    virtual void ShiftRight(uint16_t shiftCount, uint16_t first, uint16_t last) = 0;
+
 };
 
 class StripRGB: public iStripDriver {
@@ -44,7 +63,25 @@ class StripRGB: public iStripDriver {
     }
     virtual void GetPixelColor(uint16_t pixel) { bus.GetPixelColor(pixel); }
     virtual void ClearTo(RgbColor color) { bus.ClearTo(color); }
-    virtual void ClearTo(RgbwColor color) {}
+    virtual void ClearTo(RgbwColor color) { ClearTo(RgbColor(color.R, color.G, color.B)); }
+    virtual void ClearTo(RgbColor color, uint16_t first, uint16_t last) { bus.ClearTo(color, first, last); }
+    virtual void ClearTo(RgbwColor color, uint16_t first, uint16_t last) { ClearTo(RgbColor(color.R, color.G, color.B), first, last); }
+    virtual bool CanShow() const { return bus.CanShow(); }
+    virtual bool IsDirty() const { return bus.IsDirty(); }
+    virtual void Dirty() { bus.Dirty(); }
+    virtual void ResetDirty() { bus.ResetDirty(); }
+    virtual uint8_t* Pixels() { return bus.Pixels(); }
+    virtual size_t PixelsSize() const { return bus.PixelsSize(); }
+    virtual size_t PixelSize() const { return bus.PixelSize(); }
+    virtual uint16_t PixelCount() const { return bus.PixelCount(); }
+    virtual void RotateLeft(uint16_t rotationCount) { bus.RotateLeft(rotationCount); }
+    virtual void RotateLeft(uint16_t rotationCount, uint16_t first, uint16_t last) { bus.RotateLeft(rotationCount, first, last); }
+    virtual void ShiftLeft(uint16_t shiftCount) { bus.ShiftLeft(shiftCount); }
+    virtual void ShiftLeft(uint16_t shiftCount, uint16_t first, uint16_t last) { bus.ShiftLeft(shiftCount, first, last); }
+    virtual void RotateRight(uint16_t rotationCount) { bus.RotateRight(rotationCount); }
+    virtual void RotateRight(uint16_t rotationCount, uint16_t first, uint16_t last) {  bus.RotateRight(rotationCount, first, last);  }
+    virtual void ShiftRight(uint16_t shiftCount) { bus.ShiftRight(shiftCount); }
+    virtual void ShiftRight(uint16_t shiftCount, uint16_t first, uint16_t last) {  bus.ShiftRight(shiftCount, first, last);  }
   private:
     DmaGRB bus;
 };
@@ -66,6 +103,24 @@ class StripRGBW: public iStripDriver {
     virtual void GetPixelColor(uint16_t pixel) { bus.GetPixelColor(pixel); }
     virtual void ClearTo(RgbColor color) { ClearTo(RgbwColor(color)); }
     virtual void ClearTo(RgbwColor color) { bus.ClearTo(color); }
+    virtual void ClearTo(RgbColor color, uint16_t first, uint16_t last) { ClearTo(RgbwColor(color), first, last); }
+    virtual void ClearTo(RgbwColor color, uint16_t first, uint16_t last) { bus.ClearTo(color, first, last); }
+    virtual bool CanShow() const { return bus.CanShow(); }
+    virtual bool IsDirty() const { return bus.IsDirty(); }
+    virtual void Dirty() { bus.Dirty(); }
+    virtual void ResetDirty() { bus.ResetDirty(); }
+    virtual uint8_t* Pixels() { return bus.Pixels(); }
+    virtual size_t PixelsSize() const { return bus.PixelsSize(); }
+    virtual size_t PixelSize() const { return bus.PixelSize(); }
+    virtual uint16_t PixelCount() const { return bus.PixelCount(); }
+    virtual void RotateLeft(uint16_t rotationCount) { bus.RotateLeft(rotationCount); }
+    virtual void RotateLeft(uint16_t rotationCount, uint16_t first, uint16_t last) { bus.RotateLeft(rotationCount, first, last); }
+    virtual void ShiftLeft(uint16_t shiftCount) { bus.ShiftLeft(shiftCount); }
+    virtual void ShiftLeft(uint16_t shiftCount, uint16_t first, uint16_t last) { bus.ShiftLeft(shiftCount, first, last); }
+    virtual void RotateRight(uint16_t rotationCount) { bus.RotateRight(rotationCount); }
+    virtual void RotateRight(uint16_t rotationCount, uint16_t first, uint16_t last) {  bus.RotateRight(rotationCount, first, last);  }
+    virtual void ShiftRight(uint16_t shiftCount) { bus.ShiftRight(shiftCount); }
+    virtual void ShiftRight(uint16_t shiftCount, uint16_t first, uint16_t last) {  bus.ShiftRight(shiftCount, first, last);  }
   private:
     DmaGRBW bus;
 };
