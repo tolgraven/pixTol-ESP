@@ -1,5 +1,4 @@
-#ifndef PIXTOL_DUMPER
-#define PIXTOL_DUMPER
+#pragma once
 
 #include "outputter.h"
 
@@ -28,5 +27,3 @@ class Dumper: public Outputter {
 
 };
 
-
-#endif

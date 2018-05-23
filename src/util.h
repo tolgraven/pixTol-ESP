@@ -1,5 +1,4 @@
-#ifndef PIXTOL_UTIL_H_
-#define PIXTOL_UTIL_H_
+#pragma once
 
 #include <NeoPixelBrightnessBus.h>
 #include <NeoPixelAnimator.h>
@@ -36,4 +35,3 @@ extern bool globalInputHandler(const HomieNode& node, const String& property, co
 extern bool broadcastHandler(const String& level, const String& value);
 extern void onHomieEvent(const HomieEvent& event); //extern since is passed rather than called in artnet_d1,cpp
 
-#endif

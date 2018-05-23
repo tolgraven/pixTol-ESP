@@ -1,5 +1,4 @@
-#ifndef PIXTOL_MODULATOR
-#define PIXTOL_MODULATOR
+#pragma once
 
 // #include <Homie.h>
 
@@ -26,5 +25,3 @@ class Modulator {
   private:
 };
 
-
-#endif

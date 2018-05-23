@@ -1,5 +1,4 @@
-#ifndef PIXTOL_PIXELBUFFER
-#define PIXTOL_PIXELBUFFER
+#pragma once
 
 #include <Arduino.h>
 
@@ -23,7 +22,4 @@ class PixelBuffer {
 
 
 };
-
-
-#endif
 

@@ -1,5 +1,4 @@
-#ifndef PIXTOL_INPUTNODE
-#define PIXTOL_INPUTNODE
+#pragma once
 
 #include <Homie.h>
 #include <LoggerNode.h>
@@ -21,6 +20,4 @@ class InputNode: public HomieNode {
   
 //  private:
 };
-
-#endif
 

@@ -1,5 +1,4 @@
-#ifndef PIXTOL_OUTPUTTER
-#define PIXTOL_OUTPUTTER
+#pragma once
 
 #include <Arduino.h>
 #include "modulator.h"
@@ -20,5 +19,3 @@ class Outputter {
 
 };
 
-
-#endif

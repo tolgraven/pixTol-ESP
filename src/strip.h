@@ -1,5 +1,4 @@
-#ifndef PIXTOL_STRIP
-#define PIXTOL_STRIP
+#pragma once
 
 #include <NeoPixelBrightnessBus.h>
 #include <NeoPixelAnimator.h>
@@ -83,4 +82,3 @@ class Color {
 
 };
 
-#endif

@@ -1,5 +1,4 @@
-#ifndef PIXTOL_CONFIG
-#define PIXTOL_CONFIG
+#pragma once
 
 #include <Homie.h>
 #include <LoggerNode.h>
@@ -48,6 +47,3 @@ class ConfigNode: public HomieNode {
 //  private:
 };
 
-// extern ConfigNode* cfg;
-
-#endif

@@ -1,5 +1,4 @@
-#ifndef PIXTOL_DMXSERIAL
-#define PIXTOL_DMXSERIAL
+#pragma once
 
 #include "outputter.h"
 

@@ -1,5 +1,4 @@
-#ifndef PIXTOL_OUTPUTNODE
-#define PIXTOL_OUTPUTNODE
+#pragma once
 
 #include <Homie.h>
 #include <LoggerNode.h>
@@ -17,4 +16,3 @@ class OutputNode: public HomieNode {
 //  private:
 };
 
-#endif

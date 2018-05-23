@@ -1,5 +1,4 @@
-#ifndef PIXTOL_ARTNET_D1
-#define PIXTOL_ARTNET_D1
+#pragma once
 
 #include <Arduino.h> 	//needed by linters
 #include <ArduinoOTA.h>
@@ -72,5 +71,3 @@ const char *__FLAGGED_FW_VERSION = "\x6a\x3f\x3e\x0e\xe1" FW_VERSION "\xb0\x30\x
 
 void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data);
 
-
-#endif
