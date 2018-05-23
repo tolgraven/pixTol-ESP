@@ -31,14 +31,8 @@ uint8_t dmxHz;
 
 uint16_t droppedFrames =  0;
 
-// NEOPIXELBUS
 NeoGamma<NeoGammaTableMethod> *colorGamma;
-struct busState {
-	DmaGRB *bus;
-  DmaGRBW *busW;
-  // NeoPixelBrightnessBus<T_COLOR_FEATURE, T_METHOD> *busActive;
-  // UartGRBW *busW2; // NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266AsyncUart800KbpsMethod> *busW2;
-}; busState* buses = new busState[1](); // XXX didnt get Uart mode working, Dma works but iffy with concurrent bitbanging - stick to bang?  +REMEMBER: DMA and UART must ->Begin() after BitBang...
+Strip* bus;
 
 uint8_t last_data[512] = {0};
 uint8_t* last_functions = &last_data[-1];  // take care of DMX ch offset...
@@ -61,28 +55,16 @@ uint8_t statusBrightness = 15;
 bool brightnessHandler(const HomieRange& range, const String& value) {
   modeNode.setProperty("brightness").send(value);
   brightnessOverride = value.toInt();
-  if(buses[0].bus) {
-      buses[0].bus->SetBrightness(brightnessOverride);
-      buses[0].bus->Show();
-  }
-  if(buses[0].busW) {
-      buses[0].busW->SetBrightness(brightnessOverride);
-      buses[0].busW->Show();
-  }
+  bus->SetBrightness(brightnessOverride);
+  bus->Show();
   return true;
 }
 bool colorHandler(const HomieRange& range, const String& value) {
   modeNode.setProperty("color").send(value);
   if(value.equals("blue")) {
-    if(buses[0].bus) {
-      buses[0].bus->ClearTo(blueZ);
-      buses[0].bus->Show();
-    }
-    if(buses[0].busW) {
-      buses[0].busW->ClearTo(blue);
-      buses[0].busW->Show();
-    }
+    bus->SetColor(blue);
   }
+  bus->Show();
   return true;
 }
 
@@ -165,13 +147,7 @@ void setup() {
     Homie.getLogger() << "Cleared >1 universe of LEDs" << endl;
   }
 
-	if(bytes_per_pixel == 3) {
-    buses[0].bus = new DmaGRB(led_count);
-    buses[0].bus->Begin();
-	} else if(bytes_per_pixel == 4) {
-		buses[0].busW  = new DmaGRBW(led_count);
-    buses[0].busW->Begin();
-	}
+  bus = new Strip(Strip::PixelBytes(cfg->bytesPerLed.get()), cfg->ledCount.get());
 
 	initArtnet(Homie.getConfiguration().name, universes, cfg->startUni.get(), onDmxFrame);
 	setupOTA(led_count);
@@ -216,71 +192,58 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
   // cant do the up/downsampling earlier since need to mix colors and stuff...
 	int pixel = 0; //512/bytes_per_pixel * (universe - 1);  // for one-strip-multiple-universes
   int pixelidx;
-	DmaGRBW *busW = buses[0].busW;
-	DmaGRB *bus = buses[0].bus;
-  float brightnessFraction = 255 / (brightness ? brightness : 1);     // ahah can't believe divide by zero got me
+	iStripDriver* busD = bus->driver;
+  float brightnessFraction = 255 / (brightness? brightness: 1); // ahah can't believe divide by zero got me
 
   for(int t = DMX_FN_CHS; t < data_size; t += bytes_per_pixel) {
-    uint8_t maxNoise = 32; //baseline, 10 either direction
-    if(functions[CH_NOISE]) maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
+
     pixelidx = getPixelIndex(pixel);
-    
-		if(bytes_per_pixel == 3) {  // create wrapper possibly so dont need this repeat shit.  use ColorObject base class etc...
+    uint8_t maxNoise = 48; //baseline, 10 either direction
+    if(functions[CH_NOISE]) maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
 
-      uint8_t subPixel[3];
-      for(uint8_t i=0; i < 3; i++) {
-        if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
-        else if(iteration >= interFrames * 10) iteration = 0;
-        iteration++;
+    uint8_t subPixel[bytes_per_pixel];
+    for(uint8_t i=0; i < bytes_per_pixel; i++) {
+      if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
+      else if(iteration >= interFrames * 10) iteration = 0;
+      iteration++;
 
-        subPixel[i] = data[t+i];
-        if(subPixel[i] > 16) {
-          int16_t tot = subPixel[i] + subPixelNoise[pixelidx][i];
-					subPixel[i] = (tot < 0? 0: (tot > 255? 255: tot));
-        }
+      subPixel[i] = data[t+i];
+      if(subPixel[i] > 16) {
+        int16_t tot = subPixel[i] + subPixelNoise[pixelidx][i];
+        subPixel[i] = (tot < 0? 0: (tot > 255? 255: tot));
       }
+    }
+    // wrap colors same way as strip then just create base pointer, instantiate inside
+    // if, then can run all CalculateBrightness, SetPixelColor etc generically
+    
+		if(bytes_per_pixel == 3) { // when this is moved to input->pixelbuffer stage there will be multiple configs: format of input (RGB, RGBW, HSL etc) and output (WS/SK). So all sources can be used with all endpoints.
 			RgbColor color = RgbColor(subPixel[0], subPixel[1], subPixel[2]);
-      RgbColor lastColor = bus->GetPixelColor(pixelidx);  // get from pixelbus since we can resolve dimmer-related changes
+      RgbColor lastColor; 
+      busD->GetPixelColor(pixelidx, lastColor);  // get from pixelbus since we can resolve dimmer-related changes
       bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
       color = RgbColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
-			if(color.CalculateBrightness() < 8) { // avoid bitcrunch
-        color.Darken(8); // XXX should rather flag pixel for temporal dithering yeah?
-      }
-      if(!flipped) bus->SetPixelColor(pixelidx, color);
-      else         bus->SetPixelColor(cfg->ledCount.get()-1 - pixelidx, color);
+			if(color.CalculateBrightness() < 8) color.Darken(8); // avoid bitcrunch XXX should rather flag pixel for temporal dithering yeah?
 
-			if(mirror) bus->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
+      if(!flipped) busD->SetPixelColor(pixelidx, color);
+      else         busD->SetPixelColor(cfg->ledCount.get()-1 - pixelidx, color);
+
+			if(mirror) busD->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
 
 		} else if(bytes_per_pixel == 4) {
-
-      uint8_t subPixel[4];
-      for(uint8_t i=0; i < 4; i++) {
-        if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
-        else if(iteration >= interFrames * 10) iteration = 0;
-        iteration++;
-
-        subPixel[i] = data[t+i];
-        if(subPixel[i] > 16) {
-          int16_t tot = subPixel[i] + subPixelNoise[pixelidx][i];
-					subPixel[i] = (tot < 0? 0: (tot > 255? 255: tot));
-        }
-      }
 			RgbwColor color = RgbwColor(subPixel[0], subPixel[1], subPixel[2], subPixel[3]);
-      RgbwColor lastColor = busW->GetPixelColor(pixelidx);  // get from pixelbus since we can resolve dimmer-related changes
+      RgbwColor lastColor;
+      busD->GetPixelColor(pixelidx, lastColor);  // get from pixelbus since we can resolve dimmer-related changes
       bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
       // XXX need to actually restore lastColor to its original brightness before mixing tho...
       color = RgbwColor::LinearBlend(color, lastColor, (brighter? attack: rls));
-			if(color.CalculateBrightness() < 8) { // avoid bitcrunch
-        color.Darken(8); // XXX should rather flag pixel for temporal dithering yeah?
-      }
+			if(color.CalculateBrightness() < 8) color.Darken(8);
 
       if(gammaCorrect) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
 
-      // all below prob go in own func so dont have to think about them and can reuse in next loop...
-      if(!flipped) busW->SetPixelColor(pixelidx, color);
-      else         busW->SetPixelColor(cfg->ledCount.get()-1 - pixelidx, color);
+      if(!flipped) busD->SetPixelColor(pixelidx, color);
+      else         busD->SetPixelColor(cfg->ledCount.get()-1 - pixelidx, color);
 
-			if(mirror) busW->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
+			if(mirror) busD->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
 		} pixel++;
 	}
 
@@ -288,19 +251,24 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
     if(bytes_per_pixel == 3) return; // XXX would crash below when RGB and no busW...
 
     for(pixel = 0; pixel < led_count; pixel++) {
-			RgbwColor color = busW->GetPixelColor(getPixelIndex(pixel));
+			RgbwColor color;
+      busD->GetPixelColor(getPixelIndex(pixel), color);
 			uint8_t thisBrightness = color.CalculateBrightness();
       RgbwColor prevPixelColor = color; // same concept just others rub off on it instead of other way...
       RgbwColor nextPixelColor = color;
 			float prevWeight, nextWeight;
+
       if(pixel-1 >= 0) {
-				prevPixelColor = busW->GetPixelColor(getPixelIndex(pixel-1));
+				RgbwColor prevPixelColor;
+        busD->GetPixelColor(getPixelIndex(pixel-1), prevPixelColor);
 				prevWeight = prevPixelColor.CalculateBrightness() / thisBrightness+1;
 				if(prevPixelColor.CalculateBrightness() < thisBrightness * 0.5) // skip if dark, test
 					prevPixelColor = color;
 			}
+
       if(pixel+1 < led_count) {
-				nextPixelColor = busW->GetPixelColor(getPixelIndex(pixel+1));
+				RgbwColor nextPixelColor;
+        busD->GetPixelColor(getPixelIndex(pixel-1), nextPixelColor);
 				nextWeight = nextPixelColor.CalculateBrightness() / thisBrightness+1;
 				if(nextPixelColor.CalculateBrightness() < thisBrightness * 0.5) // skip if dark, test
 					nextPixelColor = color;
@@ -310,7 +278,7 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
       float amount = (float)functions[CH_BLEED]/(256*2);  //this way only ever go half way = before starts decreasing again
       color = RgbwColor::BilinearBlend(color, nextPixelColor, prevPixelColor, color, amount, amount);
 
-      busW->SetPixelColor(getPixelIndex(pixel), color); // XXX handle flip and that
+      busD->SetPixelColor(getPixelIndex(pixel), color); // XXX handle flip and that
 
     }
   }
@@ -354,12 +322,10 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
   ch_strobe_last_value = functions[CH_STROBE];
 
   if(functions[CH_ROTATE_FWD]) { // if(functions[CH_ROTATE_FWD] && isKeyframe) {
-		if(buses[0].bus)        buses[0].bus->RotateRight(led_count * ((float)functions[CH_ROTATE_FWD] / 255));
-		else if(buses[0].busW)  buses[0].busW->RotateRight(led_count * ((float)functions[CH_ROTATE_FWD] / 255));
-  // } if(isKeyframe && functions[CH_ROTATE_BACK] && (functions[CH_ROTATE_BACK] != last_functions[CH_ROTATE_BACK])) { // so what happens is since this gets called in interpolation it shifts like five extra times
+		bus->driver->RotateRight(led_count * ((float)functions[CH_ROTATE_FWD] / 255));
+  // } if(isKeyframe && functions[CH_ROTATE_BACK] && (functions[CH_ROTATE_BACK] != last_functions[CH_ROTATE_BACK])) { // so what happens is since this gets called in interpolation it shifts like five extra times?
   } if(functions[CH_ROTATE_BACK]) { // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
-		if(buses[0].bus)        buses[0].bus->RotateLeft(led_count * ((float)functions[CH_ROTATE_BACK] / 255));
-	else if(buses[0].busW)  buses[0].busW->RotateLeft(led_count * ((float)functions[CH_ROTATE_BACK] / 255));
+		bus->driver->RotateLeft(led_count * ((float)functions[CH_ROTATE_FWD] / 255));
   }
 
   //WTF: when not enough current and strips yellow, upping atttack makes them less yellow. Also happens in general, but less noticable?
@@ -394,21 +360,13 @@ void updateFunctions(uint8_t* functions, bool isKeyframe) {
   last_brightness = brightness;
   outBrightness = (shutterOpen? brightness: 0);
 
-  if(buses[0].bus) buses[0].bus->SetBrightness(outBrightness);
-  else if(buses[0].busW) buses[0].busW->SetBrightness(outBrightness);
+  bus->driver->SetBrightness(outBrightness);
 }
 
 void renderInterFrame() {
   updatePixels(last_data);
   updateFunctions(last_functions, false); // XXX fix so interpolates!!
-  if(buses[0].bus) {
-      if(buses[0].bus->CanShow()) buses[0].bus->Show();
-      else droppedFrames++;
-  }
-  else if(buses[0].busW) {
-      if(buses[0].busW->CanShow()) buses[0].busW->Show();
-      else droppedFrames++;
-  }
+  if(!bus->Show()) droppedFrames++;
 }
 
 uint8_t interCounter;
@@ -480,14 +438,8 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
     // plus remember animation retiming off music tempo etc, that's for like a pi tho
     // + like "if safe mode: check each pixel brightness, calculate approx total mA, dim all if needed (running off usb, straight offa ESP etc)"
 
-    if(buses[0].bus) {
-      if(buses[0].bus->CanShow()) buses[0].bus->Show();
-      else droppedFrames++;
-    }
-    else if(buses[0].busW) {
-      if(buses[0].busW->CanShow()) buses[0].busW->Show();
-      else droppedFrames++;
-    }
+    if(!bus->Show()) droppedFrames++;
+
     // above entity should keep track of all incoming data sources and merge appropriately
     // depending on prio, LTP/HTP/mymuchbetterideaofweightedaverages
     // and schedule interpolation
