@@ -58,13 +58,13 @@ class StripRGBW: public iStripDriver {
     virtual void Show() { bus.Show(); }
     virtual void SetBrightness(uint16_t b) { bus.SetBrightness(b); }
     virtual void SetPixelColor(uint16_t pixel, RgbColor color) {
-      bus.SetPixelColor(pixel, RgbwColor(color.R, color.G, color.B, 0));
+      bus.SetPixelColor(pixel, RgbwColor(color));
     }
     virtual void SetPixelColor(uint16_t pixel, RgbwColor color) {
       bus.SetPixelColor(pixel, color);
     }
     virtual void GetPixelColor(uint16_t pixel) { bus.GetPixelColor(pixel); }
-    virtual void ClearTo(RgbColor color) {}
+    virtual void ClearTo(RgbColor color) { ClearTo(RgbwColor(color)); }
     virtual void ClearTo(RgbwColor color) { bus.ClearTo(color); }
   private:
     DmaGRBW bus;
@@ -73,35 +73,43 @@ class StripRGBW: public iStripDriver {
 // class Strip: public Outputter {
 class Strip {
   public:
-    enum PixelBytes: uint8_t {
+    enum PixelBytes {
       Invalid = 0, Single = 1, RGB = 3, RGBW = 4, RGBWAU = 6
     };
 
     Strip();
-    explicit Strip(iStripDriver& d): driver(d) { driver.Begin(); }
+    explicit Strip(iStripDriver* d): driver(d) { driver->Begin(); }
+    explicit Strip(PixelBytes fieldSize, uint16_t ledCount) {
+      if(fieldSize == RGB) {
+          driver = new StripRGB(ledCount);;
+      } else if(fieldSize == RGBW) {
+          driver = new StripRGBW(ledCount);;
+      }
+      driver->Begin();
+    };
     ~Strip() {}
 
     void SetColor(RgbColor color) {
-      driver.ClearTo(color);
-      driver.Show();
+      driver->ClearTo(color);
+      driver->Show();
     }
     void SetColor(RgbwColor color) {
-      driver.ClearTo(color);
-      driver.Show();
+      driver->ClearTo(color);
+      driver->Show();
     }
     // void SetColor(HslColor color);
 
-    void SetBrightness(uint16_t b) { driver.SetBrightness(b); }
+    void SetBrightness(uint16_t b) { driver->SetBrightness(b); }
 
-    // Strip(PixelBytes fieldSize, uint16_t ledCount);
 
     void emit(uint8_t* data, uint16_t* length) {
-      // driver.SetBuffer(data, length);
-      driver.Show();
+      // driver->SetBuffer(data, length);
+      driver->Show();
     }
 
+    iStripDriver* driver; // iStripDriver& driver; // figure out later...  ""As pointed out, failing to make a dtor virtual when a class is deleted through a base pointer could fail to invoke the subclass dtors (undefined behavior).
+
   private:
-    iStripDriver& driver;
 
     int getPixelIndex(int pixel);
     int getPixelFromIndex(int idx);
