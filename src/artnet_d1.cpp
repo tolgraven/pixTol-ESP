@@ -27,6 +27,9 @@ bool gammaCorrect;
 uint8_t log_artnet;
 bool debug;
 uint8_t hzMin, hzMax;
+uint8_t dmxHz;
+
+uint16_t droppedFrames =  0;
 
 // NEOPIXELBUS
 NeoGamma<NeoGammaTableMethod> *colorGamma;
@@ -43,8 +46,7 @@ uint8_t* last_functions = &last_data[-1];  // take care of DMX ch offset...
 Ticker timer_inter;
 uint8_t interFrames; // ~40 us/led gives 5 ms for 1 universe of 125 leds. mirrored 144 rgb a 30 is 9 so 1-2 inters
 // so around 4-5 frames per frame should be alright.  XXX NOT if mirrored remember! make dynamic!!!
-float blendBaseline;  // float blendBaseline = 1.00f - 1.00f / (1 + interFrames); // for now, make dynamic...
-
+float blendBaseline;
 
 uint8_t brightness;
 uint8_t last_brightness = 0;
@@ -116,8 +118,13 @@ void setup() {
 
   LN.log(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Before Homie setup())");
   initHomie();
+
   interFrames = cfg->interFrames.get();
   blendBaseline = 1.00f - 1.00f / (1 + interFrames);
+  attack = blendBaseline;
+  rls = blendBaseline;
+  dimmer_attack = 1.00f - blendBaseline;
+  dimmer_rls = 1.00f - blendBaseline;
 
   statusRing.Begin();
   statusRing.ClearTo(RgbColor(0, 0, 0));
@@ -142,9 +149,10 @@ void setup() {
 
 	bytes_per_pixel = cfg->bytesPerLed.get();
 
-  hzMin = 1; //cfg->strobeHzMin.get();
-  hzMax = 10; //cfg->strobeHzMax.get();  // should these be setable through dmx control ch?                                                      
-  start_uni = cfg->startUni.get();
+  hzMin = 0.1; //cfg->strobeHzMin.get();
+  hzMax = 6.0; //cfg->strobeHzMax.get();  // should these be setable through dmx control ch?                                                      
+  dmxHz = cfg->dmxHz.get();
+  // start_uni = cfg->startUni.get();
   universes = 1; //cfg->universes.get();
 
   if(cfg->clearOnStart.get()) {
@@ -395,9 +403,11 @@ void renderInterFrame() {
   updateFunctions(last_functions, false); // XXX fix so interpolates!!
   if(buses[0].bus) {
       if(buses[0].bus->CanShow()) buses[0].bus->Show();
+      else droppedFrames++;
   }
   else if(buses[0].busW) {
       if(buses[0].busW->CanShow()) buses[0].busW->Show();
+      else droppedFrames++;
   }
 }
 
@@ -435,16 +445,19 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
     // modeNode.setProperty("brightness").send(String(statusBrightness));
     // brightnessOverride = statusBrightness;
   }
-  if(dmxFrameCounter >= cfg->dmxHz.get() * 10) {
+  if(dmxFrameCounter >= dmxHz * 10) {
     int totalTime = 0;
     totalTime = millis() - first;
       if(length > 12) {
-        LN.logf("DMX", LoggerNode::INFO, "avg %dhz, Uni%d, fns %d, %d %d, %d/%d, %d %d, %d/%d, %d/%d", dmxFrameCounter / (totalTime / 1000),
-            universe, data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8], data[9], data[10]);
+        LN.logf("DMX", LoggerNode::INFO,
+            "U %d %dhz, %d, %d %d, %d/%d, %d %d, %d/%d, %d/%d, dropped %d frames",
+            universe, dmxFrameCounter / (totalTime / 1000),
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+            data[8], data[9], data[10], droppedFrames);
       }
       dmxFrameCounter = 0;
       first = millis();
-      LN.logf("brightness", LoggerNode::DEBUG, "b var: %d, override: %d, out: %d",
+      LN.logf("brightness", LoggerNode::DEBUG, "var %d, force %d, out %d",
           brightness, brightnessOverride, outBrightness);
   }
 	if(log_artnet >= 2) Homie.getLogger() << universe;
@@ -469,13 +482,12 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
 
     if(buses[0].bus) {
       if(buses[0].bus->CanShow()) buses[0].bus->Show();
+      else droppedFrames++;
     }
     else if(buses[0].busW) {
-      if(buses[0].busW->CanShow()) {
-          buses[0].busW->Show();
-      }
+      if(buses[0].busW->CanShow()) buses[0].busW->Show();
+      else droppedFrames++;
     }
-
     // above entity should keep track of all incoming data sources and merge appropriately
     // depending on prio, LTP/HTP/mymuchbetterideaofweightedaverages
     // and schedule interpolation
