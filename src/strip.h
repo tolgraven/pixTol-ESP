@@ -5,6 +5,7 @@
 #include <Homie.h>
 #include "modulator.h"
 #include "outputter.h"
+#include "renderstage.h"
 #include "color.h"
  
 // try using blah = whah instead, "Usings can be templatized while typedefs cannot"
@@ -18,7 +19,7 @@ typedef NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>   
 class iStripDriver {
   public:
     iStripDriver() {}
-    // virtual ~iStripDriver() {}
+    virtual ~iStripDriver() {}
     virtual void Begin() = 0;
     virtual void Show() = 0;
     virtual void SetBrightness(uint16_t b) = 0;
@@ -26,19 +27,19 @@ class iStripDriver {
     virtual void SetPixelColor(uint16_t pixel, RgbwColor color) = 0;
     virtual void GetPixelColor(uint16_t pixel, RgbColor& result) = 0;
     virtual void GetPixelColor(uint16_t pixel, RgbwColor& result) = 0;
-    virtual void ClearTo(RgbColor color) = 0; // change eg these to return ref to self, chain like d.ClearTo(blue).SetBrightness(100).Show(); ?
-    virtual void ClearTo(RgbwColor color) = 0;
-    virtual void ClearTo(RgbColor color, uint16_t first, uint16_t last) = 0;
-    virtual void ClearTo(RgbwColor color, uint16_t first, uint16_t last) = 0;
-    virtual bool CanShow() const = 0;                                                                 
-    virtual bool IsDirty() const = 0;                                                                 
-    virtual void Dirty() = 0;                                                                          
-    virtual void ResetDirty() = 0;                                                                     
-    virtual uint8_t* Pixels() = 0;                                                                         
-    virtual size_t PixelsSize() const = 0;                                                               
-    virtual size_t PixelSize() const = 0;                                                                
-    virtual uint16_t PixelCount() const = 0;                                                               
-    virtual void RotateLeft(uint16_t rotationCount) = 0;                                               
+    virtual iStripDriver& ClearTo(RgbColor color) = 0; // change eg these to return ref to self, chain like d.ClearTo(blue).SetBrightness(100).Show(); ?
+    virtual iStripDriver& ClearTo(RgbwColor color) = 0;
+    virtual iStripDriver& ClearTo(RgbColor color, uint16_t first, uint16_t last) = 0;
+    virtual iStripDriver& ClearTo(RgbwColor color, uint16_t first, uint16_t last) = 0;
+    virtual bool CanShow() const = 0;
+    virtual bool IsDirty() const = 0;
+    virtual void Dirty() = 0;
+    virtual void ResetDirty() = 0;
+    virtual uint8_t* Pixels() = 0;
+    virtual size_t PixelsSize() const = 0;
+    virtual size_t PixelSize() const = 0;
+    virtual uint16_t PixelCount() const = 0;
+    virtual void RotateLeft(uint16_t rotationCount) = 0;
     virtual void RotateLeft(uint16_t rotationCount, uint16_t first, uint16_t last) = 0;                  
     virtual void ShiftLeft(uint16_t shiftCount) = 0;
     virtual void ShiftLeft(uint16_t shiftCount, uint16_t first, uint16_t last) = 0;
@@ -65,10 +66,10 @@ class StripRGB: public iStripDriver {
     }
     virtual void GetPixelColor(uint16_t pixel, RgbColor& result) { result = bus.GetPixelColor(pixel); }
     virtual void GetPixelColor(uint16_t pixel, RgbwColor& result) { result = RgbwColor(bus.GetPixelColor(pixel)); }
-    virtual void ClearTo(RgbColor color) { bus.ClearTo(color); }
-    virtual void ClearTo(RgbwColor color) { ClearTo(RgbColor(color.R, color.G, color.B)); }
-    virtual void ClearTo(RgbColor color, uint16_t first, uint16_t last) { bus.ClearTo(color, first, last); }
-    virtual void ClearTo(RgbwColor color, uint16_t first, uint16_t last) { ClearTo(RgbColor(color.R, color.G, color.B), first, last); }
+    virtual iStripDriver& ClearTo(RgbColor color) { bus.ClearTo(color); return *this; }
+    virtual iStripDriver& ClearTo(RgbwColor color) { ClearTo(RgbColor(color.R, color.G, color.B)); return *this; }
+    virtual iStripDriver& ClearTo(RgbColor color, uint16_t first, uint16_t last) { bus.ClearTo(color, first, last); return *this; }
+    virtual iStripDriver& ClearTo(RgbwColor color, uint16_t first, uint16_t last) { ClearTo(RgbColor(color.R, color.G, color.B), first, last); return *this; }
     virtual bool CanShow() const { return bus.CanShow(); }
     virtual bool IsDirty() const { return bus.IsDirty(); }
     virtual void Dirty() { bus.Dirty(); }
@@ -108,10 +109,10 @@ class StripRGBW: public iStripDriver {
       result = RgbColor(rgbw.R, rgbw.G, rgbw.B);
     }
     virtual void GetPixelColor(uint16_t pixel, RgbwColor& result) { result = bus.GetPixelColor(pixel); }
-    virtual void ClearTo(RgbColor color) { ClearTo(RgbwColor(color)); }
-    virtual void ClearTo(RgbwColor color) { bus.ClearTo(color); }
-    virtual void ClearTo(RgbColor color, uint16_t first, uint16_t last) { ClearTo(RgbwColor(color), first, last); }
-    virtual void ClearTo(RgbwColor color, uint16_t first, uint16_t last) { bus.ClearTo(color, first, last); }
+    virtual iStripDriver& ClearTo(RgbColor color) { ClearTo(RgbwColor(color)); return *this; }
+    virtual iStripDriver& ClearTo(RgbwColor color) { bus.ClearTo(color); return *this; }
+    virtual iStripDriver& ClearTo(RgbColor color, uint16_t first, uint16_t last) { ClearTo(RgbwColor(color), first, last); return *this; }
+    virtual iStripDriver& ClearTo(RgbwColor color, uint16_t first, uint16_t last) { bus.ClearTo(color, first, last); return *this; }
     virtual bool CanShow() const { return bus.CanShow(); }
     virtual bool IsDirty() const { return bus.IsDirty(); }
     virtual void Dirty() { bus.Dirty(); }
@@ -132,75 +133,127 @@ class StripRGBW: public iStripDriver {
     DmaGRBW bus;
 };
 
-// class Strip: public Outputter {
-class Strip {
+
+class Strip: public Outputter {
   public:
     enum PixelBytes {
       Invalid = 0, Single = 1, RGB = 3, RGBW = 4, RGBWAU = 6
     };
 
-    Strip();
-    explicit Strip(iStripDriver* d): driver(d) { driver->Begin(); }
-    explicit Strip(PixelBytes fieldSize, uint16_t ledCount) {
-      if(fieldSize == RGB) {
-          driver = new StripRGB(ledCount);;
-      } else if(fieldSize == RGBW) {
-          driver = new StripRGBW(ledCount);;
-      }
-      driver->Begin();
-    };
-    ~Strip() {}
+    Strip():
+      Outputter("Default strip", Strip::RGBW, 120)
+      , bytesPerLed(Strip::RGBW)
+  //     // , RenderStage("Default strip", Strip::RGBW, 120)
+  {}
+
+    // explicit
+    Strip(iStripDriver* d):
+      Outputter("Strip, ext driver", d->PixelsSize(), d->PixelSize())
+      , driver(d), externalDriver(true), bytesPerLed(d->PixelsSize())
+    //   // , RenderStage("Strip, ext driver", d->PixelsSize(), d->PixelSize())
+    {
+        driver->Begin();
+    }
+    // Strip(const String& id, PixelBytes fieldSize, uint16_t ledCount)
+      // : fieldSize(fieldSize), fieldCount(ledCount)
+    Strip(const String& id, PixelBytes fieldSize, uint16_t ledCount)
+      : Outputter(id, (uint8_t)fieldSize, ledCount)
+      , bytesPerLed(fieldSize)
+      /* , RenderStage(id, (uint8_t)fieldSize, ledCount) */
+    { 
+        initDriver();
+    }
+    ~Strip() {} // unless ext driver, delete it here no?
+
+    void setLedCount(uint16_t ledCount) {
+      fieldCount = ledCount;
+      initDriver();
+    }
+    void SetBrightness(uint16_t b) { driver->SetBrightness(b); }
 
     void SetColor(RgbColor color) {
       driver->ClearTo(color);
-      driver->Show();
+      Show();
     }
     void SetColor(RgbwColor color) {
       driver->ClearTo(color);
-      driver->Show();
+      Show();
     }
-    // void SetColor(HslColor color);
+    void SetColor(HslColor color);
 
     bool Show() {
       if(driver->CanShow()) {
         driver->Show();
         return true;
       }
+      droppedFrames++;
       return false;
     }
 
-    void SetBrightness(uint16_t b) { driver->SetBrightness(b); }
+    virtual bool canEmit() { return driver->CanShow(); }
 
+    virtual void emit(uint8_t* data, uint16_t length) {
+      // memcpy(driver->Pixels(), data, length);
+      // should allow multiple ways: pass raw data to put out (involves copy to driver's buffer, whole or per-pixel...)
+      // or (as driver would be shared with PixelBuffer, so can use lib manip fns at that stage as well), simply flush that?
+      for(uint16_t pos = 0; pos < length; pos += fieldSize) { // loop each pixel, getIndexOfField, apply gamma etc
 
-    void emit(uint8_t* data, uint16_t* length) {
-      // driver->SetBuffer(data, length);
-      driver->Show();
+      }
+      // run through any geometry adaptions, mirroring/flip, gamma correct etc...  and dithering...
+      driver->Dirty();
+      Show();
     }
 
-    iStripDriver* driver = nullptr; // iStripDriver& driver; // figure out later...  ""As pointed out, failing to make a dtor virtual when a class is deleted through a base pointer could fail to invoke the subclass dtors (undefined behavior).
-
-  private:
-
-    int getPixelIndex(int pixel);
-    int getPixelFromIndex(int idx);
-
-    // void updatePixels(uint8_t* data);
-    // void updateFunctions(uint8_t* functions, bool isKeyframe);
-
-    PixelBytes bytesPerLed;
-    uint8_t ledsInData;
-    uint8_t ledsInStrip;
-
+    iStripDriver& Driver() { return *driver; }
     bool beGammaCorrect = false;
-    NeoGamma<NeoGammaTableMethod> *colorGamma;
     bool beMirrored = false;
     bool beFolded = false;
     bool beFlipped = false;
 
-    uint16_t maxFrameRate; // calculate from ledCount etc
+    iStripDriver* driver = nullptr; // keep public since interface identical either way, no need further abstraction // iStripDriver& driver; // figure out later...  ""As pointed out, failing to make a dtor virtual when a class is deleted through a base pointer could fail to invoke the subclass dtors (undefined behavior).
+    bool externalDriver = false;
+    uint16_t droppedFrames = 0;
+  private:
+    PixelBytes bytesPerLed;
+    // uint8_t fieldCount; //fieldCount
+    uint8_t ledsInStrip;
 
-    uint8_t brightness, lastBrightness;
+    NeoGamma<NeoGammaTableMethod> *colorGamma;
+
+    uint16_t maxFrameRate; // calculate from ledCount etc, use inherited common vars and methodds for that...
+
+    uint8_t brightness, lastBrightness = 0;
     bool shutterOpen = true;
+
+    void initDriver() {
+      if(!externalDriver) {
+        if(driver) delete driver;
+        if(fieldSize == RGB) {
+          driver = new StripRGB(fieldCount);;
+        } else if(fieldSize == RGBW) {
+          driver = new StripRGBW(fieldCount);;
+        }
+      }
+
+      driver->Begin();
+    }
+
+    virtual uint16_t getIndexOfField(uint16_t position) {
+      if(beFolded) { // pixelidx differs from pixel recieved
+        if(position % 2) { // if uneven
+          position /= 2;  // since every other pixel is from opposite end
+        } else {
+          position = fieldCount-1 - position/2;
+        }
+      }
+      if(beFlipped) {
+        position = fieldCount-1 - position;
+      }
+      return position;
+    }
+
+    virtual uint16_t getFieldOfIndex(uint16_t field);
+
 
   protected:
 };
