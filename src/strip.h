@@ -136,30 +136,26 @@ class StripRGBW: public iStripDriver {
 
 class Strip: public Outputter {
   public:
+    // enum PixelBytes : uint8_t {
     enum PixelBytes {
       Invalid = 0, Single = 1, RGB = 3, RGBW = 4, RGBWAU = 6
     };
 
-    Strip():
-      Outputter("Default strip", Strip::RGBW, 120)
-      , bytesPerLed(Strip::RGBW)
-  //     // , RenderStage("Default strip", Strip::RGBW, 120)
-  {}
+  //   Strip():
+  //     Outputter("Default strip", PixelBytes::RGBW, 120)
+  //     , bytesPerLed(PixelBytes::RGBW)
+  // {}
 
     // explicit
-    Strip(iStripDriver* d):
-      Outputter("Strip, ext driver", d->PixelsSize(), d->PixelSize())
-      , driver(d), externalDriver(true), bytesPerLed(d->PixelsSize())
-    //   // , RenderStage("Strip, ext driver", d->PixelsSize(), d->PixelSize())
-    {
-        driver->Begin();
-    }
-    // Strip(const String& id, PixelBytes fieldSize, uint16_t ledCount)
-      // : fieldSize(fieldSize), fieldCount(ledCount)
+    // Strip(iStripDriver* d):
+    //   Outputter("Strip, ext driver", d->PixelSize(), d->PixelCount())
+    //   , driver(d), externalDriver(true), bytesPerLed(PixelBytes(d->PixelSize()))
+    // {
+    //     driver->Begin();
+    // }
     Strip(const String& id, PixelBytes fieldSize, uint16_t ledCount)
-      : Outputter(id, (uint8_t)fieldSize, ledCount)
+      : Outputter(id, (uint8_t)fieldSize, ledCount, 1)
       , bytesPerLed(fieldSize)
-      /* , RenderStage(id, (uint8_t)fieldSize, ledCount) */
     { 
         initDriver();
     }
@@ -182,6 +178,7 @@ class Strip: public Outputter {
     void SetColor(HslColor color);
 
     bool Show() {
+      if(!isActive) return false;
       if(driver->CanShow()) {
         driver->Show();
         return true;
@@ -203,6 +200,9 @@ class Strip: public Outputter {
       driver->Dirty();
       Show();
     }
+    // virtual void setActive(bool state = true, int8_t bufferIndex = -1) {
+    //
+    // }
 
     iStripDriver& Driver() { return *driver; }
     bool beGammaCorrect = false;
