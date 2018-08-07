@@ -26,11 +26,11 @@ class IO {
 class ArtnetInput: public Inputter {
 
   public:
-    ArtnetInput(const String& id, ArtnetnodeWifi* artnet)
+    ArtnetInput(const String& id, uint8_t numPorts, ArtnetnodeWifi* artnet)
     : Inputter(id, 1, 512)
     , artnet(artnet)
   {
-      artnet.setArtDmxCallback(this->inputCallback);
+      artnet->setArtDmxCallback(ArtnetInput::inputCallback);
     // artnet->getDmxFrame();
     // artnet->artDmxCallback(); //etc, whichever feels right...
   }
@@ -54,9 +54,11 @@ class ArtnetInput: public Inputter {
       return false;
       }
     }
+    uint16_t startUni;
+
     static void inputCallback(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
       // handle sequence check, update droppedFrames?
-      data[universe - artnet->]
+      data[universe - index] = data;
       
 
     }
@@ -100,11 +102,15 @@ class Artnet: public IO {
       artnet.setName(deviceName.c_str()); // artnet.setShortName(); artnet.setLongName();
       artnet.setNumPorts(numPorts);
       artnet.setStartingUniverse(startingUniverse);
+      input = new ArtnetInput("artnet - in", numPorts, &artnet);
+      input->index = startingUniverse;
+      input->bufferCount = numPorts;
+
+      output = new ArtnetOutput("artnet - out", numPorts, &artnet);
       for(uint8_t i=0; i < numPorts; i++) {
           artnet.enableDMXOutput(i); 
       }
-      input = new ArtnetInput("artnet - in", numPorts, &artnet);
-      output = new ArtnetOutput("artnet - out", numPorts, &artnet);
+
       artnet.begin();
     }
 
@@ -114,7 +120,7 @@ class Artnet: public IO {
     // }
 
     virtual void setActive(bool state = true, int8_t bufferIndex = -1) {
-      // isActive = state;
+      /* isActive = state; */
       if(state) artnet.enableDMX();
       else artnet.disableDMX();
     }

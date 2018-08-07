@@ -5,8 +5,8 @@
 //
 // }
 
-bool OutputNode::handleInput(const String& property, const HomieRange& range, const String& value) {
- 	LN.logf(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
+// bool OutputNode::handleInput(const String& property, const HomieRange& range, const String& value) {
+//  	LN.logf(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
 
   // if(property.equals("strip")) {
   //
@@ -32,5 +32,5 @@ bool OutputNode::handleInput(const String& property, const HomieRange& range, co
   //   }
   // }
 
-	return true;
-}
+/* 	return true; */
+/* } */

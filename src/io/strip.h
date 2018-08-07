@@ -4,7 +4,7 @@
 #include <NeoPixelAnimator.h>
 #include <Homie.h>
 #include "modulator.h"
-#include "outputter.h"
+/* #include "outputter.h" */
 #include "renderstage.h"
 #include "color.h"
  
@@ -136,25 +136,25 @@ class StripRGBW: public iStripDriver {
 
 class Strip: public Outputter {
   public:
-    // enum PixelBytes : uint8_t {
-    enum PixelBytes {
+    enum PixelBytes : uint8_t {
+    // enum PixelBytes {
       Invalid = 0, Single = 1, RGB = 3, RGBW = 4, RGBWAU = 6
     };
 
-  //   Strip():
-  //     Outputter("Default strip", PixelBytes::RGBW, 120)
-  //     , bytesPerLed(PixelBytes::RGBW)
-  // {}
+    Strip():
+      Outputter("Default strip", PixelBytes::RGBW, 120)
+      , bytesPerLed(PixelBytes::RGBW)
+  {}
 
     // explicit
-    // Strip(iStripDriver* d):
-    //   Outputter("Strip, ext driver", d->PixelSize(), d->PixelCount())
-    //   , driver(d), externalDriver(true), bytesPerLed(PixelBytes(d->PixelSize()))
-    // {
-    //     driver->Begin();
-    // }
+    Strip(iStripDriver* d):
+      Outputter("Strip, ext driver", PixelBytes(d->PixelSize()), d->PixelCount())
+      , driver(d), externalDriver(true), bytesPerLed(PixelBytes(d->PixelSize()))
+    {
+        initDriver();
+    }
     Strip(const String& id, PixelBytes fieldSize, uint16_t ledCount)
-      : Outputter(id, (uint8_t)fieldSize, ledCount, 1)
+      : Outputter(id, (uint8_t)fieldSize, ledCount)
       , bytesPerLed(fieldSize)
     { 
         initDriver();
@@ -190,7 +190,7 @@ class Strip: public Outputter {
     virtual bool canEmit() { return driver->CanShow(); }
 
     virtual void emit(uint8_t* data, uint16_t length) {
-      // memcpy(driver->Pixels(), data, length);
+      memcpy(driver->Pixels(), data, length);
       // should allow multiple ways: pass raw data to put out (involves copy to driver's buffer, whole or per-pixel...)
       // or (as driver would be shared with PixelBuffer, so can use lib manip fns at that stage as well), simply flush that?
       for(uint16_t pos = 0; pos < length; pos += fieldSize) { // loop each pixel, getIndexOfField, apply gamma etc
@@ -212,10 +212,10 @@ class Strip: public Outputter {
 
     iStripDriver* driver = nullptr; // keep public since interface identical either way, no need further abstraction // iStripDriver& driver; // figure out later...  ""As pointed out, failing to make a dtor virtual when a class is deleted through a base pointer could fail to invoke the subclass dtors (undefined behavior).
     bool externalDriver = false;
-    uint16_t droppedFrames = 0;
+
+    // uint16_t droppedFrames = 0;
   private:
     PixelBytes bytesPerLed;
-    // uint8_t fieldCount; //fieldCount
     uint8_t ledsInStrip;
 
     NeoGamma<NeoGammaTableMethod> *colorGamma;
@@ -228,9 +228,9 @@ class Strip: public Outputter {
     void initDriver() {
       if(!externalDriver) {
         if(driver) delete driver;
-        if(fieldSize == RGB) {
+        if(fieldSize == PixelBytes::RGB) {
           driver = new StripRGB(fieldCount);;
-        } else if(fieldSize == RGBW) {
+        } else if(fieldSize == PixelBytes::RGBW) {
           driver = new StripRGBW(fieldCount);;
         }
       }
@@ -252,7 +252,7 @@ class Strip: public Outputter {
       return position;
     }
 
-    virtual uint16_t getFieldOfIndex(uint16_t field);
+    // virtual uint16_t getFieldOfIndex(uint16_t field) {}; // wasnt defined = vtable breaks
 
 
   protected:

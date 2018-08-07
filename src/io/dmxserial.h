@@ -33,12 +33,15 @@ class DmxSerial: public Outputter, public Inputter {
       }
     }
 
+    virtual bool read() {
+
+    }
+
 
   private:
     // int baud;
     uint8_t* data = nullptr;
     int channelOffset = 0; // and/or more fancy remappings
-
 
 };
 

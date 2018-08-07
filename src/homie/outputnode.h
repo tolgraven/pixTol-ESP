@@ -9,8 +9,8 @@ class OutputNode: public HomieNode {
     // OutputNode();
 
  protected:
-    virtual bool handleInput(const String& property, const HomieRange& range, const String& value);
-    virtual void setup() override;
+    // virtual bool handleInput(const String& property, const HomieRange& range, const String& value);
+    // virtual void setup() override;
     // virtual void loop(); // relevant?
   
 //  private:

@@ -6,7 +6,7 @@
 
 
 class OSC: public Outputter, public Inputter {
-    OSC(const String& pathPrefix, uint8_t numPorts, uint8_t startingUniverse, uint8_t sourceHz): hz(sourceHz), name(deviceName) {
+    OSC(const String& pathPrefix, uint8_t numPorts: hz(sourceHz), name(deviceName) {
 
     }
 
@@ -14,7 +14,9 @@ class OSC: public Outputter, public Inputter {
       osc.parse();
     }
 
-    void subscribe(const String& address, callback)
+    void subscribe(const String& address, callback) {
+
+    }
 
 };
 
