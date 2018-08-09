@@ -379,47 +379,39 @@ void interCallback() {
   interCounter--;
 }
 
-// unsigned long renderMicros; // seems just over 10us per pixel, since 125 gave around 1370... much faster than WS??
-
-// seems just over 10us per pixel, since 125 gave around 1370... much faster than WS??  or something off with measurement
-//keyframe as TARGET: can be overshot; keep it moving
-//calculating diff for(color1-color2)/interFrames and simply adding this static amount each inter
-//faster + solves issue of uneven interpolation, and never quite arriving at incoming frame
-void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
-	if(universe < start_uni || universe >= start_uni + universes) return; // lib takes care of this no?
-  // if(modeNode.) // is set to dmx control. tho just kill then instead prob and never reach here
+void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for logging and stuff... makes sense?
 
   static int first = millis();
   static long dmxFrameCounter = 0;
-  static bool dmxLed = false;
   dmxFrameCounter++;
 
   if(!(dmxFrameCounter % 10)) {
-    statusBrightness += (dmxLed? 10: -10);
-    if(statusBrightness <= 10 || statusBrightness > 245) dmxLed = !dmxLed;
-    statusRing.SetBrightness(statusBrightness);
-    statusRing.Show();
-    // LN.logf("DMX", LoggerNode::DEBUG, "statusBrightness: %d", statusBrightness);
-
-    // modeNode.setProperty("brightness").send(String(statusBrightness));
-    // brightnessOverride = statusBrightness;
   }
-  if(dmxFrameCounter >= dmxHz * 10) {
-    int totalTime = 0;
-    totalTime = millis() - first;
-      if(length > 12) {
-        LN.logf("DMX", LoggerNode::INFO,
-            "U %d %dhz, %d, %d %d, %d/%d, %d %d, %d/%d, %d/%d, dropped %d frames",
-            universe, dmxFrameCounter / (totalTime / 1000),
-            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-            data[8], data[9], data[10], droppedFrames);
-      }
-      dmxFrameCounter = 0;
-      first = millis();
+  if(!(dmxFrameCounter % (dmxHz*10))) { // every 10s (if input correct and stable)
+    uint16_t totalTime = millis() - first;
+    first = millis();
+    /* LN.logf("DMX", LoggerNode::INFO, "dmxFrameCounter: %d, dmxHz: %d, dmxHz*10: %d, totalTime: %d", */
+    /*     dmxFrameCounter, dmxHz, dmxHz * 10, totalTime); */
+    LN.logf("DMX", LoggerNode::INFO, "Artnet buffer addr: %d, Strip buffer addr: %d",
+        artnet.getDmxFrame(), bus->driver->Pixels());
+
+    if(length > 12) {
+      // LN.logf("DMX", LoggerNode::INFO,
+      //   // "U-%d %dhz, %d, %d %d, %d/%d, %d %d, %d/%d, %d/%d, drop %d frames, %d free heap, %d vcc",
+      //   "U-%d %dhz, %d, %d %d, %d/%d, %d %d, %d/%d, %d/%d, drop %d frames",
+      //   universe, dmxFrameCounter / (totalTime / 1000), data[0], data[1], data[2], data[3], data[4],
+      //   // data[5], data[6], data[7], data[8], data[9], data[10], droppedFrames, ESP.getFreeHeap(), ESP.getVcc());
+      //   data[5], data[6], data[7], data[8], data[9], data[10], droppedFrames);
       LN.logf("brightness", LoggerNode::DEBUG, "var %d, force %d, out %d",
-          brightness, brightnessOverride, outBrightness);
+            brightness, brightnessOverride, outBrightness);
+    } else {
+      LN.logf("DMX", LoggerNode::ERROR, "Frame length short, %d", length);
+    }
+
+    dmxFrameCounter = 0;
   }
 	if(log_artnet >= 2) Homie.getLogger() << universe;
+}
 
 	uint8_t* functions = &data[-1];  // take care of DMX ch offset...
 
