@@ -286,30 +286,32 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
 	}
 }
 
-void updateFunctions(uint8_t* functions, bool isKeyframe) {
+void updateFunctions(uint8_t* functions) {
 
-  static uint16_t onTime, strobePeriod;
   static uint8_t ch_strobe_last_value = 0;
   static bool shutterOpen = true;
-  static uint8_t strobeTickerClosed, strobeTickerOpen;
-  static const float onFraction = 5;
-
   // XXX strobe existing anim by turn down lightness/using HTP for two sources, fix so can do same straight from afterglow
   if(functions[CH_STROBE]) {
+    static uint8_t strobeTickerClosed, strobeTickerOpen;
+    static uint16_t onTime, strobePeriod;
+    static const float onFraction = 5;
+
     if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
+
       float hz = (hzMax-hzMin) * (functions[CH_STROBE]-1) / (255-1) + hzMin;
       strobePeriod = 1000 / hz;   // 1 = 1 hz, 255 = 10 hz, to test
       onTime = strobePeriod / onFraction;
-      if(onTime > 200) onTime = 200;
-      strobeTickerClosed = interFrames * strobePeriod / dmxHz; // take heed of interframes...
-      strobeTickerOpen = interFrames * onTime / dmxHz;
+      if(onTime > 150) onTime = 120;
+      strobeTickerOpen = interFrames * onTime / dmxHz; // take heed of interframes...
+      strobeTickerClosed = interFrames * (strobePeriod - onTime) / dmxHz; // since we only decrease one at a time it needs to _add up_ to strobePeriod no?
       shutterOpen = false;
-    } else { // decr tickers
+    } else { // handle running strobe: d1cr/reset tickers, adjust shutter
+
       if(shutterOpen) strobeTickerOpen--;
       else            strobeTickerClosed--;
       if(!strobeTickerClosed) {
         shutterOpen = true;
-        strobeTickerClosed = interFrames * strobePeriod / dmxHz;
+        strobeTickerClosed = interFrames * (strobePeriod - onTime) / dmxHz;
       } else if(!strobeTickerOpen) {
         shutterOpen = false;
         strobeTickerOpen = interFrames * onTime / dmxHz;
