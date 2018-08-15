@@ -91,7 +91,10 @@ void initHomie() {
   statusNode.advertise("fps"); statusNode.advertise("droppedFrames");
   statusNode.advertiseRange("ctrl", 1, 12);
 
-  battery = new BatteryNode();
+  if(analogRead(0) > 100) { // hella unsafe, should be a setting
+    battery = new BatteryNode();
+  }
+  // if(!cfg_debug.get()) Homie.disableLogging();
 
 	Homie.setup();
 }
