@@ -72,9 +72,8 @@ bool colorHandler(const HomieRange& range, const String& value) {
 void initHomie() {
   Homie_setFirmware(FW_NAME, FW_VERSION); Homie_setBrand(FW_BRAND);
 	Homie.setConfigurationApPassword(FW_NAME);
-  
-  // Homie.setLedPin(D2, HIGH);
- // Homie.disableLedFeedback();
+
+  // Homie.setLedPin(D2, HIGH); Homie.disableLedFeedback();
   Homie.onEvent(onHomieEvent);
   Homie.setGlobalInputHandler(globalInputHandler);
   Homie.setBroadcastHandler(broadcastHandler);
@@ -165,14 +164,13 @@ void setup() {
       Homie.getLogger() << ".";
       yield();
     }
-	  // LN.setLoglevel(LoggerNode::DEBUG); //default?
   }
   // XXX check wifi status, if not up for long try like, reset config but first set default values of everything to curr values of everything, so no need touch rest. or just stash somewhere on fs, read back and replace wifi. always gotta be able to recover fully from auto soft-reset, in case of just eg router power went out temp...
   // other potential, scan wifi for other pixtol APs. if none avail, create (inc mqtt broker). if one is, connect...
   // scan and quick connect could also mean "lead" esp tells others new AP/pass so only need to config one!!!
   // put it in a setup mode then once setup keep AP  upuntil rest have switched to correct net
 
-	Homie.getLogger() << endl << "Setup completed" << endl << endl;
+  LN.logf(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Free heap after full init: %d, took %d ms", ESP.getFreeHeap(), millis());
 }
 
 int getPixelIndex(int pixel) { // XXX also handle matrix back-and-forth setups etc
@@ -395,23 +393,17 @@ void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for lo
   static long dmxFrameCounter = 0;
   dmxFrameCounter++;
 
-  if(!(dmxFrameCounter % 10)) {
-  }
   if(!(dmxFrameCounter % (dmxHz*10))) { // every 10s (if input correct and stable)
     uint16_t totalTime = millis() - first;
     first = millis();
-    /* LN.logf("DMX", LoggerNode::INFO, "dmxFrameCounter: %d, dmxHz: %d, dmxHz*10: %d, totalTime: %d", */
-    /*     dmxFrameCounter, dmxHz, dmxHz * 10, totalTime); */
-    LN.logf("DMX", LoggerNode::INFO, "Artnet buffer addr: %d, Strip buffer addr: %d",
-        artnet.getDmxFrame(), bus->driver->Pixels());
+    statusNode.setProperty("freeHeap").send(String(ESP.getFreeHeap()));
+    /* statusNode.setProperty("vcc").send(String(ESP.getVcc())); */
+    statusNode.setProperty("fps").send(String(dmxFrameCounter / (totalTime / 1000)));
+    statusNode.setProperty("droppedFrames").send(String(bus->droppedFrames));
+    /* statusNode.setProperty("ctrl").setRange(); //and so on, dump that shit out data[1], data[2], data[3], data[4], // data[5], data[6], data[7], data[8], data[9], data[10] */
+    /*     artnet.getDmxFrame(), bus->driver->Pixels()); */
 
     if(length > 12) {
-      // LN.logf("DMX", LoggerNode::INFO,
-      //   // "U-%d %dhz, %d, %d %d, %d/%d, %d %d, %d/%d, %d/%d, drop %d frames, %d free heap, %d vcc",
-      //   "U-%d %dhz, %d, %d %d, %d/%d, %d %d, %d/%d, %d/%d, drop %d frames",
-      //   universe, dmxFrameCounter / (totalTime / 1000), data[0], data[1], data[2], data[3], data[4],
-      //   // data[5], data[6], data[7], data[8], data[9], data[10], droppedFrames, ESP.getFreeHeap(), ESP.getVcc());
-      //   data[5], data[6], data[7], data[8], data[9], data[10], droppedFrames);
       LN.logf("brightness", LoggerNode::DEBUG, "var %d, force %d, out %d",
             brightness, ctrl[CH_DIMMER], outBrightness);
     } else {
@@ -448,8 +440,9 @@ void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for lo
     // and schedule interpolation
     memcpy(last_data, data, sizeof(uint8_t) * 512);
     interCounter = interFrames;
-    // 1000/interFrames / hz is wrong no?  if 1 inter 40 hz then should be at 12.5 ms, not 25, so add 1? 
-    if(interCounter) timer_inter.once_ms((1000/(interFrames+1)) / cfg->dmxHz.get(), interCallback);
+    if(interCounter) timer_inter.once_ms((1000/(interFrames+1)) / dmxHz, interCallback);
+
+    logDMXStatus(universe, data, length);
   }
 
 void loopArtNet() {
@@ -460,11 +453,10 @@ void loopArtNet() {
 
   switch(artnet.read()) { // check opcode for logging purposes, actual logic in callback function
     case OpDmx:
-      if(log_artnet >= 4) Homie.getLogger() << "DMX ";
+      if(log_artnet >= 4) // Homie.getLogger() << "DMX ";
       break;
     case OpPoll:
-      if(log_artnet >= 2) Homie.getLogger() << "Art Poll Packet";
-      // LN.logf("artnet", LoggerNode::DEBUG, "Art Poll Packet");
+      if(log_artnet >= 2) // LN.logf("artnet", LoggerNode::DEBUG, "Art Poll Packet");
       break;
   }
 }
