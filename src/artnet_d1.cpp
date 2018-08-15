@@ -96,6 +96,20 @@ void initHomie() {
 	Homie.setup();
 }
 
+void TestStrip() {
+  Homie.getLogger() << "Test abstract strip..." << endl;
+  /* Strip* hmm = new Strip("TestSK", Strip::PixelBytes(cfg->bytesPerLed.get()), cfg->ledCount.get()); */
+  Strip* hmm = new Strip("TestSK", LEDS(cfg->bytesPerLed.get()), cfg->ledCount.get());
+  hmm->SetColor(colors.blue);  delay(80);
+  hmm->SetColor(colors.black); delay(40);
+  hmm->SetColor(colors.green); delay(80);
+  hmm->SetColor(colors.black); delay(40);
+  hmm->SetColor(colors.blueZ); delay(50);
+  hmm->SetColor(colors.red);   delay(50);
+  hmm->SetColor(colors.orange);
+  delete hmm;
+  Homie.getLogger() << "Done test abstract strip..." << endl;
+}
 
 void setup() {
 	Serial.begin(SERIAL_BAUD);
@@ -140,6 +154,18 @@ void setup() {
   dmxHz = cfg->dmxHz.get();
   // start_uni = cfg->startUni.get();
   universes = 1; //cfg->universes.get();
+}
+
+
+void setup() {
+	Serial.begin(SERIAL_BAUD);
+  randomSeed(analogRead(0));
+
+  initHomie();
+  LN.logf("Memory", LoggerNode::DEBUG, "Free heap after Homie init: %d", ESP.getFreeHeap());
+  // ESP.getResetReason(); ESP.getResetInfo(); // good for debugging
+  TestStrip();
+  SetupGlobals();
 
   if(cfg->clearOnStart.get()) {
     DmaGRBW tempbus(288);
