@@ -51,14 +51,14 @@ float attack, rls, dimmer_attack, dimmer_rls;
 BitBangGRB statusRing(D4, 12);
 uint8_t statusBrightness = 15;
 
+int ctrl[12] = {-1};
 
-bool brightnessHandler(const HomieRange& range, const String& value) {
-  modeNode.setProperty("brightness").send(value);
-  brightnessOverride = value.toInt();
-  bus->SetBrightness(brightnessOverride);
-  bus->Show();
+bool controlsHandler(const HomieRange& range, const String& value) {
+  modeNode.setProperty("controls").setRange(range).send(value);
+  ctrl[range.index] = value.toInt();
   return true;
 }
+
 bool colorHandler(const HomieRange& range, const String& value) {
   modeNode.setProperty("color").send(value);
   if(value.equals("blue")) {
@@ -81,11 +81,16 @@ void initHomie() {
   // Homie.setSetupFunction(homieSetup).setLoopFunction(homieLoop);
 	// Homie.setLoggingPrinter(); //only takes Serial objects. Mod for mqtt?
 
+	modeNode.advertiseRange("controls", 1, 12).settable(controlsHandler);
+	modeNode.advertise("color").settable(colorHandler);
+
   cfg = new ConfigNode();
 
-  // if(!cfg_debug.get()) Homie.disableLogging();
-	modeNode.advertise("brightness").settable(brightnessHandler);
-	modeNode.advertise("color").settable(colorHandler);
+  outputNode.advertise("strip").settable();
+  inputNode.advertise("artnet").settable();
+  statusNode.advertise("freeHeap"); statusNode.advertise("vcc");
+  statusNode.advertise("fps"); statusNode.advertise("droppedFrames");
+  statusNode.advertiseRange("ctrl", 1, 12);
 
   battery = new BatteryNode();
 
@@ -287,6 +292,11 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
 }
 
 void updateFunctions(uint8_t* functions) {
+  for(uint8_t i=1; i < DMX_FN_CHS; i++) {
+    if(ctrl[i] >= 0) functions[i] = (uint8_t)ctrl[i];
+  } //snabb fulhack. Generally these would be set appropriately (or from settings) at boot and used if no ctrl values incoming
+    //but also allow (with prio/mode flag) override etc. and adjust behavior, why have anything at all hardcoded tbh
+    //obvs opt to remove dmx ctrl chs as well for 3/4 extra leds wohoo
 
   static uint8_t ch_strobe_last_value = 0;
   static bool shutterOpen = true;
@@ -346,7 +356,7 @@ void updateFunctions(uint8_t* functions) {
       dimmer_rls = (1.00f - blendBaseline) - (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_RELEASE]/315);
   }
 
-  if(brightnessOverride <= 0) {
+  if(ctrl[CH_DIMMER] < 0) {
     bool brighter = brightness > last_brightness;
     // LN.logf("brightness", LoggerNode::DEBUG, "%d + (%d - %d) * %f", last_brightness, functions[CH_DIMMER], last_brightness, dimmer_attack);
     float diff = (functions[CH_DIMMER] - last_brightness) * (brighter ? dimmer_attack : dimmer_rls);
@@ -355,8 +365,8 @@ void updateFunctions(uint8_t* functions) {
     if(brightness < 4) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
     else if(brightness > 255) brightness = 255;
 
-  } else if(brightnessOverride <= 255){
-    brightness = brightnessOverride;
+  } else if(ctrl[CH_DIMMER] <= 255) {
+    brightness = ctrl[CH_DIMMER]; //should rather be ceiling
   }
   last_brightness = brightness;
   outBrightness = (shutterOpen? brightness: 0);
@@ -403,7 +413,7 @@ void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for lo
       //   // data[5], data[6], data[7], data[8], data[9], data[10], droppedFrames, ESP.getFreeHeap(), ESP.getVcc());
       //   data[5], data[6], data[7], data[8], data[9], data[10], droppedFrames);
       LN.logf("brightness", LoggerNode::DEBUG, "var %d, force %d, out %d",
-            brightness, brightnessOverride, outBrightness);
+            brightness, ctrl[CH_DIMMER], outBrightness);
     } else {
       LN.logf("DMX", LoggerNode::ERROR, "Frame length short, %d", length);
     }
