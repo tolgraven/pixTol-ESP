@@ -1,50 +1,56 @@
 #pragma once
 
 #include <ArduinoOSC.h>
-#include "inputter.h"
-#include "outputter.h"
+#include "renderstage.h"
 
+//need to put all our exposable/exposed controls from modulators, settings etc in a structure
+//that gets parsed and auto osc/mqtt/etc bindings created.
 
-class OSC: public Outputter, public Inputter {
+class Osc: public IO {
+
     OSC(const String& pathPrefix, uint8_t numPorts: hz(sourceHz), name(deviceName) {
-
     }
 
-    void read() {
-      osc.parse();
-    }
+    void update() { osc.parse(); }
 
-    void subscribe(const String& address, callback) {
+    void subscribe(const String& address, callback) { }
 
-    }
-
+  WiFiUDP udp;
+  ArduinoOSCWiFi osc;
+  int recv_port = 10000;
+  int send_port = 12000;
 };
 
-// class OSCInput: public Inputter {
-//   public:
-//     OSCInput(const String& pathPrefix, uint8_t numPorts, uint8_t startingUniverse, uint8_t sourceHz): hz(sourceHz), name(deviceName) {
-//       // artnet.setName(name.c_str());
-//       // artnet.setNumPorts(numPorts);
-//       // artnet.setStartingUniverse(startingUniverse);
-//       // for(uint8_t i=0; i < numPorts; i++) {
-//       //     artnet.enableDMXOutput(i); 
-//       // }
-//       // artnet.begin();
-//       // artnet.setArtDmxCallback(read);
-//     }
-//
-//     // virtual bool read(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
-//     //
-//     // }
-//
-//     
-//   private:
-//     OscServer* server;
-//
-// };
-//
-// class OSCOutput: public Outputter {
-//
-//   private:
-//     OscClient* client;
-// };
+class OSCInput: public Inputter {
+  public:
+    OSCInput(const String& pathPrefix): Inputter() {
+      osc.addCallback("/ard/aaa", &callback);
+      osc.addCallback("/ard", &callback);
+    }
+
+    virtual bool read() {}
+
+  private:
+    // OscServer* server;
+};
+
+class OSCOutput: public Outputter {
+
+  private:
+    // OscClient* client;
+};
+
+
+void callback(OSCMessage& m)
+{
+    OSCMessage msg; //create new osc message
+    msg.beginMessage(host, send_port);
+    //set argument
+    msg.setOSCAddress(m.getOSCAddress());
+
+    msg.addArgInt32(m.getArgAsInt32(0));
+    msg.addArgFloat(m.getArgAsFloat(1));
+    msg.addArgString(m.getArgAsString(2));
+
+    osc.send(msg); //send osc message
+}
