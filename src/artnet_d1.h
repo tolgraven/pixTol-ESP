@@ -9,15 +9,15 @@
 #include "util.h"
 #include "battery.h"
 #include "config.h"
-#include "strip.h"
-#include "pixelbuffer.h"
-#include "outputnode.h"
-#include "inputnode.h"
-// #include <ArdOSC.h>
+#include "io/strip.h"
+/* #include "color.h" */
+#include "buffer.h"
+#include "renderstage.h"
+#include "renderer.h"
 
 #define FW_BRAND "tolgrAVen"
 #define FW_NAME "pixTol"
-#define FW_VERSION "1.0.16"
+#define FW_VERSION "1.0.24"
 
 #define LED_PIN             5  // D1=5, D2=4, D3=0, D4=2  D0=16, D55=14, D6=12, D7=13, D8=15
 #define LED_STATUS_PIN      2
@@ -26,8 +26,8 @@
 #define ARTNET_PORT      6454
 #define SERIAL_BAUD     74880 // same rate as bootloader...
 
-// these as enums instead? best if simply property of controlled thing, so fw then dynamically exposes correct fn chs
-#define DMX_FN_CHS         12
+
+#define DMX_FN_CHS         12 // these going soon, when modulators etc
 #define CH_DIMMER           1
 #define CH_STROBE           2 // maybe use for strobe curves etc as well? 1-100 prob enough considering now approach without timers and limited to when rendering happens...
 #define CH_HUE              3 // hue shift instead of strobe curvbes...
@@ -39,29 +39,7 @@
 #define CH_ROTATE_BACK      9
 #define CH_DIMMER_ATTACK   10
 #define CH_DIMMER_RELEASE  11
-// more candidates:
-// #define CH_GAIN
-// #define CH_CHOPSHIT_INHALF_ASSEMBLE_BACKWARDS_THENAGAIN_ETC
-
-#define CH_CONTROL        12
-// FN_SAVE writes all current (savable) DMX settings to config.json
-// then make cues in afterglow or buttons in max/mira to control settings per strip = no config file bs
-// should also set up OSC support tho so can go that way = no fiddling with mapping out and translating shitty 8-bit numbers
-// but stuff like flip could be both a config thing and performance effect so makes sense. anything else?
-// bitcrunch, pixelate (halving resolution + zoom around where is grabbing)
-#define FN_SAVE           1
-#define FN_FLIP           2
-#define FN_UNIVERSE_1     3 //within current subnet...
-#define FN_UNIVERSE_2     4
-#define FN_UNIVERSE_3     5
-#define FN_UNIVERSE_4     6
-#define FN_FRAMEGRAB_1    7
-#define FN_FRAMEGRAB_2    8
-#define FN_FRAMEGRAB_3    9
-#define FN_FRAMEGRAB_4   10
-#define FN_RESET        255
-// then like 100-255 some nice enough curve driving x+y in a bilinear blend depending on amt of slots?
-// BTW: Use bit in fun ch for some sort of midi clock equiv? Would potentially enable "loop last bar", "strobe 1/16" etc...
+#define CH_GAIN            12
 
 /* Magic sequence for Autodetectable Binary Upload */
 const char *__FLAGGED_FW_NAME = "\xbf\x84\xe4\x13\x54" FW_NAME "\x93\x44\x6b\xa7\x75";
