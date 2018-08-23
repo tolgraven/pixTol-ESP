@@ -1,0 +1,106 @@
+
+* renderer
+-> infinite overdub by lowtp, avg, and blending methods
+interpolate past target
+      FB freeze and morph for standby
+            Idea: every x s grab a frame, save 4-8. mqtt/dmx ctrl both to manually save a frame and to grab frame afterthefact from that buffer.  then do the animation fades between saved frames. Also could cut in on beats* (remember tempo+beats ghost markers in dmx feed)
+
+   use same buffers / prio / blending for all inputs incl fn ch?
+        get per-field prio and blending working here first
+            for entire buffers would take esp32 prob?
+
+  * THOUGHTS SCATTERED AROUND src lol
+//keyframe as TARGET: can be overshot; keep it moving
+//calculating diff for(color1-color2)/interFrames and simply adding this static amount each inter
+//faster + solves issue of uneven interpolation, and never quite arriving at incoming frame
+
+      * onDmxFrame
+  // Should: First pass to intermediate buffer, eg got multiple unis = dont flush til got all
+  // also easier to manipulate rotation etc BEFORE mapping onto strip, so dont have to convert back and forth
+  // Strip, SerialDMX (via max485), non-IP wireless, a fadecandy?/any hw/software endpoint with
+  // no fn ch capability so pixtol runs as basically an effect box?  or sniffer/tester
+  // so might send as artnet cause actually came in by XLR, or fwd wifi by CAT or versa? neither end shall give any damns
+
+    // this should be a scheduler calling outputter to actually render/write
+    // incoming frames can and will stutter, interpolation and minor buffering can help that
+    // plus remember animation retiming off music tempo etc, that's for like a pi tho
+
+    // above entity should keep track of all incoming data sources and merge appropriately
+    // depending on prio, LTP/HTP/mymuchbetterideaofweightedaverages and schedule interpolation
+
+*** Frame interpolation
+"seems just over 10us per pixel, since 125 gave around 1370... much faster than WS??"
+
+* FN chs
+  attack modes
+   "TRANSIENT": let quick changes through easier, get stickier on slow
+   think of effective value run as off compressor with slow attack and high release/ratio (= lets fast hits through,)
+   "STICKY": normal on slow changes, throttle fast ones
+   something to not entirely discard high peaks (as when far from reachinf before source lowers and target's darker) but simply delay and shorten.
+
+* battery
+*** WHOO! cutoff harr
+  better safe mode: check each pixel brightness, calculate approx total mA, dim all if needed (also off usb, small runs straight offa ESP etc)
+
+* swarm setup
+  check wifi status, if not up for long try like, reset config but first set default values of everything to curr values of everything, so no need touch rest. or just stash somewhere on fs, read back and replace wifi. always gotta be able to recover fully from auto soft-reset, in case of just eg router power went out temp...
+  other potential, scan wifi for other pixtol APs. if none avail, create (inc mqtt broker). if one is, connect...
+   scan and quick connect could also mean "lead" esp tells others new AP/pass so only need to config one!!!
+   put it in a setup mode then once setup keep AP  upuntil rest have switched to correct net
+
+
+* INPUT METHODS:
+- DMX: XLR, CAT
+- IP: Wifi, Eth
+    - Artnet w sync
+    - sACN
+      RDM!!!
+* OPC?
+* OSC/MQTT (settings/scenes)
+
+* OUTPUTS:
+- DMX: XLR, IP
+- LEDstrips: 8/24/32+ bits,
+- Lights: Milight, etcetc
+- GPIO for other stuff? use a pixtol to mod fog machine to run DMX etc.
+
+
+
+
+random crap notes, use RDM ffs (well and osc...)
+ FN_SAVE writes all current (savable) DMX settings to config.json
+ then make cues in afterglow or buttons in max/mira to control settings per strip = no config file bs
+ should also set up OSC support tho so can go that way = no fiddling with mapping out and translating shitty 8-bit numbers
+ but stuff like flip could be both a config thing and performance effect so makes sense. anything else?
+ bitcrunch, pixelate (halving resolution + zoom around where is grabbing)
+ then like 100-255 some nice enough curve driving x+y in a bilinear blend depending on amt of slots?
+ BTW: Use bit in fun ch for some sort of midi clock equiv? Would potentially enable "loop last bar", "strobe 1/16" etc...
+
+ #define FN_SAVE           1 */
+ #define FN_FLIP           2 */
+ #define FN_UNIVERSE_1     3 //within current subnet... */
+ #define FN_UNIVERSE_2     4 */
+ #define FN_UNIVERSE_3     5 */
+ #define FN_UNIVERSE_4     6 */
+ #define FN_FRAMEGRAB_1    7 */
+ #define FN_FRAMEGRAB_2    8 */
+ #define FN_FRAMEGRAB_3    9 */
+ #define FN_FRAMEGRAB_4   10 */
+ #define FN_RESET        255 */
+ #define CH_CONTROL        12
+ #define CH_CHOPSHIT_INHALF_ASSEMBLE_BACKWARDS_THENAGAIN_ETC
+
+old
+TODO: global function channels:
+1 Dimmer (so don't have to emulate it in Afterglow...) - could also go past 100? so boosting everything (obvs clipped to 255/255/255/255) - Compensate for fact that Afterglow won't go over 50/50/50/50% when "maxed", needs lightness 100 I guess?
+2 Strobe
+3-6 Strobe Red, Green, Blue, White
+7 Strobe functions - per pixel on/off, time-ratio on/off for strobe, halogen emulationish etc
+8 Function channel, toggling:
+- Automatic light bleed between pixels?
+- Automatic "blur" / afterglow (keep track of past few states for pixel and blend in like)
+- Dithering like just small randomness so esp strobe still looks eh, organic or something
+- Gamma adjust from pixelbus, toggle?
+- neopixelbus - RotateLeft/Right ShiftLeft/Right? for direct sweeps/animations of current state however it was reached... would def allow cool results when activated over dmx
+  						 - the NeoBuffer/NeoVerticalPriteSheet/NeoBitmapFile stuff?
+- random other shit. WS2812FX etc?  // - set as slave
