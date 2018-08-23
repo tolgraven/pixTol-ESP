@@ -74,13 +74,39 @@ class Buffer: public RenderStage {
 
 class PixelBuffer: public Buffer {
   public:
-    PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels, uint8_t* dataptr=nullptr): // 
-      Buffer("some ID like", bytesPerPixel, numPixels, dataptr) {}
+    PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels): //
+      Buffer("PixelBuffer", bytesPerPixel, numPixels) {
+    /* } */
+    /* PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels, uint8_t* dataptr=nullptr): //  */
+    /* PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels): // */
+    /*   Buffer("some ID like", bytesPerPixel, numPixels, nullptr) { */
 
-    void blendWith(PixelBuffer buffer, float amount) {
+      driver = new StripRGBW(125);
+      /* if(dataptr == nullptr) { */
+      bufdata = driver->Pixels();
+      /* } */
+    }
 
+    void blendWith(const PixelBuffer& buffer, float amount) {
     } // later add methods like overlay, darken etc
-    
+
+    PixelBuffer difference(const PixelBuffer& buffer, float fraction) const {
+      /* uint16_t* buflen; */
+      uint8_t* otherData = buffer.get();
+      PixelBuffer diff(fieldSize, fieldCount); // = PixelBuffer(fieldSize, fieldCount);
+      uint8_t* diffData = diff.get();
+      for(uint16_t i=0; i < dataLength; i++) {
+        diffData[i] = bufdata[i] - otherData[i];
+      }
+      return diff;
+
+    }
+    void add(const PixelBuffer& buffer) {
+      uint8_t* otherData = buffer.get();
+      for(uint16_t i=0; i < this->dataLength; i++) {
+        bufdata[i] += otherData[i];
+      }
+    }
     // all below should actually be modulators, but do we wrap them like this for easy access? maybe
     // void rotate(int x, int y=0);
     // void shift(int x, int y=0);
@@ -94,9 +120,9 @@ class PixelBuffer: public Buffer {
     // PixelBuffer operator+(const PixelBuffer& b);
     // PixelBuffer operator-(const PixelBuffer& b); // darken?
     // PixelBuffer operator*(const PixelBuffer& b); // average?
-    // PixelBuffer operator/(const PixelBuffer& b); // 
-
+    // PixelBuffer operator/(const PixelBuffer& b); //
   private:
-    iBufferDriver* driver;
+    /* iBufferDriver* driver; */
+    iStripDriver* driver = nullptr;
 };
 
