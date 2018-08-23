@@ -326,37 +326,54 @@ void updateFunctions(uint8_t* functions) {
     //obvs opt to remove dmx ctrl chs as well for 3/4 extra leds wohoo
 
   static uint8_t ch_strobe_last_value = 0;
-  static bool shutterOpen = true;
-  // XXX strobe existing anim by turn down lightness/using HTP for two sources, fix so can do same straight from afterglow
+  static bool shutterOpen = true; // could also have shutter as float not bool and fade using it. 0 closed, 1 open, between in transition
+  static uint8_t shutterAmount = 255;
   if(functions[CH_STROBE]) {
-    static uint8_t strobeTickerClosed, strobeTickerOpen;
-    static uint16_t onTime, strobePeriod;
-    static const float onFraction = 5;
+    static uint8_t strobeTickerClosed, strobeTickerOpen, strobeTickerFading;
+    static uint16_t onTime, strobePeriod, fadeTime;
+    static uint8_t eachFrameFade;
+    static const float onFraction = 3;
+    static const float fadeFraction = 5;
 
     if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
 
-      float hz = (hzMax-hzMin) * (functions[CH_STROBE]-1) / (255-1) + hzMin;
-      strobePeriod = 1000 / hz;   // 1 = 1 hz, 255 = 10 hz, to test
-      onTime = strobePeriod / onFraction;
-      if(onTime > 150) onTime = 120;
+      float strobeHz = (hzMax-hzMin) * (functions[CH_STROBE]-1) / (255-1) + hzMin;
+      strobePeriod = 1000 / strobeHz;   // 1 = 1 hz, 255 = 10 hz, to test
+
+      // onTime = strobePeriod / onFraction;
+      // if(onTime > 135) onTime = 135;
+      onTime = strobePeriod / onFraction < 135? strobePeriod / onFraction: 135;
+      fadeTime = strobePeriod / fadeFraction;
       strobeTickerOpen = interFrames * onTime / dmxHz; // take heed of interframes...
       strobeTickerClosed = interFrames * (strobePeriod - onTime) / dmxHz; // since we only decrease one at a time it needs to _add up_ to strobePeriod no?
+      strobeTickerFading = interFrames * fadeTime / dmxHz; //runs in parallel
+      eachFrameFade = 255 / strobeTickerFading;
+
+      LN.logf("Strobe", LoggerNode::DEBUG, "strobeHz %f, strobePeriod %d, onTime %d, strobeTickers %d/%d/%d open/cloded/fading",
+          strobeHz, strobePeriod, onTime, strobeTickerOpen, strobeTickerClosed, strobeTickerFading);
       shutterOpen = false;
-    } else { // handle running strobe: d1cr/reset tickers, adjust shutter
+    } else { // handle running strobe: decr/reset tickers, adjust shutter
 
       if(shutterOpen) strobeTickerOpen--;
-      else            strobeTickerClosed--;
+      else {
+          strobeTickerClosed--;
+          strobeTickerFading--;
+          if(shutterAmount - eachFrameFade >= 0) shutterAmount -= eachFrameFade;
+          else shutterAmount = 0;
+      }
       if(!strobeTickerClosed) {
         shutterOpen = true;
         strobeTickerClosed = interFrames * (strobePeriod - onTime) / dmxHz;
-      } else if(!strobeTickerOpen) {
+        shutterAmount = 255;
+      } else if(!strobeTickerOpen) { // here should be option for curve out...
         shutterOpen = false;
         strobeTickerOpen = interFrames * onTime / dmxHz;
+        strobeTickerFading = interFrames * fadeTime / dmxHz;
+      } else if(!strobeTickerFading) {
+        shutterAmount = 0;
       }
     }
-  } else { // 0, clean up
-    shutterOpen = true;
-  }
+  } else shutterOpen = true; // 0, clean up
   ch_strobe_last_value = functions[CH_STROBE];
 
   if(functions[CH_ROTATE_FWD]) { // if(functions[CH_ROTATE_FWD] && isKeyframe) {
