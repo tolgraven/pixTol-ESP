@@ -48,8 +48,7 @@ int brightnessOverride = -1;
 uint8_t outBrightness;
 float attack, rls, dimmer_attack, dimmer_rls;
 
-BitBangGRB statusRing(D4, 12);
-uint8_t statusBrightness = 15;
+Functions* f;
 
 int ctrl[12] = {-1};
 
@@ -325,97 +324,17 @@ void updateFunctions(uint8_t* functions) {
     //but also allow (with prio/mode flag) override etc. and adjust behavior, why have anything at all hardcoded tbh
     //obvs opt to remove dmx ctrl chs as well for 3/4 extra leds wohoo
 
-  static uint8_t ch_strobe_last_value = 0;
-  static bool shutterOpen = true; // could also have shutter as float not bool and fade using it. 0 closed, 1 open, between in transition
-  static uint8_t shutterAmount = 255;
-  if(functions[CH_STROBE]) {
-    static uint8_t strobeTickerClosed, strobeTickerOpen, strobeTickerFading;
-    static uint16_t onTime, strobePeriod, fadeTime;
-    static uint8_t eachFrameFade;
-    static const float onFraction = 3;
-    static const float fadeFraction = 5;
 
-    if(functions[CH_STROBE] != ch_strobe_last_value) { // reset timer for new state
+	iStripDriver& d = bus->Driver();
+  f->update(functions);
 
-      float strobeHz = (hzMax-hzMin) * (functions[CH_STROBE]-1) / (255-1) + hzMin;
-      strobePeriod = 1000 / strobeHz;   // 1 = 1 hz, 255 = 10 hz, to test
+  if(functions[chRotateFwd])
+    d.RotateRight(led_count * ((float)functions[chRotateFwd] / 255)); // these would def benefit from anti-aliasing = decoupling from leds as steps
+  //  if(isKeyframe && functions[aCH_ROTATE_BACK] && (functions[CH_ROTATE_BACK] != last_functions[CH_ROTATE_BACK])) { // so what happens is since this gets called in interpolation it shifts like five extra times?
+  if(functions[chRotateBack])
+    d.RotateLeft(led_count * ((float)functions[chRotateBack] / 255)); // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
 
-      // onTime = strobePeriod / onFraction;
-      // if(onTime > 135) onTime = 135;
-      onTime = strobePeriod / onFraction < 135? strobePeriod / onFraction: 135;
-      fadeTime = strobePeriod / fadeFraction;
-      strobeTickerOpen = interFrames * onTime / dmxHz; // take heed of interframes...
-      strobeTickerClosed = interFrames * (strobePeriod - onTime) / dmxHz; // since we only decrease one at a time it needs to _add up_ to strobePeriod no?
-      strobeTickerFading = interFrames * fadeTime / dmxHz; //runs in parallel
-      eachFrameFade = 255 / strobeTickerFading;
-
-      LN.logf("Strobe", LoggerNode::DEBUG, "strobeHz %f, strobePeriod %d, onTime %d, strobeTickers %d/%d/%d open/cloded/fading",
-          strobeHz, strobePeriod, onTime, strobeTickerOpen, strobeTickerClosed, strobeTickerFading);
-      shutterOpen = false;
-    } else { // handle running strobe: decr/reset tickers, adjust shutter
-
-      if(shutterOpen) strobeTickerOpen--;
-      else {
-          strobeTickerClosed--;
-          strobeTickerFading--;
-          if(shutterAmount - eachFrameFade >= 0) shutterAmount -= eachFrameFade;
-          else shutterAmount = 0;
-      }
-      if(!strobeTickerClosed) {
-        shutterOpen = true;
-        strobeTickerClosed = interFrames * (strobePeriod - onTime) / dmxHz;
-        shutterAmount = 255;
-      } else if(!strobeTickerOpen) { // here should be option for curve out...
-        shutterOpen = false;
-        strobeTickerOpen = interFrames * onTime / dmxHz;
-        strobeTickerFading = interFrames * fadeTime / dmxHz;
-      } else if(!strobeTickerFading) {
-        shutterAmount = 0;
-      }
-    }
-  } else shutterOpen = true; // 0, clean up
-  ch_strobe_last_value = functions[CH_STROBE];
-
-  if(functions[CH_ROTATE_FWD]) { // if(functions[CH_ROTATE_FWD] && isKeyframe) {
-		bus->driver->RotateRight(led_count * ((float)functions[CH_ROTATE_FWD] / 255));
-  // } if(isKeyframe && functions[CH_ROTATE_BACK] && (functions[CH_ROTATE_BACK] != last_functions[CH_ROTATE_BACK])) { // so what happens is since this gets called in interpolation it shifts like five extra times?
-  } if(functions[CH_ROTATE_BACK]) { // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
-		bus->driver->RotateLeft(led_count * ((float)functions[CH_ROTATE_FWD] / 255));
-  }
-
-  //WTF: when not enough current and strips yellow, upping atttack makes them less yellow. Also happens in general, but less noticable?
-  if(functions[CH_ATTACK] != last_functions[CH_ATTACK]) {
-    attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_ATTACK]/295); // dont ever quite arrive like this, two runs at max = 75% not 100%...
-    LN.logf("updateFunctions", LoggerNode::DEBUG, "Attack: %d / %f", functions[CH_ATTACK]);
-  }
-  if(functions[CH_RELEASE] != last_functions[CH_RELEASE]) {
-      rls = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_RELEASE]/265);
-  }
-
-  if(functions[CH_DIMMER_ATTACK] != last_functions[CH_DIMMER_ATTACK]) {
-      // dimmer_attack = blendBaseline + (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_ATTACK]/285); // dont ever quite arrive like this, two runs at max = 75% not 100%...
-      dimmer_attack = (1.00f - blendBaseline) - (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_ATTACK]/315); // dont ever quite arrive like this, two runs at max = 75% not 100%...
-  }
-  if(functions[CH_DIMMER_RELEASE] != last_functions[CH_DIMMER_RELEASE]) {
-      dimmer_rls = (1.00f - blendBaseline) - (1.00f - blendBaseline) * ((float)functions[CH_DIMMER_RELEASE]/315);
-  }
-
-  if(ctrl[CH_DIMMER] < 0) {
-    bool brighter = brightness > last_brightness;
-    // LN.logf("brightness", LoggerNode::DEBUG, "%d + (%d - %d) * %f", last_brightness, functions[CH_DIMMER], last_brightness, dimmer_attack);
-    float diff = (functions[CH_DIMMER] - last_brightness) * (brighter ? dimmer_attack : dimmer_rls);
-    if(diff > 0.1f && diff < 1.0f) diff = 1.0f;
-    brightness = last_brightness + diff; // crappy workaround, store dimmer internally as 16bit or float instead.
-    if(brightness < 4) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
-    else if(brightness > 255) brightness = 255;
-
-  } else if(ctrl[CH_DIMMER] <= 255) {
-    brightness = ctrl[CH_DIMMER]; //should rather be ceiling
-  }
-  last_brightness = brightness;
-  outBrightness = (shutterOpen? brightness: 0);
-
-  bus->driver->SetBrightness(outBrightness);
+  d.SetBrightness(f->outBrightness);
 }
 
 void renderInterFrame() {
