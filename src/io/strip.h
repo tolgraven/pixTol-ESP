@@ -4,17 +4,17 @@
 #include <NeoPixelAnimator.h>
 #include <Homie.h>
 #include "modulator.h"
-/* #include "outputter.h" */
 #include "renderstage.h"
 #include "color.h"
- 
+#include "util.h"
+
 // try using blah = whah instead, "Usings can be templatized while typedefs cannot"
-typedef NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266Dma800KbpsMethod>         DmaGRB;
-typedef NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>         DmaGRBW;
-typedef NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266AsyncUart800KbpsMethod>   UartGRB;
-typedef NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266AsyncUart800KbpsMethod>   UartGRBW;
-typedef NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266BitBang800KbpsMethod>     BitBangGRB;
-typedef NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>     BitBangGRBW;
+using DmaGRB      = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266Dma800KbpsMethod>;
+using DmaGRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>;
+using UartGRB     = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266AsyncUart800KbpsMethod>;
+using UartGRBW    = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266AsyncUart800KbpsMethod>;
+using BitBangGRB  = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266BitBang800KbpsMethod>;
+using BitBangGRBW = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>;
 
 class iStripDriver {
   public:
@@ -133,41 +133,74 @@ class StripRGBW: public iStripDriver {
 
 class Strip: public Outputter {
   public:
-    enum PixelBytes : uint8_t {
-    // enum PixelBytes {
-      Invalid = 0, Single = 1, RGB = 3, RGBW = 4, RGBWAU = 6
-    };
-
     Strip():
-      Outputter("Default strip", PixelBytes::RGBW, 120),
-      bytesPerLed(PixelBytes::RGBW) {}
+      Outputter("Default strip", RGBW, 120), bytesPerLed(RGBW) {}
 
     // explicit
     Strip(iStripDriver* d):
-      Outputter("Strip, ext driver", PixelBytes(d->PixelSize()), d->PixelCount()),
-      driver(d), externalDriver(true), bytesPerLed(PixelBytes(d->PixelSize())) {
+      Outputter("Strip, ext driver", LEDS(d->PixelSize()), d->PixelCount()),
+      driver(d), externalDriver(true), bytesPerLed(LEDS(d->PixelSize())) {
         initDriver();
     }
-    Strip(const String& id, PixelBytes fieldSize, uint16_t ledCount):
+    Strip(const String& id, LEDS fieldSize, uint16_t ledCount):
       Outputter(id, (uint8_t)fieldSize, ledCount),
       bytesPerLed(fieldSize) {
         initDriver();
     }
     ~Strip() { if(externalDriver) delete driver; } //actually dumb? if providing externally then might be using for other stuff
 
-    void setLedCount(uint16_t ledCount) {
-      fieldCount = ledCount;
-      initDriver();
-    }
-    void SetBrightness(uint16_t b) { driver->SetBrightness(b); }
-
     // will have to get rid of below ones if want Outputter clean? nah cant be But would be alright, just conveniance stuff no?
-    void setLedCount(uint16_t ledCount)     { fieldCount = ledCount; initDriver(); }
-    void SetBrightness(uint16_t brightness) { driver->SetBrightness(brightness); }
+    void setLedCount(uint16_t ledCount) {
+      fieldCount = ledCount; initDriver();
+    }
+    void SetBrightness(uint16_t brightness) {
+      if(brightness < totalBrightnessCutoff) {
+        brightness = 0; //until dithering...
+      }
+      driver->SetBrightness(brightness);
+    }
 
     void SetColor(RgbColor color)       { driver->ClearTo(color);           Show(); }
     void SetColor(RgbwColor color)      { driver->ClearTo(color);           Show(); }
     void SetColor(HslColor color)       { driver->ClearTo(RgbColor(color)); Show(); }
+
+    void SetPixelColor(uint16_t pixel, RgbwColor color) {
+      pixel = getIndexOfField(pixel);
+      if(color.CalculateBrightness() < pixelBrightnessCutoff) {
+        color.Darken(pixelBrightnessCutoff);
+      }
+      if(beGammaCorrect) {
+        color = colorGamma->Correct(color);
+      }
+
+      driver->SetPixelColor(pixel, color);
+			if(beMirrored) {
+        driver->SetPixelColor(ledsInStrip-1 - pixel, color);
+      }
+    }
+    void SetPixelColor(uint16_t pixel, RgbColor color) {
+      pixel = getIndexOfField(pixel);
+      if(color.CalculateBrightness() < pixelBrightnessCutoff) {
+        color.Darken(pixelBrightnessCutoff);
+      }
+      if(beGammaCorrect) {
+        color = colorGamma->Correct(color);
+      }
+
+      driver->SetPixelColor(pixel, color);
+			if(beMirrored) {
+        driver->SetPixelColor(ledsInStrip-1 - pixel, color);
+      }
+    }
+    void GetPixelColor(uint16_t pixel, RgbwColor& color) {
+      pixel = getIndexOfField(pixel);
+      driver->GetPixelColor(pixel, color); // and back it goes
+    }
+    void GetPixelColor(uint16_t pixel, RgbColor& color) {
+      pixel = getIndexOfField(pixel);
+      driver->GetPixelColor(pixel, color); // and back it goes
+    }
+
 
     bool Show() {
       if(!isActive) return false;
@@ -187,43 +220,68 @@ class Strip: public Outputter {
       // or (as driver would be shared with PixelBuffer, so can use lib manip fns at that stage as well), simply flush that?
       for(uint16_t pos = 0; pos < length; pos += fieldSize) { // loop each pixel, getIndexOfField, apply gamma etc
 
-      }
-      // run through any geometry adaptions, mirroring/flip, gamma correct etc...  and dithering...
+      } // run through any geometry adaptions, mirroring/flip, gamma correct etc...  and dithering...
       driver->Dirty();
       Show();
     }
+
     // virtual void setActive(bool state = true, int8_t bufferIndex = -1) {
     //
     // }
 
     iStripDriver& Driver()    { return *driver; }
 
-    bool beGammaCorrect = false;
-    bool beMirrored     = false;
-    bool beFolded       = false;
-    bool beFlipped      = false;
+    Strip& setMirrored(bool state = true) {
+      beMirrored = state;
+      initDriver(); // affects output size so yeah
+      // ledsInStrip = beMirrored? fieldCount * 2: fieldCount;
+      return *this;
+    }
+    Strip& setFolded(bool state = true) {
+      beFolded = state;
+      return *this;
+    }
+    Strip& setFlipped(bool state = true) {
+      beFlipped = state;
+      return *this;
+    }
+    Strip& setGammaCorrect(bool state = true) {
+      beGammaCorrect = state;
+      colorGamma = new NeoGamma<NeoGammaTableMethod>;
+      return *this;
+    }
+    uint8_t pixelBrightnessCutoff = 8;
+    uint8_t totalBrightnessCutoff = 6;
 
     iStripDriver* driver = nullptr; // keep public since interface identical either way, no need further abstraction // iStripDriver& driver; // figure out later...  ""As pointed out, failing to make a dtor virtual when a class is deleted through a base pointer could fail to invoke the subclass dtors (undefined behavior).
     bool externalDriver = false;
 
     uint16_t droppedFrames = 0;
     uint16_t microsTicker = 0;
+
+
   private:
-    PixelBytes bytesPerLed;
+    LEDS bytesPerLed;
     uint8_t ledsInStrip;
+    bool beMirrored     = false;
+    bool beGammaCorrect = false;
+    bool beFolded       = false;
+    bool beFlipped      = false;
 
     NeoGamma<NeoGammaTableMethod> *colorGamma;
 
     uint16_t maxFrameRate; // calculate from ledCount etc, use inherited common vars and methodds for that...
 
-    uint8_t brightness, lastBrightness = 0;
-    bool shutterOpen = true;
+    // uint8_t brightness, lastBrightness = 0;
 
     void initDriver() {
+      ledsInStrip = beMirrored? fieldCount * 2: fieldCount;
+
       if(!externalDriver) {
         if(driver) delete driver;
-        if(fieldSize == PixelBytes::RGB)        driver = new StripRGB(fieldCount);
-        else if(fieldSize == PixelBytes::RGBW)  driver = new StripRGBW(fieldCount);
+
+        if(fieldSize == RGB)        driver = new StripRGB(ledsInStrip);
+        else if(fieldSize == RGBW)  driver = new StripRGBW(ledsInStrip);
       }
       driver->Begin();
     }
@@ -242,8 +300,11 @@ class Strip: public Outputter {
       return position;
     }
 
-    // virtual uint16_t getFieldOfIndex(uint16_t field) {}; // wasnt defined = vtable breaks
+    virtual uint16_t getFieldOfIndex(uint16_t field) { return field; } // wasnt defined = vtable breaks
 
+    virtual void applyModulator(Modulator<uint8_t>* mod) {
+      return;
+    }
 
   protected:
 };
