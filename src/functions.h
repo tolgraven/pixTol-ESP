@@ -89,7 +89,6 @@ class Functions {
     uint8_t lastStrobe;
 
     float hzMin, hzMax;
-    /* int strobeTickerClosed, strobeTickerOpen, strobeTickerFading; */
     int targetTickMs, onTime, strobePeriod, fadeTime;
     uint8_t eachFrameFade;
     float strobeHz;
@@ -113,57 +112,46 @@ class Functions {
       strobeHz = (hzMax-hzMin) * (value-1) / (255-1) + hzMin;
       strobePeriod = 1000 / strobeHz;   // 1 = 1 hz, 255 = 10 hz, to test
 
-      onTime = strobePeriod / onFraction;
-      if(onTime > onMaxMs) onTime = onMaxMs;
-      /* strobeTickerOpen = onTime / targetTickMs; // take heed of interframes... */
+      resetOnTime();
+      resetFadeTime();
 
-      fadeTime = strobePeriod / fadeFraction;
-      if(fadeTime > fadeMaxMs) fadeTime = fadeMaxMs;
-      /* strobeTickerFading = fadeTime / targetTickMs; //runs in parallel */
-
-      /* strobeTickerClosed = (strobePeriod - onTime) / targetTickMs; // since we only decrease one at a time it needs to _add up_ to strobePeriod no? */
-
-      /* eachFrameFade = 255 / strobeTickerFading; */
-      eachFrameFade = 255 / 30; //XXX
+      eachFrameFade = 255 / 30; // strobeTickerFading; //XXX
       amount = 255;
 
-      LN.logf("Strobe", LoggerNode::DEBUG, "strobeHz %f, strobePeriod %d, onTime %d, strobeTickers %d/%d/%d open/closed/fading",
-          strobeHz, strobePeriod, onTime); //, strobeTickerOpen, strobeTickerClosed, strobeTickerFading);
+      LN.logf("Strobe", LoggerNode::DEBUG, "strobeHz %f, strobePeriod %d, onTime %d", strobeHz, strobePeriod, onTime);
 
       open = false;
     }
 
+    void resetOnTime() { //these would be in maps so only need one function
+      onTime = strobePeriod / onFraction;
+      if(onTime > onMaxMs) onTime = onMaxMs;
+    }
+
+    void resetFadeTime() {
+      fadeTime = strobePeriod / fadeFraction;
+      if(fadeTime > fadeMaxMs) fadeTime = fadeMaxMs;
+    }
+
     void tickStrobe(int passedMs) {
+      strobePeriod -= passedMs; //always count down to next reset
 
-      strobePeriod -= passedMs;
-
-      if(open){
-        /* strobeTickerOpen--; */
+      if(open) {
         onTime -= passedMs;
-      }
-      else { //closed, count down fade and off-tickers
-        /* strobeTickerClosed--; */
-
-        /* strobeTickerFading--; */
+      } else { //closed, count down fade and off-tickers
         fadeTime -= passedMs; //wait have to keep orig val around for below tho. dupl...
 
         amount -= (eachFrameFade < amount? eachFrameFade: amount);
       }
 
-      /* if(!strobeTickerClosed) { */
-      if(strobePeriod <= 0) {
+      if(strobePeriod <= 0) { //reset for new iteration
         open = true;
-        /* strobeTickerClosed = (strobePeriod - onTime) / targetTickMs; // since we only decrease one at a time it needs to _add up_ to strobePeriod no? */
         strobePeriod = 1000 / strobeHz;
         amount = 255;
-      /* } else if(!strobeTickerOpen) { // here should be option for curve out... */
       } else if(onTime <= 0) { // here should be option for curve out...
         open = false;
-        /* strobeTickerOpen = onTime / targetTickMs; // take heed of interframes... */
-        /* strobeTickerFading = fadeTime / targetTickMs; //runs in parallel */
-        onTime = strobePeriod / onFraction;
-        fadeTime = strobePeriod / fadeFraction;
-      /* } else if(!strobeTickerFading) { */
+        resetOnTime();
+        resetFadeTime();
       } else if(fadeTime <= 0) {
         amount = 0;
       }
@@ -176,7 +164,7 @@ class Functions {
         lastStrobe = 0;
         return;
       }
-      int passedMs = targetTickMs; //test
+      int passedMs = targetTickMs; //test value
 
       if(value != lastStrobe) { // reset timer for new state
         initStrobeState(value);
@@ -185,7 +173,6 @@ class Functions {
       }
       lastStrobe = value;
     }
-
   };
 
   Shutter shutter; //might run multiple strips at some point I guess. Or split strip and run multiple shutters for effect fuckery...
