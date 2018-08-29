@@ -17,9 +17,7 @@ uint8_t interFrames; // ~40 us/led gives 5 ms for 1 universe of 125 leds. mirror
 float blendBaseline;
 
 
-Functions* f;
-
-int ctrl[12] = {-1};
+int ctrl[25] = {-1}; // 1-12 ctrl, 13-24 blend mqtt vs dmx on that ch, 25 tot blend?
 
 bool controlsHandler(const HomieRange& range, const String& value) {
   modeNode.setProperty("controls").setRange(range).send(value);
@@ -222,10 +220,12 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
 }
 
 void updateFunctions(uint8_t* functions) {
-  for(uint8_t i=1; i < DMX_FN_CHS; i++) {
-    if(ctrl[i] >= 0) functions[i] = (uint8_t)ctrl[i];
-  } //snabb fulhack. Generally these would be set appropriately (or from settings) at boot and used if no ctrl values incoming
-    //but also allow (with prio/mode flag) override etc. and adjust behavior, why have anything at all hardcoded tbh
+  for(uint8_t i=1; i < f->numChannels; i++) {
+    if(ctrl[i] >= 0) {
+      // float blend = ctrl[i + f->numChannels] / 255.0f; // second half of array is (inverse) blend fractions
+      // functions[i] = (uint8_t)ctrl[i] * blend + functions[i] * (1.0f - blend);
+    } //snabb fulhack. Generally these would be set appropriately (or from settings) at boot and used if no ctrl values incoming
+  } //but also allow (with prio/mode flag) override etc. and adjust behavior, why have anything at all hardcoded tbh
     //obvs opt to remove dmx ctrl chs as well for 3/4 extra leds wohoo
 
   f->update(functions);
