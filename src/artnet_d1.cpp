@@ -36,6 +36,10 @@ bool colorHandler(const HomieRange& range, const String& value) {
   return true;
 }
 
+bool settingsHandler(const HomieRange& range, const String& value) {
+  modeNode.setProperty("settings").send(value);
+  return true; // was thinking interframes, strobehz, dmxhz, log, flipped. but eh so much wooorke
+}
 
 void initHomie() {
   Homie_setFirmware(FW_NAME, FW_VERSION); Homie_setBrand(FW_BRAND);
@@ -43,13 +47,12 @@ void initHomie() {
 
   // Homie.setLedPin(D2, HIGH); Homie.disableLedFeedback();
   Homie.onEvent(onHomieEvent);
-  Homie.setGlobalInputHandler(globalInputHandler);
-  Homie.setBroadcastHandler(broadcastHandler);
+  Homie.setGlobalInputHandler(globalInputHandler).setBroadcastHandler(broadcastHandler);
   // Homie.setSetupFunction(homieSetup).setLoopFunction(homieLoop);
-	// Homie.setLoggingPrinter(); //only takes Serial objects. Mod for mqtt?
 
-	modeNode.advertiseRange("controls", 1, 12).settable(controlsHandler);
+	modeNode.advertiseRange("controls", 1, 25).settable(controlsHandler);
 	modeNode.advertise("color").settable(colorHandler);
+	modeNode.advertise("settings").settable(settingsHandler);
 
   cfg = new ConfigNode();
 
@@ -57,11 +60,8 @@ void initHomie() {
   inputNode.advertise("artnet").settable();
   statusNode.advertise("freeHeap"); statusNode.advertise("vcc");
   statusNode.advertise("fps"); statusNode.advertise("droppedFrames");
-  statusNode.advertiseRange("ctrl", 1, 12);
 
-  if(analogRead(0) > 100) { // hella unsafe, should be a setting
-    battery = new BatteryNode();
-  }
+  if(analogRead(0) > 100) battery = new BatteryNode(); // hella unsafe, should be a setting
   // if(!cfg_debug.get()) Homie.disableLogging();
 
 	Homie.setup();
@@ -254,12 +254,11 @@ void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for lo
   if(!(dmxFrameCounter % (dmxHz*10))) { // every 10s (if input correct and stable)
     uint16_t totalTime = millis() - first;
     first = millis();
-    statusNode.setProperty("freeHeap").send(String(ESP.getFreeHeap()));
-    /* statusNode.setProperty("vcc").send(String(ESP.getVcc())); */
-    statusNode.setProperty("fps").send(String(dmxFrameCounter / (totalTime / 1000)));
-    statusNode.setProperty("droppedFrames").send(String(bus->droppedFrames));
+    /* statusNode.setProperty("freeHeap").send(String(ESP.getFreeHeap())); */ //XXX only send if below previous value, or below 20k?
+    /* statusNode.setProperty("vcc").send(String(ESP.getVcc())); */ //again send at start, then only if seems fucked up
+    statusNode.setProperty("fps").send(String(dmxFrameCounter / (totalTime / 1000))); //possibly restrict to if subst below cfg hz
+    statusNode.setProperty("droppedFrames").send(String(s->droppedFrames)); //look at average, how many
     /* statusNode.setProperty("ctrl").setRange(); //and so on, dump that shit out data[1], data[2], data[3], data[4], // data[5], data[6], data[7], data[8], data[9], data[10] */
-    /*     artnet.getDmxFrame(), bus->driver->Pixels()); */
 
     LN.logf("brightness", LoggerNode::DEBUG, "var %d, force %d, out %d",
                           f->dimmer.brightness, ctrl[chDimmer], f->outBrightness);
@@ -288,17 +287,12 @@ void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for lo
   }
 
 void loopArtNet() {
-  doNodeReport();
-  artRDM.handler();
-  
-  yield();
-
   switch(artnet.read()) { // check opcode for logging purposes, actual logic in callback function
     case OpDmx:
       if(log_artnet >= 4) // Homie.getLogger() << "DMX ";
       break;
     case OpPoll:
-      if(log_artnet >= 2) // LN.logf("artnet", LoggerNode::DEBUG, "Art Poll Packet");
+      if(log_artnet >= 2) LN.logf("artnet", LoggerNode::DEBUG, "Art Poll Packet");
       break;
   }
 }
