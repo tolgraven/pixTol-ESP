@@ -45,6 +45,17 @@ bool inputNodeHandler(const String& property, const HomieRange& range, const Str
   } return true;
 }
 
+void testStrip(uint8_t bitDepth, uint16_t ledCount) {
+  Strip* hmm = new Strip("TestSK", LEDS(bitDepth), ledCount);
+  hmm->setColor(colors.blue);  delay(180);
+  hmm->setColor(colors.black); delay(50);
+  hmm->setColor(colors.green); delay(120);
+  hmm->setColor(colors.black); delay(60);
+  hmm->setColor(colors.blueZ); delay(90);
+  hmm->setColor(colors.red);   delay(90);
+  hmm->setColor(colors.orange);
+  delete hmm;
+}
 
 // put in animation class for strip, or at least pass a bus object lol
 void blinkStrip(uint8_t numLeds, RgbwColor color, uint8_t blinks) {

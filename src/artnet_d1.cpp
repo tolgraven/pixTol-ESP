@@ -12,9 +12,7 @@ uint8_t dmxHz;
 uint8_t targetBuffer[512] = {0};
 
 Ticker timer_inter;
-uint8_t interFrames; // ~40 us/led gives 5 ms for 1 universe of 125 leds. mirrored 144 rgb a 30 is 9 so 1-2 inters
-// so around 4-5 frames per frame should be alright.  XXX NOT if mirrored remember! make dynamic!!!
-float blendBaseline;
+uint8_t interFrames; // ~40 us/led gives 5 ms for 1 universe of 125 leds. mirrored 144 rgb a 30 is 9 so 1-2 inters  should be alright.
 
 
 int ctrl[25] = {-1}; // 1-12 ctrl, 13-24 blend mqtt vs dmx on that ch, 25 tot blend?
@@ -247,7 +245,7 @@ void renderInterFrame() {
 uint8_t interCounter;
 void interCallback() {
   if(interCounter > 1) { // XXX figure out on its own whether will overflow, so can just push towards max always
-    timer_inter.once_ms((1000/(interFrames+1)) / cfg->dmxHz.get(), interCallback);
+    timer_inter.once_ms((1000/(interFrames+1)) / dmxHz, interCallback);
   }
   renderInterFrame(); // should def try proper temporal dithering here...
   interCounter--;
@@ -276,12 +274,8 @@ void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for lo
 	if(log_artnet >= 2) Homie.getLogger() << universe;
 }
 
-	uint8_t* functions = &data[-1];  // take care of DMX ch offset...
-
-  // all this should see is data is handed to one or more outputs
-  // Strip, SerialDMX (via max485), non-IP wireless, a fadecandy?/any hw/software endpoint with
-  // no fn ch capability so pixtol runs as basically an effect box?  or sniffer/tester
-  // so might send as artnet cause actually came in by XLR, or fwd wifi by CAT or versa? neither end shall give any damns
+// unsigned long renderMicros; // seems just over 10us per pixel, since 125 gave around 1370... much faster than WS??
+void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
 
     updatePixels(data + f->numChannels); //XXX gotta send length along too really no?
     updateFunctions(data);  // take care of DMX ch offset...
@@ -305,37 +299,26 @@ void loopArtNet() {
   }
 }
 
-  // int countMicros = 0;
-// int iterations = 0;
-
 void loop() {
-  // static int countMillis = 0;
+  static int countMicros = 0;
   // static int iterations = 0;
+  static int last = micros();
 
-  // static int last = 0;
-  // last = micros();
-  loopArtNet(); // if this doesn't result in anything, or mode aint dmx, do a timer/callback based loop
+  loopArtNet(); // skip callback stuff and just use .read once move to class? prob makes more sense
 
-  // XXX Idea: every 10s grab a frame. save last minute or so. mqtt/dmx ctrl both to manually save a frame
-  // and to grab frame afterthefact from that buffer.
-  // then do the animation fades between saved frames
-
-  // XXX write bluetooth receiver for raspberry, can also send commands that way (fwded to esps by wifi)
+  ArduinoOTA.handle(); // soon entirely redundant due to homie
 	Homie.loop();
   if(Homie.isConnected()) { // kill any existing go-into-wifi-finder timer, etc
-    ArduinoOTA.handle(); // soon entirely redundant due to homie
-  } else {
-    // stays stuck in this state for a while on boot
-    // LN.logf("loop()", LoggerNode::INFO, "OMG NO CONNECT");
+  } else { // stays stuck in this state for a while on boot
+    // LN.logf(__func__, LoggerNode::INFO, "OMG NO CONNECT");
     // set a timer if not already exists, yada yada blink statusled for sure...
   }
 
 //   iterations++;
 //   countMicros += micros() - last;
 //   if (iterations >= 1000000) {
-//     LN.logf("loop()", LoggerNode::INFO, "1000000 loop avg: %d micros", countMicros / 1000000);
+//     LN.logf(__func__, LoggerNode::INFO, "1000000 loop avg: %d micros", countMicros / 1000000);
 //     countMicros = 0;
 //     iterations = 0;
-//  }
-  // make something proper so can estimate interpolation etc, and never crashing from getting overwhelmed...
+//  } // make something proper so can estimate interpolation etc, and never crashing from getting overwhelmed...
 }
