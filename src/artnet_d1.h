@@ -14,6 +14,7 @@
 #include "buffer.h"
 #include "renderstage.h"
 #include "renderer.h"
+#include "functions.h"
 
 #define FW_BRAND "tolgrAVen"
 #define FW_NAME "pixTol"
@@ -26,20 +27,6 @@
 #define ARTNET_PORT      6454
 #define SERIAL_BAUD     74880 // same rate as bootloader...
 
-
-#define DMX_FN_CHS         12 // these going soon, when modulators etc
-#define CH_DIMMER           1
-#define CH_STROBE           2 // maybe use for strobe curves etc as well? 1-100 prob enough considering now approach without timers and limited to when rendering happens...
-#define CH_HUE              3 // hue shift instead of strobe curvbes...
-#define CH_ATTACK           4
-#define CH_RELEASE          5
-#define CH_BLEED            6
-#define CH_NOISE            7
-#define CH_ROTATE_FWD       8   //combine to one? 128 back, 128 fwd, more than we need really...
-#define CH_ROTATE_BACK      9
-#define CH_DIMMER_ATTACK   10
-#define CH_DIMMER_RELEASE  11
-#define CH_GAIN            12
 
 /* Magic sequence for Autodetectable Binary Upload */
 const char *__FLAGGED_FW_NAME = "\xbf\x84\xe4\x13\x54" FW_NAME "\x93\x44\x6b\xa7\x75";

@@ -2,51 +2,20 @@
 
 ConfigNode* cfg;
 BatteryNode* battery;
+Strip* s;
+Functions* f;
 
-// NODES: ConfigNode, StateNode, more?
-// also encapsulate renderer, input, output
-
-/* INPUT METHODS:
- * DMX: XLR, IP: Artnet/sACN(?), 
- * OPC?
- * OSC/MQTT (settings/scenes)
- *
- * OUTPUTS:
- * DMX: XLR, IP
- * LEDstrips: 8/24/32+ bits,
- * Lights: Milight, etcetc
- * GPIO for other stuff? use a pixtol to mod fog machine to run DMX etc.
- * */
-
-
-// GLOBALS FROM SETTINGS
-uint8_t bytes_per_pixel, start_uni, universes;
-uint16_t led_count, source_led_count;
-bool mirror, folded, flipped;
-bool gammaCorrect;
+uint8_t universes;
 uint8_t log_artnet;
-bool debug;
-uint8_t hzMin, hzMax;
 uint8_t dmxHz;
 
-uint16_t droppedFrames =  0;
-
-NeoGamma<NeoGammaTableMethod> *colorGamma;
-Strip* bus;
-
-uint8_t last_data[512] = {0};
-uint8_t* last_functions = &last_data[-1];  // take care of DMX ch offset...
+uint8_t targetBuffer[512] = {0};
 
 Ticker timer_inter;
 uint8_t interFrames; // ~40 us/led gives 5 ms for 1 universe of 125 leds. mirrored 144 rgb a 30 is 9 so 1-2 inters
 // so around 4-5 frames per frame should be alright.  XXX NOT if mirrored remember! make dynamic!!!
 float blendBaseline;
 
-uint8_t brightness;
-uint8_t last_brightness = 0;
-int brightnessOverride = -1;
-uint8_t outBrightness;
-float attack, rls, dimmer_attack, dimmer_rls;
 
 Functions* f;
 
@@ -60,10 +29,10 @@ bool controlsHandler(const HomieRange& range, const String& value) {
 
 bool colorHandler(const HomieRange& range, const String& value) {
   modeNode.setProperty("color").send(value);
-  if(value.equals("blue")) {
-    bus->SetColor(blue);
-  }
-  bus->Show();
+  if(value == "blue")       s->setColor(colors.blue);
+  else if(value == "green") s->setColor(colors.green);
+  else if(value == "red")   s->setColor(colors.red);
+
   return true;
 }
 
@@ -98,93 +67,49 @@ void initHomie() {
 	Homie.setup();
 }
 
-void TestStrip() {
-  Homie.getLogger() << "Test abstract strip..." << endl;
-  /* Strip* hmm = new Strip("TestSK", Strip::PixelBytes(cfg->bytesPerLed.get()), cfg->ledCount.get()); */
-  Strip* hmm = new Strip("TestSK", LEDS(cfg->bytesPerLed.get()), cfg->ledCount.get());
-  hmm->SetColor(colors.blue);  delay(80);
-  hmm->SetColor(colors.black); delay(40);
-  hmm->SetColor(colors.green); delay(80);
-  hmm->SetColor(colors.black); delay(40);
-  hmm->SetColor(colors.blueZ); delay(50);
-  hmm->SetColor(colors.red);   delay(50);
-  hmm->SetColor(colors.orange);
-  delete hmm;
-  Homie.getLogger() << "Done test abstract strip..." << endl;
-}
-
-void setup() {
-	Serial.begin(SERIAL_BAUD);
-	while(!Serial);
-  randomSeed(analogRead(0));
-
-  LN.log(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Before Homie setup())");
-  initHomie();
-
-  interFrames = cfg->interFrames.get();
-  blendBaseline = 1.00f - 1.00f / (1 + interFrames);
-  attack = blendBaseline;
-  rls = blendBaseline;
-  dimmer_attack = 1.00f - blendBaseline;
-  dimmer_rls = 1.00f - blendBaseline;
-
-  statusRing.Begin();
-  statusRing.ClearTo(RgbColor(0, 0, 0));
-  statusRing.Show();
-  delay(100);
-  statusRing.ClearTo(blueZ);
-  statusRing.Show();
-  delay(10);
-
-
-  mirror    = cfg->setMirrored.get(); //strip.setMirrored.get();
-  folded = cfg->setFolded.get(); // folded     = strip.setFolded.get();
-  flipped = false; //cfg->setFlipped.get(); // flipped = strip.setFlipped.get();
-  gammaCorrect = false; // strip.setGammaCorrect.get();
+void setupGlobals() { //retain something like this turning settings and defaults into actual stuff... prob part of "state" class, getting data from all places keeping track of that it means, and eg writing state from mqtt into json settings...
 
   log_artnet = cfg->logArtnet.get();
-  debug = true; //cfg->debug.get();
 
-  led_count = cfg->ledCount.get(); // TODO use led_count to calculate aprox possible frame rate
-  source_led_count = led_count; //cfg->sourceLedCount.get();
-  if(mirror) led_count *= 2;	// actual leds is twice conf XXX IMPORTANT: heavier dithering when mirroring
-
-	bytes_per_pixel = cfg->bytesPerLed.get();
-
-  hzMin = 0.1; //cfg->strobeHzMin.get();
-  hzMax = 6.0; //cfg->strobeHzMax.get();  // should these be setable through dmx control ch?                                                      
   dmxHz = cfg->dmxHz.get();
-  // start_uni = cfg->startUni.get();
+  interFrames = cfg->interFrames.get();
   universes = 1; //cfg->universes.get();
 }
 
 
 void setup() {
+  int bootMillis = millis();
+  int bootHeap = ESP.getFreeHeap();
 	Serial.begin(SERIAL_BAUD);
   randomSeed(analogRead(0));
 
   initHomie();
-  LN.logf("Memory", LoggerNode::DEBUG, "Free heap after Homie init: %d", ESP.getFreeHeap());
-  // ESP.getResetReason(); ESP.getResetInfo(); // good for debugging
-  TestStrip();
-  SetupGlobals();
+  int postHomieHeap = ESP.getFreeHeap();
+  LN.logf("Reset info", LoggerNode::DEBUG, "%s", ESP.getResetInfo().c_str());
+
+  testStrip(cfg->bytesPerLed.get(), cfg->ledCount.get());
+  setupGlobals();
+
+  float baseline = 1.0 / (1 + interFrames); // basically weight of current state vs incoming when interpolating
+  f = new Functions(dmxHz * (interFrames + 1),
+      BlendEnvelope(baseline, 60, 20, true), BlendEnvelope(baseline, 50, 50));
+  for(uint8_t i=0; i < f->numChannels; i++) ctrl[i] = -1; //uh why do i need this
+  for(uint8_t i=f->numChannels; i < f->numChannels*2; i++) ctrl[i] = 127; //half-n-half by default
 
   if(cfg->clearOnStart.get()) {
-    DmaGRBW tempbus(288);
-    tempbus.Begin();
-    tempbus.ClearTo(black);
-    tempbus.Show();
-    delay(20); // no idea why the .Show() doesn't seem to take without this? somehow doesnt latch or something?
-    yield();
-    Homie.getLogger() << "Cleared >1 universe of LEDs" << endl;
+    blinkStrip(288, colors.black, 1);
+    LN.logf("clearOnStart", LoggerNode::DEBUG, "Cleared >2 universes of LEDs");
   }
 
-  bus = new Strip(Strip::PixelBytes(cfg->bytesPerLed.get()), cfg->ledCount.get());
+  s = new Strip("Bad aZZ", LEDS(cfg->bytesPerLed.get()), cfg->ledCount.get());
+  s->setMirrored(cfg->setMirrored.get());
+  s->setFolded(cfg->setFolded.get());
+  // s->beFlipped = false; //no need for now as no setting for it //cfg->setFlipped.get();
 
 	initArtnet(Homie.getConfiguration().name, universes, cfg->startUni.get(), onDmxFrame);
-	setupOTA(led_count);
+	setupOTA(s->ledsInStrip);
 
-  if(debug) {
+  if(true) { // debug
     Homie.getLogger() << "Chance to flash OTA before entering main loop";
     for(int8_t i = 0; i < 5; i++) {
       ArduinoOTA.handle(); // give chance to flash new code in case loop is crashing
@@ -192,88 +117,58 @@ void setup() {
       Homie.getLogger() << ".";
       yield();
     }
+    Homie.getLogger() << endl;
   }
-  // XXX check wifi status, if not up for long try like, reset config but first set default values of everything to curr values of everything, so no need touch rest. or just stash somewhere on fs, read back and replace wifi. always gotta be able to recover fully from auto soft-reset, in case of just eg router power went out temp...
-  // other potential, scan wifi for other pixtol APs. if none avail, create (inc mqtt broker). if one is, connect...
-  // scan and quick connect could also mean "lead" esp tells others new AP/pass so only need to config one!!!
-  // put it in a setup mode then once setup keep AP  upuntil rest have switched to correct net
-
-  LN.logf(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Free heap after full init: %d, took %d ms", ESP.getFreeHeap(), millis());
+  LN.logf(__func__, LoggerNode::DEBUG, "Free heap post boot/homie/rest: %d / %d / %d, took %d ms",
+      bootHeap, postHomieHeap, ESP.getFreeHeap(), millis() - bootMillis);
 }
 
-int getPixelIndex(int pixel) { // XXX also handle matrix back-and-forth setups etc
-  if(folded) { // pixelidx differs from pixel recieved
-    if(pixel % 2) { // if uneven
-      pixel /= 2;  // since every other pixel is from opposite end
-    } else {
-      pixel = led_count-1 - pixel/2;
-    }
-  }
-  if(flipped) {
-    pixel = cfg->ledCount.get()-1 - pixel;
-  }
-  return pixel;
-}
 
 void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolating >2 frames
   static uint8_t iteration = 0;
   static int8_t subPixelNoise[125][4] = {0};
 
-  uint8_t* functions = &data[-1];
-  // int data_size = bytes_per_pixel * cfg->sourceLedCount.get() + DMX_FN_CHS; // TODO use led_count to calculate aprox possible frame rate
-  int data_size = bytes_per_pixel * source_led_count + DMX_FN_CHS; // TODO use led_count to calculate aprox possible frame rate
-  // cant do the up/downsampling earlier since need to mix colors and stuff...
 	int pixel = 0; //512/bytes_per_pixel * (universe - 1);  // for one-strip-multiple-universes
-  int pixelidx;
-	iStripDriver* busD = bus->driver;
-  float brightnessFraction = 255 / (brightness? brightness: 1); // ahah can't believe divide by zero got me
+  float brightnessFraction = 255 / (f->dimmer.brightness? f->dimmer.brightness: 1); // ahah can't believe divide by zero got me
 
-  for(int t = DMX_FN_CHS; t < data_size; t += bytes_per_pixel) {
+  for(int t = 0; t < s->dataLength; t += s->fieldSize) {
 
-    pixelidx = getPixelIndex(pixel);
-    uint8_t maxNoise = 48; //baseline, 10 either direction
-    if(functions[CH_NOISE]) maxNoise = (1 + functions[CH_NOISE]) / 4 + maxNoise; // CH_NOISE at max gives +-48
+    uint8_t maxNoise = 64; //baseline, 10 either direction
+    if(f->ch[chNoise]) maxNoise = (1 + f->ch[chNoise]) / 4 + maxNoise; // CH_NOISE at max gives +-48
 
-    uint8_t subPixel[bytes_per_pixel];
-    for(uint8_t i=0; i < bytes_per_pixel; i++) {
-      if(iteration == 1) subPixelNoise[pixelidx][i] = random(maxNoise) - maxNoise/2;
-      else if(iteration >= interFrames * 10) iteration = 0;
-      iteration++;
+    uint8_t subPixel[s->fieldSize];
+    for(uint8_t i=0; i < s->fieldSize; i++) {
+      // if(iteration == 1) subPixelNoise[pixel][i] = random(maxNoise) - maxNoise/2;
+      // else if(iteration >= interFrames * 20) iteration = 0;
+      // iteration++;
 
       subPixel[i] = data[t+i];
       if(subPixel[i] > 16) {
-        int16_t tot = subPixel[i] + subPixelNoise[pixelidx][i];
-        subPixel[i] = (tot < 0? 0: (tot > 255? 255: tot));
+        int16_t tot = subPixel[i] + subPixelNoise[pixel][i];
+        subPixel[i] = tot < 0? 0: (tot > 255? 255: tot);
       }
     }
-    // wrap colors same way as strip then just create base pointer, instantiate inside
-    // if, then can run all CalculateBrightness, SetPixelColor etc generically
-    
-		if(bytes_per_pixel == 3) { // when this is moved to input->pixelbuffer stage there will be multiple configs: format of input (RGB, RGBW, HSL etc) and output (WS/SK). So all sources can be used with all endpoints.
+    // iColor* color; // wrap colors same as strip then just base pointer, instantiate in if, then run all CalculateBrightness, SetPixelColor etc generically
+
+		if(s->fieldSize == 3) { // when this is moved to input->pixelbuffer stage there will be multiple configs: format of input (RGB, RGBW, HSL etc) and output (WS/SK). So all sources can be used with all endpoints.
 			RgbColor color = RgbColor(subPixel[0], subPixel[1], subPixel[2]);
-      RgbColor lastColor; 
-      busD->GetPixelColor(pixelidx, lastColor);  // get from pixelbus since we can resolve dimmer-related changes
+      // color = new ColorRGB(subPixel[0], subPixel[1], subPixel[2]);
+      RgbColor lastColor;
+      s->getPixelColor(pixel, lastColor);  // get from pixelbus since we can resolve dimmer-related changes
       bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
-      color = RgbColor::LinearBlend(color, lastColor, (brighter ? attack : rls));
-			if(color.CalculateBrightness() < 8) color.Darken(8); // avoid bitcrunch XXX should rather flag pixel for temporal dithering yeah?
+      color = RgbColor::LinearBlend(color, lastColor, (brighter ? f->e.attack : f->e.release));
 
-      busD->SetPixelColor(pixelidx, color);
-			if(mirror) busD->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
+      s->setPixelColor(pixel, color);
 
-		} else if(bytes_per_pixel == 4) {
+		} else if(s->fieldSize == 4) {
 			RgbwColor color = RgbwColor(subPixel[0], subPixel[1], subPixel[2], subPixel[3]);
       RgbwColor lastColor;
-      busD->GetPixelColor(pixelidx, lastColor);  // get from pixelbus since we can resolve dimmer-related changes
+      s->getPixelColor(pixel, lastColor);  // get from pixelbus since we can resolve dimmer-related changes
       bool brighter = color.CalculateBrightness() > (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
-      // XXX need to actually restore lastColor to its original brightness before mixing tho...
-      color = RgbwColor::LinearBlend(color, lastColor, (brighter? attack: rls));
-			if(color.CalculateBrightness() < 8) color.Darken(8);
+      // XXX would need to actually restore lastColor to its original brightness before mixing tho... lets just double buffer
+      color = RgbwColor::LinearBlend(color, lastColor, (brighter? f->e.attack: f->e.release));
 
-      if(gammaCorrect) color = colorGamma->Correct(color); // test. better response but fucks resolution a fair bit. Also wrecks saturation? and general output. Fuck this shit
-
-      busD->SetPixelColor(pixelidx, color);
-			if(mirror) busD->SetPixelColor(led_count-1 - pixelidx, color);   // XXX offset colors against eachother here! using HSL even, (one more saturated, one lighter).  Should bring a tiny gradient and look nice (compare when folded strip not mirrored and loops back with glorious color combination results)
-
+      s->setPixelColor(pixel, color);
 		} pixel++;
 	}
 
@@ -312,8 +207,9 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
 
     }
   }
-	if(functions[CH_HUE]) { // rotate hue around, simple. global desat as well?
-
+	if(f->ch[chHue]) { // rotate hue around, simple. global desat as well?
+    // should be applying value _while looping around pixels and already holding ColorObjects.
+    // convert Rgbw>Hsl? can do Hsb to Rgbw at least...
 	}
 }
 
@@ -324,23 +220,20 @@ void updateFunctions(uint8_t* functions) {
     //but also allow (with prio/mode flag) override etc. and adjust behavior, why have anything at all hardcoded tbh
     //obvs opt to remove dmx ctrl chs as well for 3/4 extra leds wohoo
 
-
-	iStripDriver& d = bus->Driver();
   f->update(functions);
 
-  if(functions[chRotateFwd])
-    d.RotateRight(led_count * ((float)functions[chRotateFwd] / 255)); // these would def benefit from anti-aliasing = decoupling from leds as steps
-  //  if(isKeyframe && functions[aCH_ROTATE_BACK] && (functions[CH_ROTATE_BACK] != last_functions[CH_ROTATE_BACK])) { // so what happens is since this gets called in interpolation it shifts like five extra times?
-  if(functions[chRotateBack])
-    d.RotateLeft(led_count * ((float)functions[chRotateBack] / 255)); // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
+  if(f->ch[chRotateFwd])
+    s->rotateFwd(f->val[chRotateFwd]); // these would def benefit from anti-aliasing = decoupling from leds as steps
+  if(f->ch[chRotateBack])
+    s->rotateBack(f->val[chRotateBack]); // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
 
-  d.SetBrightness(f->outBrightness);
+  s->setBrightness(f->outBrightness);
 }
 
 void renderInterFrame() {
-  updatePixels(last_data);
-  updateFunctions(last_functions, false); // XXX fix so interpolates!!
-  if(!bus->Show()) droppedFrames++;
+  updatePixels(targetBuffer);
+  updateFunctions(f->ch); //remember this silly way makes updateFunctions directly fuck w values atm
+  s->show();
 }
 
 uint8_t interCounter;
@@ -368,12 +261,8 @@ void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for lo
     /* statusNode.setProperty("ctrl").setRange(); //and so on, dump that shit out data[1], data[2], data[3], data[4], // data[5], data[6], data[7], data[8], data[9], data[10] */
     /*     artnet.getDmxFrame(), bus->driver->Pixels()); */
 
-    if(length > 12) {
-      LN.logf("brightness", LoggerNode::DEBUG, "var %d, force %d, out %d",
-            brightness, ctrl[CH_DIMMER], outBrightness);
-    } else {
-      LN.logf("DMX", LoggerNode::ERROR, "Frame length short, %d", length);
-    }
+    LN.logf("brightness", LoggerNode::DEBUG, "var %d, force %d, out %d",
+                          f->dimmer.brightness, ctrl[chDimmer], f->outBrightness);
 
     dmxFrameCounter = 0;
   }
@@ -387,23 +276,11 @@ void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for lo
   // no fn ch capability so pixtol runs as basically an effect box?  or sniffer/tester
   // so might send as artnet cause actually came in by XLR, or fwd wifi by CAT or versa? neither end shall give any damns
 
-  // ^^ WRONG. First pass to intermediate buffer, eg got multiple unis = dont flush til got all
-  // also easier to manipulate rotation etc BEFORE mapping onto strip, so dont have to convert back and forth
+    updatePixels(data + f->numChannels); //XXX gotta send length along too really no?
+    updateFunctions(data);  // take care of DMX ch offset...
+    s->show();
 
-    updatePixels(data); //XXX gotta send length along too really no?
-    updateFunctions(functions, true);
-
-    // this should be a scheduler calling outputter to actually render/write
-    // frames can and do stutter, interpolation and minor buffering can help that
-    // plus remember animation retiming off music tempo etc, that's for like a pi tho
-    // + like "if safe mode: check each pixel brightness, calculate approx total mA, dim all if needed (running off usb, straight offa ESP etc)"
-
-    if(!bus->Show()) droppedFrames++;
-
-    // above entity should keep track of all incoming data sources and merge appropriately
-    // depending on prio, LTP/HTP/mymuchbetterideaofweightedaverages
-    // and schedule interpolation
-    memcpy(last_data, data, sizeof(uint8_t) * 512);
+    memcpy(targetBuffer, data + f->numChannels, sizeof(uint8_t) * 512);
     interCounter = interFrames;
     if(interCounter) timer_inter.once_ms((1000/(interFrames+1)) / dmxHz, interCallback);
 

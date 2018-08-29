@@ -178,13 +178,19 @@ class Functions {
   Shutter shutter; //might run multiple strips at some point I guess. Or split strip and run multiple shutters for effect fuckery...
 
   public:
-  Functions(uint16_t targetFPS, Envelope pixelEnvelope, Envelope dimmerEnvelope):
+  Functions(uint16_t targetFPS, BlendEnvelope pixelEnvelope, BlendEnvelope dimmerEnvelope):
     e(pixelEnvelope), dimmer(dimmerEnvelope) { }
 
-  void update(uint8_t* functions) {
-    shutter.updateStrobe(functions[chStrobe]);
-    dimmer.update(functions[chDimmer], functions[chDimmerAttack], functions[chDimmerRelease]);
-    e.set(functions[chAttack], functions[chRelease]);
+  void update(uint8_t* fun) {
+
+    // prep for when moving entirely onto float
+    for(uint8_t i=0; i < numChannels; i++) {
+      val[i] = (float)fun[i] / 255;
+    }
+
+    shutter.updateStrobe(fun[chStrobe]);
+    dimmer.update(fun[chDimmer], fun[chDimmerAttack], fun[chDimmerRelease]);
+    e.set(fun[chAttack], fun[chRelease]);
 
     if(shutter.open) {
       outBrightness = dimmer.brightness;
@@ -194,14 +200,19 @@ class Functions {
       else outBrightness = dimmer.brightness - decreaseBy;
     }
 
+    memcpy(ch, fun, sizeof(uint8_t) * 12);
+  }
+  void update(float* fun) {
+
   }
 
-  // uint8_t rotateFwd, rotateBack;
   Dimmer dimmer;
-  /* uint8_t outBrightness; */
   uint8_t outBrightness;
-  Envelope e; //remember attack and dimattack are inverted, fix so anim works same way...
-  // uint8_t* last_functions = &last_data[-1];  // XXX
+  BlendEnvelope e; //remember attack and dimattack are inverted, fix so anim works same way...
+  uint8_t ch[12] = {0};
+  /* uint8_t* ch = &raw[-1]; */
+  float val[12] = {0};
+  const uint8_t numChannels = 12;
 
 }; //then just change all vals to use float internally, add setters for various input formats etc
 // actually step towards modulators, change dimmer class to "value" so have envelopes for all
