@@ -172,38 +172,46 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
 		} pixel++;
 	}
 
-  if(functions[CH_BLEED]) { // loop through again...
-    if(bytes_per_pixel == 3) return; // XXX would crash below when RGB and no busW...
+  if(f->ch[chBleed]) { // loop through again...
+    if(s->fieldSize == 3) return; // XXX would crash below when RGB and no busW...
+    // return;
 
-    for(pixel = 0; pixel < led_count; pixel++) {
-			RgbwColor color;
-      busD->GetPixelColor(getPixelIndex(pixel), color);
+    for(pixel = 0; pixel < s->fieldCount; pixel++) {
+			RgbwColor color, colorBehind, colorAhead, blend; //= color; // same concept just others rub off on it instead of other way...
+      s->getPixelColor(pixel, color);
 			uint8_t thisBrightness = color.CalculateBrightness();
-      RgbwColor prevPixelColor = color; // same concept just others rub off on it instead of other way...
-      RgbwColor nextPixelColor = color;
 			float prevWeight, nextWeight;
 
       if(pixel-1 >= 0) {
-				RgbwColor prevPixelColor;
-        busD->GetPixelColor(getPixelIndex(pixel-1), prevPixelColor);
-				prevWeight = prevPixelColor.CalculateBrightness() / thisBrightness+1;
-				if(prevPixelColor.CalculateBrightness() < thisBrightness * 0.5) // skip if dark, test
-					prevPixelColor = color;
-			}
+        s->getPixelColor(pixel-1, colorBehind);
+				prevWeight = colorBehind.CalculateBrightness() / thisBrightness+1;
+				if(prevWeight < 0.3) { // skip if dark, test. Should use weight and scale smoothly instead...
+          colorBehind = color;
+        }
+      } else {
+        colorBehind = color;
+        prevWeight = 1;
+      }
 
-      if(pixel+1 < led_count) {
-				RgbwColor nextPixelColor;
-        busD->GetPixelColor(getPixelIndex(pixel-1), nextPixelColor);
-				nextWeight = nextPixelColor.CalculateBrightness() / thisBrightness+1;
-				if(nextPixelColor.CalculateBrightness() < thisBrightness * 0.5) // skip if dark, test
-					nextPixelColor = color;
-					// do some more shit tho. Important thing is mixing colors, so maybe look at saturation as well as brightness dunno
-					// since we have X and Y should weight towards more interesting.
-			}
-      float amount = (float)functions[CH_BLEED]/(256*2);  //this way only ever go half way = before starts decreasing again
-      color = RgbwColor::BilinearBlend(color, nextPixelColor, prevPixelColor, color, amount, amount);
+      if(pixel+1 < s->fieldCount) {
+        s->getPixelColor(pixel+1, colorAhead);
+				nextWeight = colorAhead.CalculateBrightness() / thisBrightness+1;
+				if(nextWeight < 0.3) { // do some more shit tho. Important thing is mixing colors, so maybe look at saturation as well as brightness dunno
+          colorAhead = color;  // since we have X and Y should weight towards more interesting.
+        }
+      } else {
+        colorAhead = color;
+        nextWeight = 1;
+      }
+      float amount = f->val[chBleed]/2;  //this way only ever go half way = before starts decreasing again
 
-      busD->SetPixelColor(getPixelIndex(pixel), color); // XXX handle flip and that
+      blend = RgbwColor::LinearBlend(colorBehind, colorAhead,
+                                               0.5);
+                                               // (1 / (prevWeight + nextWeight + 1)) * prevWeight); //got me again loll
+      // color = RgbwColor::BilinearBlend(color, colorAhead, colorBehind, blend, amount, amount);
+      color = RgbwColor::BilinearBlend(color, colorAhead, colorBehind, color, amount, amount);
+
+      // s->setPixelColor(pixel, color); // XXX handle flip and that
 
     }
   }
