@@ -202,6 +202,19 @@ class Strip: public Outputter {
       driver->GetPixelColor(pixel, color); // and back it goes
     }
 
+    void rotateBack(uint16_t pixels) {
+      driver->RotateLeft(pixels);
+    }
+    void rotateFwd(uint16_t pixels) {
+      driver->RotateRight(pixels);
+    }
+    void rotateBack(float fraction) {
+      driver->RotateLeft(fieldCount * fraction);
+    }
+    void rotateFwd(float fraction) {
+      driver->RotateRight(fieldCount * fraction);
+    }
+
 
     bool show() {
       if(!isActive) return false;
