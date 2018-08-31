@@ -1,7 +1,8 @@
 #pragma once
 
-#include "Arduino.h"
+#include <Arduino.h>
 #include <LoggerNode.h>
+#include "io/strip.h"
 
 enum CH: uint8_t {
  chDimmer = 1, chStrobe, chHue, chAttack, chRelease, chBleed, chNoise,
@@ -40,12 +41,99 @@ class Envelope {
         release = blend - blend * ((float)r/(255 + releaseDivExtra)); // dont ever quite arrive like this, two runs at max = 75% not 100%...
       // }
       adjustDirection();
-
-      // lastAttackRaw = a;
-      // lastReleaseRaw = r;
+      // lastAttackRaw = a; lastReleaseRaw = r;
     }
 };
 
+
+//attempt at something like Modulator that isnt quite so abstract...
+class FunctionChannel {
+  private:
+    virtual void _apply(float value, Strip& s) = 0;
+
+  public:
+    FunctionChannel() {}
+    void apply(uint8_t value, Strip& s) {
+      if(!value) return;
+      _apply((float)value/255, s);
+      lastRaw = value;
+      lastVal = (float)value/255;
+    }
+    uint8_t lastRaw = 0;
+    float lastVal = 0;
+    CH channelType;
+};
+
+class RotateStrip: public FunctionChannel {
+    void _apply(float value, Strip& s) {
+      if(forward) s.rotateFwd(value); // these would def benefit from anti-aliasing = decoupling from leds as steps
+      else s.rotateBack(value); // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
+    }
+  public:
+    RotateStrip(bool forward): forward(forward) {}
+
+    bool forward;
+};
+
+class Bleed: public FunctionChannel {
+
+  void _apply(float value, Strip& s) {
+    if(!value) return;
+    if(s.fieldSize == 3) return; // XXX would crash below when RGB and no busW...
+
+    for(int pixel = 0; pixel < s.fieldCount; pixel++) {
+      RgbwColor color, colorBehind, colorAhead, blend; //= color; // same concept just others rub off on it instead of other way...
+      s.getPixelColor(pixel, color);
+      uint8_t thisBrightness = color.CalculateBrightness();
+      float prevWeight, nextWeight;
+
+      if(pixel-1 >= 0) {
+        s.getPixelColor(pixel-1, colorBehind);
+        prevWeight = colorBehind.CalculateBrightness() / thisBrightness+1;
+        if(prevWeight < 0.3) { // skip if dark, test. Should use weight and scale smoothly instead...
+          colorBehind = color;
+        }
+      } else {
+        colorBehind = color;
+        prevWeight = 1;
+      }
+
+      if(pixel+1 < s.fieldCount) {
+        s.getPixelColor(pixel+1, colorAhead);
+        nextWeight = colorAhead.CalculateBrightness() / thisBrightness+1;
+        if(nextWeight < 0.3) { // do some more shit tho. Important thing is mixing colors, so maybe look at saturation as well as brightness dunno
+          colorAhead = color;  // since we have X and Y should weight towards more interesting.
+        }
+      } else {
+        colorAhead = color;
+        nextWeight = 1;
+      }
+      float amount = value/2;  //this way only ever go half way = before starts decreasing again
+
+      blend = RgbwColor::LinearBlend(colorBehind, colorAhead,
+          0.5);
+      // (1 / (prevWeight + nextWeight + 1)) * prevWeight); //got me again loll
+      // color = RgbwColor::BilinearBlend(color, colorAhead, colorBehind, blend, amount, amount);
+      color = RgbwColor::BilinearBlend(color, colorAhead, colorBehind, color, amount, amount);
+
+      // s.setPixelColor(pixel, color); // XXX handle flip and that
+    }
+  }
+
+  public:
+};
+
+class HueRotate: public FunctionChannel {
+    void _apply(float value, Strip& s) {
+      if(!value) return; // rotate hue around, simple. global desat as well?
+      // should be applying value _while looping around pixels and already holding ColorObjects.
+      // convert Rgbw>Hsl? can do Hsb to Rgbw at least...
+    }
+  public:
+};
+
+// receives (first DMX bytes, later other formats) control values and runs on-chip functions
+// like dimmer, strobe, blend and rotation
 class Functions {
   private:
 
@@ -84,7 +172,7 @@ class Functions {
 
   };
 
-  class Shutter { //test if sep classes make sense
+  class Shutter { //this would later contain modulators/FunctionChannels Strobe & Dimmer, I guess...
     private:
     uint8_t lastStrobe;
 
@@ -179,9 +267,9 @@ class Functions {
 
   public:
   Functions(uint16_t targetFPS, BlendEnvelope pixelEnvelope, BlendEnvelope dimmerEnvelope):
-    e(pixelEnvelope), dimmer(dimmerEnvelope) { }
+    e(pixelEnvelope), dimmer(dimmerEnvelope), rotFwd(true), rotBack(false) { }
 
-  void update(uint8_t* fun) {
+  void update(uint8_t* fun, Strip& s) {
 
     // prep for when moving entirely onto float
     for(uint8_t i=0; i < numChannels; i++) {
@@ -191,6 +279,11 @@ class Functions {
     shutter.updateStrobe(fun[chStrobe]);
     dimmer.update(fun[chDimmer], fun[chDimmerAttack], fun[chDimmerRelease]);
     e.set(fun[chAttack], fun[chRelease]);
+
+    b.apply(fun[chBleed], s);
+    h.apply(fun[chHue], s);
+    rotFwd.apply(fun[chRotateFwd], s);
+    rotBack.apply(fun[chRotateBack], s);
 
     if(shutter.open) {
       outBrightness = dimmer.brightness;
@@ -213,6 +306,9 @@ class Functions {
   /* uint8_t* ch = &raw[-1]; */
   float val[12] = {0};
   const uint8_t numChannels = 12;
+  Bleed b;
+  HueRotate h;
+  RotateStrip rotFwd, rotBack;
 
 }; //then just change all vals to use float internally, add setters for various input formats etc
 // actually step towards modulators, change dimmer class to "value" so have envelopes for all

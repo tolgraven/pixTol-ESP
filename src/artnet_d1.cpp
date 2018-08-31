@@ -167,54 +167,6 @@ void updatePixels(uint8_t* data) { // XXX also pass fraction in case interpolati
       s->setPixelColor(pixel, color);
 		} pixel++;
 	}
-
-  if(f->ch[chBleed]) { // loop through again...
-    if(s->fieldSize == 3) return; // XXX would crash below when RGB and no busW...
-    // return;
-
-    for(pixel = 0; pixel < s->fieldCount; pixel++) {
-			RgbwColor color, colorBehind, colorAhead, blend; //= color; // same concept just others rub off on it instead of other way...
-      s->getPixelColor(pixel, color);
-			uint8_t thisBrightness = color.CalculateBrightness();
-			float prevWeight, nextWeight;
-
-      if(pixel-1 >= 0) {
-        s->getPixelColor(pixel-1, colorBehind);
-				prevWeight = colorBehind.CalculateBrightness() / thisBrightness+1;
-				if(prevWeight < 0.3) { // skip if dark, test. Should use weight and scale smoothly instead...
-          colorBehind = color;
-        }
-      } else {
-        colorBehind = color;
-        prevWeight = 1;
-      }
-
-      if(pixel+1 < s->fieldCount) {
-        s->getPixelColor(pixel+1, colorAhead);
-				nextWeight = colorAhead.CalculateBrightness() / thisBrightness+1;
-				if(nextWeight < 0.3) { // do some more shit tho. Important thing is mixing colors, so maybe look at saturation as well as brightness dunno
-          colorAhead = color;  // since we have X and Y should weight towards more interesting.
-        }
-      } else {
-        colorAhead = color;
-        nextWeight = 1;
-      }
-      float amount = f->val[chBleed]/2;  //this way only ever go half way = before starts decreasing again
-
-      blend = RgbwColor::LinearBlend(colorBehind, colorAhead,
-                                               0.5);
-                                               // (1 / (prevWeight + nextWeight + 1)) * prevWeight); //got me again loll
-      // color = RgbwColor::BilinearBlend(color, colorAhead, colorBehind, blend, amount, amount);
-      color = RgbwColor::BilinearBlend(color, colorAhead, colorBehind, color, amount, amount);
-
-      // s->setPixelColor(pixel, color); // XXX handle flip and that
-
-    }
-  }
-	if(f->ch[chHue]) { // rotate hue around, simple. global desat as well?
-    // should be applying value _while looping around pixels and already holding ColorObjects.
-    // convert Rgbw>Hsl? can do Hsb to Rgbw at least...
-	}
 }
 
 void updateFunctions(uint8_t* functions) {
@@ -226,12 +178,7 @@ void updateFunctions(uint8_t* functions) {
   } //but also allow (with prio/mode flag) override etc. and adjust behavior, why have anything at all hardcoded tbh
     //obvs opt to remove dmx ctrl chs as well for 3/4 extra leds wohoo
 
-  f->update(functions);
-
-  if(f->ch[chRotateFwd])
-    s->rotateFwd(f->val[chRotateFwd]); // these would def benefit from anti-aliasing = decoupling from leds as steps
-  if(f->ch[chRotateBack])
-    s->rotateBack(f->val[chRotateBack]); // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
+  f->update(functions, *s);
 
   s->setBrightness(f->outBrightness);
 }
