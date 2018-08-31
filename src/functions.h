@@ -5,7 +5,7 @@
 #include "io/strip.h"
 
 enum CH: uint8_t {
- chDimmer = 1, chStrobe, chHue, chAttack, chRelease, chBleed, chNoise,
+ chDimmer = 0, chStrobe, chHue, chAttack, chRelease, chBleed, chNoise,
  chRotateFwd, chRotateBack, chDimmerAttack, chDimmerRelease, chGain
 };
 
@@ -150,22 +150,21 @@ class Functions {
     uint8_t brightness;
 
     void update(uint8_t value) {
-      bool brighter = value > lastBrightness; //sooo never true since we haven't updated it yet hahh
+      if(value == lastBrightness) return; // no need for rest of logic
+
+      bool brighter = value > lastBrightness;
       float diff = (value - lastBrightness) * (brighter ? e.attack: e.release);
 
-      if(diff > 0.1f && diff < 1.0f){
-        diff = 1.0f;
-      } else if(diff < -0.1f && diff > -1.0f){
-        diff = -1.0f;
-      }
+      if(diff > 0.1f && diff < 1.0f)         diff = 1.0f;
+      else if(diff < -0.1f && diff > -1.0f)  diff = -1.0f;
 
       brightness = lastBrightness + diff; // crappy workaround, store dimmer internally as 16bit or float instead.
-      if(brightness < cutoff) brightness = 0; // shit resulution at lowest vals sucks. where set cutoff?
-      else if(brightness > 255) brightness = 255;
+
+      if(brightness > 255) brightness = 255;
 
       lastBrightness = brightness;
-
     }
+
     void update(uint8_t value, uint8_t a, uint8_t r) {
       e.set(a, r);
       update(value);
@@ -296,6 +295,7 @@ class Functions {
 
     memcpy(ch, fun, sizeof(uint8_t) * 12);
   }
+
   void update(float* fun) {
 
   }
