@@ -153,18 +153,18 @@ class Strip: public Outputter {
     void setLedCount(uint16_t ledCount) {
       fieldCount = ledCount; initDriver();
     }
-    void SetBrightness(uint16_t brightness) {
+    void setBrightness(uint16_t brightness) {
       if(brightness < totalBrightnessCutoff) {
         brightness = 0; //until dithering...
       }
       driver->SetBrightness(brightness);
     }
 
-    void SetColor(RgbColor color)       { driver->ClearTo(color);           Show(); }
-    void SetColor(RgbwColor color)      { driver->ClearTo(color);           Show(); }
-    void SetColor(HslColor color)       { driver->ClearTo(RgbColor(color)); Show(); }
+    void setColor(RgbColor color)       { driver->ClearTo(color);           show(); }
+    void setColor(RgbwColor color)      { driver->ClearTo(color);           show(); }
+    void setColor(HslColor color)       { driver->ClearTo(RgbColor(color)); show(); }
 
-    void SetPixelColor(uint16_t pixel, RgbwColor color) {
+    void setPixelColor(uint16_t pixel, RgbwColor color) {
       pixel = getIndexOfField(pixel);
       if(color.CalculateBrightness() < pixelBrightnessCutoff) {
         color.Darken(pixelBrightnessCutoff);
@@ -178,7 +178,7 @@ class Strip: public Outputter {
         driver->SetPixelColor(ledsInStrip-1 - pixel, color);
       }
     }
-    void SetPixelColor(uint16_t pixel, RgbColor color) {
+    void setPixelColor(uint16_t pixel, RgbColor color) {
       pixel = getIndexOfField(pixel);
       if(color.CalculateBrightness() < pixelBrightnessCutoff) {
         color.Darken(pixelBrightnessCutoff);
@@ -192,17 +192,18 @@ class Strip: public Outputter {
         driver->SetPixelColor(ledsInStrip-1 - pixel, color);
       }
     }
-    void GetPixelColor(uint16_t pixel, RgbwColor& color) {
+
+    void getPixelColor(uint16_t pixel, RgbwColor& color) {
       pixel = getIndexOfField(pixel);
       driver->GetPixelColor(pixel, color); // and back it goes
     }
-    void GetPixelColor(uint16_t pixel, RgbColor& color) {
+    void getPixelColor(uint16_t pixel, RgbColor& color) {
       pixel = getIndexOfField(pixel);
       driver->GetPixelColor(pixel, color); // and back it goes
     }
 
 
-    bool Show() {
+    bool show() {
       if(!isActive) return false;
       if(driver->CanShow()) {
         driver->Show();
@@ -222,19 +223,18 @@ class Strip: public Outputter {
 
       } // run through any geometry adaptions, mirroring/flip, gamma correct etc...  and dithering...
       driver->Dirty();
-      Show();
+      show();
     }
 
     // virtual void setActive(bool state = true, int8_t bufferIndex = -1) {
     //
     // }
 
-    iStripDriver& Driver()    { return *driver; }
+    iStripDriver& getDriver()    { return *driver; }
 
     Strip& setMirrored(bool state = true) {
       beMirrored = state;
       initDriver(); // affects output size so yeah
-      // ledsInStrip = beMirrored? fieldCount * 2: fieldCount;
       return *this;
     }
     Strip& setFolded(bool state = true) {
@@ -308,4 +308,3 @@ class Strip: public Outputter {
 
   protected:
 };
-
