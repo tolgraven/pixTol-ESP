@@ -9,7 +9,14 @@ enum CH: uint8_t {
  chRotateFwd, chRotateBack, chDimmerAttack, chDimmerRelease, chGain
 };
 
-class Envelope {
+// actual envelope generator for impulse response
+class ADSREnvelope {
+	enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
+
+};
+
+// simple envelope to control how much an incoming value should affect the current
+class BlendEnvelope {
   private:
     // uint8_t lastAttackRaw, lastReleaseRaw;
     bool invert = false; // no invert = high-is-low
@@ -20,26 +27,21 @@ class Envelope {
       }
     }
   public:
-    float blend; // the value at 0 attack/release. Later move away from envelope to renderer?
+    float baseline; // the value at 0 attack/release. Later move away from envelope to renderer?
     float attack = 0.0;
-    /* float hold = 0.0; */
-    /* float decay = 0.0; //yeeehh */
-    /* float sustain = 1.0; */
     float release = 0.0; // now as fraction. later fix so can take ms, seconds or whatever
     uint8_t attackDivExtra, releaseDivExtra;
 
-    Envelope(float blend = 0.5, uint8_t attackDivExtra = 0, uint8_t releaseDivExtra = 0, bool invert = false):
-      blend(blend), attackDivExtra(attackDivExtra), releaseDivExtra(releaseDivExtra), invert(invert) {
+    BlendEnvelope(float baseline = 0.5, uint8_t attackDivExtra = 0, uint8_t releaseDivExtra = 0, bool invert = false):
+      baseline(baseline), attackDivExtra(attackDivExtra), releaseDivExtra(releaseDivExtra), invert(invert) {
         adjustDirection();
       }
 
     void set(uint8_t a, uint8_t r) {
-      // if(a != lastAttackRaw) { // not really necessary
-        attack = blend - blend * ((float)a/(255 + attackDivExtra)); // dont ever quite arrive like this, two runs at max = 75% not 100%...
-      // }
-      // if(r != lastAttackRaw) {
-        release = blend - blend * ((float)r/(255 + releaseDivExtra)); // dont ever quite arrive like this, two runs at max = 75% not 100%...
-      // }
+      // if(a != lastAttackRaw) // hold of optimization til later...
+      attack = baseline - baseline * ((float)a/(255 + attackDivExtra)); // dont ever quite arrive like this, two runs at max = 75% not 100%...
+      // if(r != lastAttackRaw)
+      release = baseline - baseline * ((float)r/(255 + releaseDivExtra)); // dont ever quite arrive like this, two runs at max = 75% not 100%...
       adjustDirection();
       // lastAttackRaw = a; lastReleaseRaw = r;
     }
@@ -140,11 +142,10 @@ class Functions {
   class Dimmer {
     private:
     uint8_t lastBrightness = 0;
-    uint8_t cutoff = 6; // in lieu of dithering...
-    Envelope e;
+    BlendEnvelope e;
 
     public:
-    Dimmer(Envelope e): e(e) {}
+    Dimmer(BlendEnvelope e): e(e) {}
 
     uint8_t brightness;
 
@@ -185,7 +186,7 @@ class Functions {
     static constexpr float fadeFraction = 7; //starting to look decent
     static const int fadeMaxMs = 60;
 
-    Envelope e; // incorporate
+    BlendEnvelope e; // incorporate
 
     public:
     Shutter(uint16_t targetFPS = 200, float hzMin = 1.0, float hzMax = 12.5):
