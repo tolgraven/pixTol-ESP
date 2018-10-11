@@ -9,10 +9,35 @@ HomieNode statusNode("status", "log");
 HomieNode outputNode("outputs", "io", outputNodeHandler);
 HomieNode inputNode("inputs",   "io", inputNodeHandler);
 
+void initHomie() {
+  Homie_setFirmware(FW_NAME, FW_VERSION); Homie_setBrand(FW_BRAND);
+	Homie.setConfigurationApPassword(FW_NAME);
+
+  // Homie.setLedPin(D2, HIGH); Homie.disableLedFeedback();
+  Homie.onEvent(onHomieEvent);
+  Homie.setGlobalInputHandler(globalInputHandler).setBroadcastHandler(broadcastHandler);
+  // Homie.setSetupFunction(homieSetup).setLoopFunction(homieLoop);
+
+	modeNode.advertiseRange("controls", 1, 25).settable(controlsHandler);
+	modeNode.advertise("color").settable(colorHandler);
+	modeNode.advertise("settings").settable(settingsHandler);
+
+  cfg = new ConfigNode();
+
+  outputNode.advertise("strip").settable();
+  inputNode.advertise("artnet").settable();
+  statusNode.advertise("freeHeap"); statusNode.advertise("vcc");
+  statusNode.advertise("fps"); statusNode.advertise("droppedFrames");
+
+  if(analogRead(0) > 100) battery = new BatteryNode(); // hella unsafe, should be a setting
+  // if(!cfg_debug.get()) Homie.disableLogging();
+
+	Homie.setup();
+}
 
 bool outputNodeHandler(const String& property, const HomieRange& range, const String& value) {
   outputNode.setProperty(property).send(value);
- 	LN.logf(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
+ 	LN.logf(__func__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
 
   if(property == "strip") {
     if(value == "on") pinMode(RX, OUTPUT);
@@ -23,7 +48,7 @@ bool outputNodeHandler(const String& property, const HomieRange& range, const St
 
 bool inputNodeHandler(const String& property, const HomieRange& range, const String& value) {
   inputNode.setProperty(property).send(value);
- 	LN.logf(__PRETTY_FUNCTION__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
+ 	LN.logf(__func__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
 
   bool on = value == "on";
   // future: for registered inputters; if property==inputter.name; pass the message...
@@ -45,6 +70,28 @@ bool inputNodeHandler(const String& property, const HomieRange& range, const Str
   } return true;
 }
 
+bool controlsHandler(const HomieRange& range, const String& value) {
+  modeNode.setProperty("controls").setRange(range).send(value);
+  ctrl[range.index] = value.toInt();
+  return true;
+}
+
+bool colorHandler(const HomieRange& range, const String& value) {
+  modeNode.setProperty("color").send(value);
+  if(value == "blue")       s->setColor(colors.blue);
+  else if(value == "green") s->setColor(colors.green);
+  else if(value == "red")   s->setColor(colors.red);
+  else if(value == "orange")  s->setColor(colors.orange);
+
+  return true;
+}
+
+bool settingsHandler(const HomieRange& range, const String& value) {
+  modeNode.setProperty("settings").send(value);
+  return true; // was thinking interframes, strobehz, dmxhz, log, flipped. but eh so much wooorke
+}
+
+
 void testStrip(uint8_t bitDepth, uint16_t ledCount) {
   Strip* hmm = new Strip("TestSK", LEDS(bitDepth), ledCount);
   hmm->setColor(colors.blue);  delay(180);
@@ -58,13 +105,12 @@ void testStrip(uint8_t bitDepth, uint16_t ledCount) {
 }
 
 // put in animation class for strip, or at least pass a bus object lol
-void blinkStrip(uint8_t numLeds, RgbwColor color, uint8_t blinks) {
-  Strip tempbus("temp", LEDS::RGBW, numLeds);
-  delay(100); // XXX use callbacks instead of delays, then mqtt-ota will prob work? Also move this sorta routine into Strip class, or some animation class?
+void blinkStrip(uint16_t numLeds, RgbwColor color, uint8_t blinks) {
+  Strip tempbus("temp", RGBW, numLeds);
   for(int8_t b = 0; b < blinks; b++) {
-    tempbus.SetColor(color);
-    yield(); delay(50);
-    tempbus.SetColor(colors.black);
+    tempbus.setColor(color);
+    yield(); delay(100);
+    tempbus.setColor(colors.black);
     yield(); delay(50);
   }
 }
@@ -89,27 +135,31 @@ void setupOTA(uint8_t numLeds) {
 
   ArduinoOTA.onStart([]() {
     Serial.println("\nOTA flash starting...");
-    OTAbus = new Strip("OTA strip", LEDS::RGBW, leds);
-    OTAbus->Show();
-    otaColor = (ArduinoOTA.getCommand() == U_FLASH ? &colors.blue : &colors.yellow);
+    OTAbus = new Strip("OTA strip", RGBW, leds);
+    OTAbus->show();
+    otaColor = (ArduinoOTA.getCommand() == U_FLASH? &colors.blue: &colors.yellow);
   });
 
   ArduinoOTA.onProgress([](unsigned int p, unsigned int tot) {
     uint8_t pixel = p / (tot / leds);
     if(pixel == prevPixel) { // called multiple times each percent of upload...
-      // otaColor->Lighten(10);
+      RgbwColor currPixelColor;
+      OTAbus->getPixelColor(pixel, currPixelColor);
+      currPixelColor.Lighten(15);
+      OTAbus->getPixelColor(pixel, currPixelColor);
+      OTAbus->show();
+
       return;
-    } else {
-      // otaColor = (ArduinoOTA.getCommand() == U_FLASH ? &colors.blue : &colors.yellow);
     }
     if(pixel) {
       RgbwColor prevPixelColor;
-      OTAbus->driver->GetPixelColor(prevPixel, prevPixelColor);
+      OTAbus->getPixelColor(prevPixel, prevPixelColor);
       prevPixelColor.Darken(25);
-      OTAbus->driver->SetPixelColor(prevPixel, prevPixelColor);
+      OTAbus->getPixelColor(prevPixel, prevPixelColor);
     }
-    OTAbus->driver->SetPixelColor(pixel, *otaColor);
-    OTAbus->Show();
+    // OTAbus->driver->SetPixelColor(pixel, *otaColor);
+    OTAbus->setPixelColor(pixel, *otaColor);
+    OTAbus->show();
     prevPixel = pixel;
     Serial.printf("OTA updating - %u%%\r", p / (tot/100)); });
 
@@ -124,9 +174,23 @@ void setupOTA(uint8_t numLeds) {
       case OTA_CONNECT_ERROR:	Serial.println("Connect Failed");	break;
       case OTA_RECEIVE_ERROR:	Serial.println("Receive Failed");	break;
       case OTA_END_ERROR:			Serial.println("End Failed");			break;
-	  } blinkStrip(leds, colors.red, 3); });
+	  }
+    blinkStrip(leds, colors.red, 3);
+  });
 
   ArduinoOTA.begin();
+
+  // if(ESP.flashRead(blabla)) {  // Before OTA flash, create empty "update" file. First time unit on > 30s or similar, delete file...
+  // if(ESP.getResetReason == REASON_WDT_RST) { //XXX decide which restarts should indicate bootloop and enable this initial few-second throttle
+    Homie.getLogger() << "Chance to flash OTA before entering main loop";
+    for(int8_t i = 0; i < 5; i++) {
+      ArduinoOTA.handle(); // give chance to flash new code in case loop is crashing
+      delay(200);
+      Homie.getLogger() << ".";
+      yield();
+    }
+    Homie.getLogger() << endl;
+  // }
 }
 
 
@@ -145,7 +209,7 @@ bool globalInputHandler(const HomieNode& node, const String& property, const Hom
 		} else if(value == "mqtt") {
 		} else if(value == "standalone") {
 		}
-  } else return false;
+  } else return false; //leave to other handlers
   return true;
 }
 
