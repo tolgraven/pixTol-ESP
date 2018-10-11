@@ -12,7 +12,6 @@ enum CH: uint8_t {
 // actual envelope generator for impulse response
 class ADSREnvelope {
 	enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
-
 };
 
 // simple envelope to control how much an incoming value should affect the current
@@ -49,36 +48,57 @@ class BlendEnvelope {
 
 
 //attempt at something like Modulator that isnt quite so abstract...
+// class FunctionChannel: public HomieNode {
 class FunctionChannel {
   private:
     virtual void _apply(float value, Strip& s) = 0;
 
   public:
-    FunctionChannel() {}
+    // enum DataSource { DMX = 0, IOT, OPC, SERIALPORT, SENSOR, AUTO };
+
+    FunctionChannel(const String& name): name(name)
+    // , HomieNode("Function", "test")
+  {}
     void apply(uint8_t value, Strip& s) {
-      if(!value) return;
+      // if(!value) return; //wouldnt this result in never un-activating?
       _apply((float)value/255, s);
       lastRaw = value;
       lastVal = (float)value/255;
     }
+
+    // void setup() {
+    //   advertise(name.c_str()).settable();
+    //   // advertise("test").settable();
+    //   advertise("source").settable(); //
+    //   LN.logf(name, LoggerNode::INFO, "%s initialized.", name.c_str());
+    // }
+    // void loop() {
+    //   if(lastRaw != postedRaw) {
+    //     postedRaw = lastRaw;
+    //     setProperty(name.c_str()).send(String(postedRaw));
+    //   }
+    // }
+    uint8_t postedRaw = 0;
     uint8_t lastRaw = 0;
+    float postedVal = 0;
     float lastVal = 0;
     CH channelType;
+    String name;
+    // DataSource source = DMX;
 };
 
-class RotateStrip: public FunctionChannel {
+class RotateStrip:  public FunctionChannel {
     void _apply(float value, Strip& s) {
       if(forward) s.rotateFwd(value); // these would def benefit from anti-aliasing = decoupling from leds as steps
       else s.rotateBack(value); // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
     }
   public:
-    RotateStrip(bool forward): forward(forward) {}
+    RotateStrip(bool forward): forward(forward), FunctionChannel("Rotate Strip") {}
 
     bool forward;
 };
 
 class Bleed: public FunctionChannel {
-
   void _apply(float value, Strip& s) {
     if(!value) return;
     if(s.fieldSize == 3) return; // XXX would crash below when RGB and no busW...
@@ -121,8 +141,8 @@ class Bleed: public FunctionChannel {
       // s.setPixelColor(pixel, color); // XXX handle flip and that
     }
   }
-
   public:
+  Bleed(): FunctionChannel("Bleed") {}
 };
 
 class HueRotate: public FunctionChannel {
@@ -132,7 +152,38 @@ class HueRotate: public FunctionChannel {
       // convert Rgbw>Hsl? can do Hsb to Rgbw at least...
     }
   public:
+    HueRotate(): FunctionChannel("Rotate Hue") {}
 };
+
+// class Noise: public FunctionChannel { // ugh
+//   void _apply(float value, Strip& s) {
+//     if(!value) return;
+//
+//     maxNoise = (1 + value) / 4 + maxNoise; // CH_NOISE at max gives +-48
+//     uint8_t* data = s.getBuffer();
+//
+//     // for(int t = 0; t < s.dataLength; t += s.fieldSize) {
+//     for(int pixel = 0; pixel < s.fieldCount; pixel++) {
+//       uint8_t subPixel[s.fieldSize];
+//       for(uint8_t i=0; i < s.fieldSize; i++) {
+//         if(iteration == 1) subPixelNoise[pixel][i] = random(maxNoise) - maxNoise/2;
+//         else if(iteration >= 100) iteration = 0; //arbitrary value
+//         iteration++;
+//
+//         subPixel[i] = data[pixel*s.fieldSize + i];
+//         if(subPixel[i] > 16) {
+//           int16_t tot = subPixel[i] + subPixelNoise[pixel][i];
+//           subPixel[i] = tot < 0? 0: (tot > 255? 255: tot);
+//         }
+//       }
+//     }
+//   }
+//   public:
+//     uint8_t iteration = 0;
+//     int8_t subPixelNoise[125][4]; // cant do it like this anyways. put noise on hold yo...
+//     int8_t maxNoise = 64; //baseline
+//     Noise(): FunctionChannel("Noise"), subPixelNoise({0}) {}
+// };
 
 // receives (first DMX bytes, later other formats) control values and runs on-chip functions
 // like dimmer, strobe, blend and rotation
@@ -154,14 +205,11 @@ class Functions {
 
       bool brighter = value > lastBrightness;
       float diff = (value - lastBrightness) * (brighter ? e.attack: e.release);
-
       if(diff > 0.1f && diff < 1.0f)         diff = 1.0f;
       else if(diff < -0.1f && diff > -1.0f)  diff = -1.0f;
-
       brightness = lastBrightness + diff; // crappy workaround, store dimmer internally as 16bit or float instead.
 
       if(brightness > 255) brightness = 255;
-
       lastBrightness = brightness;
     }
 
@@ -169,7 +217,6 @@ class Functions {
       e.set(a, r);
       update(value);
     }
-
   };
 
   class Shutter { //this would later contain modulators/FunctionChannels Strobe & Dimmer, I guess...
@@ -196,7 +243,6 @@ class Functions {
     int amount;
 
     void initStrobeState(uint8_t value) {
-
       strobeHz = (hzMax-hzMin) * (value-1) / (255-1) + hzMin;
       strobePeriod = 1000 / strobeHz;   // 1 = 1 hz, 255 = 10 hz, to test
 
@@ -205,10 +251,9 @@ class Functions {
 
       eachFrameFade = 255 / 30; // strobeTickerFading; //XXX
       amount = 255;
-
-      LN.logf("Strobe", LoggerNode::DEBUG, "strobeHz %f, strobePeriod %d, onTime %d", strobeHz, strobePeriod, onTime);
-
       open = false;
+
+      LN.logf(__func__, LoggerNode::DEBUG, "strobeHz %.2f, strobePeriod %d ms, onTime %d ms", strobeHz, strobePeriod, onTime);
     }
 
     void resetOnTime() { //these would be in maps so only need one function
@@ -228,8 +273,7 @@ class Functions {
         onTime -= passedMs;
       } else { //closed, count down fade and off-tickers
         fadeTime -= passedMs; //wait have to keep orig val around for below tho. dupl...
-
-        amount -= (eachFrameFade < amount? eachFrameFade: amount);
+        amount -= eachFrameFade < amount? eachFrameFade: amount;
       }
 
       if(strobePeriod <= 0) { //reset for new iteration
@@ -243,7 +287,6 @@ class Functions {
       } else if(fadeTime <= 0) {
         amount = 0;
       }
-
     }
 
     void updateStrobe(uint8_t value) { //also report millis/micros since last frame so can move from guessing...
@@ -273,6 +316,7 @@ class Functions {
 
     // prep for when moving entirely onto float
     for(uint8_t i=0; i < numChannels; i++) {
+      ch[i] = fun[i];
       val[i] = (float)fun[i] / 255;
     }
 
@@ -293,24 +337,21 @@ class Functions {
       else outBrightness = dimmer.brightness - decreaseBy;
     }
 
-    memcpy(ch, fun, sizeof(uint8_t) * 12);
+    // memcpy(ch, fun, sizeof(uint8_t) * numChannels); //illegal load blabla. hmmm why
   }
 
   void update(float* fun) {
-
   }
 
   Dimmer dimmer;
   uint8_t outBrightness;
   BlendEnvelope e; //remember attack and dimattack are inverted, fix so anim works same way...
   uint8_t ch[12] = {0};
-  /* uint8_t* ch = &raw[-1]; */
   float val[12] = {0};
   const uint8_t numChannels = 12;
   Bleed b;
   HueRotate h;
   RotateStrip rotFwd, rotBack;
-
 }; //then just change all vals to use float internally, add setters for various input formats etc
 // actually step towards modulators, change dimmer class to "value" so have envelopes for all
 // prob good idea esp for rotate... also helps sorta auto-merge/blend eg incoming dimmer 255 + 0
