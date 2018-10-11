@@ -12,7 +12,19 @@ public:
     cutoff(cutoffLevel)
   {}
 
-  void setup();
+  void setup() {
+    timeCounter = millis();
+
+    lastCharge = analogRead(A0);
+    rollingAverageCharge = lastCharge;
+    status = lastCharge > cutoff? Safe: Danger;
+
+    advertise("level");
+    advertise("cutoff").settable();
+    advertise("safe");
+    LN.logf("Battery", LoggerNode::INFO, "BatteryNode initialized.");
+  }
+
   void loop() {
     if(millis() - timeCounter < interval) return;
     timeCounter = millis();
@@ -26,7 +38,7 @@ public:
   BatteryStatus status = Invalid;
 
 private:
-  int lastCharge = -1; 
+  int lastCharge = -1;
   int rollingAverageCharge = -1;
   uint16_t interval = 10000;
   uint16_t cutoff = 500;
@@ -34,39 +46,22 @@ private:
   unsigned long timeCounter = 0;
   BatteryStatus lastStatus = Invalid;
 
-  void update();
-};
+  void update() {
+    lastCharge = analogRead(A0);
+    rollingAverageCharge = (rollingAverageCharge*9 + lastCharge) / 10;
 
+    if(lastCharge < cutoff-100 || rollingAverageCharge < cutoff) {
+      if(lastStatus == Safe)
+        LN.logf("Battery", LoggerNode::ERROR, "Charge CRITICAL, %d, prepare to shutdown...", rollingAverageCharge);
+      status = Danger; // then if remains there for a few minutes, shut off stuff using battery.
+    } else {           // But guess that'd be done elsewhere after polling this object? Rather than passing callback or some shite.
+      if(lastStatus == Danger)
+        LN.logf("Battery", LoggerNode::INFO, "Charge back above cutoff! %d", rollingAverageCharge);
+      status = Safe;
+    }
+    setProperty("level").send(String(rollingAverageCharge));
+    if(status != lastStatus) setProperty("safe").send(String(status));
 
-void BatteryNode::setup() {
-  timeCounter = millis();
-
-  lastCharge = analogRead(A0);
-  rollingAverageCharge = lastCharge;
-  status = lastCharge > cutoff? Safe: Danger;
-
-  advertise("level");
-  advertise("cutoff").settable();
-  advertise("safe");
-  LN.logf("Battery", LoggerNode::INFO, "BatteryNode initialized.");
-}
-
-void BatteryNode::update() {
-  lastCharge = analogRead(A0);
-  rollingAverageCharge = (rollingAverageCharge*9 + lastCharge) / 10;
-
-  if(lastCharge < cutoff-100 || rollingAverageCharge < cutoff) {
-    if(lastStatus == Safe)
-      LN.logf("Battery", LoggerNode::ERROR, "Charge CRITICAL, %d, prepare to shutdown...", rollingAverageCharge);
-    status = Danger; // then if remains there for a few minutes, shut off stuff using battery.
-  } else {           // But guess that'd be done elsewhere after polling this object? Rather than passing callback or some shite.
-    if(lastStatus == Danger)
-      LN.logf("Battery", LoggerNode::INFO, "Charge back above cutoff! %d", rollingAverageCharge);
-    status = Safe;
+    lastStatus = status;
   }
-  setProperty("level").send(String(rollingAverageCharge));
-  if(status != lastStatus) setProperty("safe").send(String(status));
-
-  lastStatus = status;
-}
-
+};
