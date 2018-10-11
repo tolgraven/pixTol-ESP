@@ -3,6 +3,16 @@
 #include <Homie.h>
 #include <LoggerNode.h>
 
+#define FW_BRAND "tolgrAVen"
+#define FW_NAME "pixTol"
+#define FW_VERSION "1.0.28"
+
+#define LED_PIN             5  // D1=5, D2=4, D3=0, D4=2  D0=16, D55=14, D6=12, D7=13, D8=15
+#define LED_STATUS_PIN      2
+#define RX_PIN              3
+#define TX_PIN              1
+#define SERIAL_BAUD     74880 // same rate as bootloader...
+
 // typedef HomieSetting<> opt;
 typedef HomieSetting<bool> optBool;
 typedef HomieSetting<long> optInt;
@@ -12,38 +22,26 @@ typedef HomieSetting<const char*> optString;
 class ConfigNode: public HomieNode {
  public:
     ConfigNode();
-
     // seems homie (now?) has a 10 settings limit. scale down settings, or patch homie?
-    // HomieSetting<bool> debug;              
-    HomieSetting<long> logArtnet;         
-    // HomieSetting<bool> logToMqtt;        
-    // HomieSetting<bool> logToSerial;      
+    optInt logArtnet;
 
-    HomieSetting<long> dmxHz;
-    // HomieSetting<double> strobeHzMin;
-    // HomieSetting<double> strobeHzMax;
+    optInt dmxHz;
 
-    HomieSetting<bool> clearOnStart;
+    // optInt sourceBytesPerPixel;
+    // optInt sourceLedCount;
+    optInt stripBytesPerPixel;
+    optInt stripLedCount;
 
-    HomieSetting<long> bytesPerLed;
-    HomieSetting<long> interFrames;
-    HomieSetting<long> ledCount;
-    // HomieSetting<long> sourceLedCount;
+    // optInt universes;
+    optInt startUni;
+    // optInt startAddr;
 
-    // HomieSetting<long> universes;
-    HomieSetting<long> startUni;
-    // HomieSetting<long> startAddr;
-
-    //temp til strip class in action
-    HomieSetting<bool> setMirrored;             
-    HomieSetting<bool> setFolded; 
-    // HomieSetting<bool> setFlipped;
+    optBool setMirrored;
+    optBool setFolded;
+    // optBool setFlipped;
 
  protected:
     virtual bool handleInput(const String& property, const HomieRange& range, const String& value);
     virtual void setup() override;
     // virtual void loop(); // relevant?
-  
-//  private:
 };
-
