@@ -1,14 +1,13 @@
 #pragma once
 
+#include <map>
 #include <NeoPixelBrightnessBus.h>
 #include <NeoPixelAnimator.h>
-#include <Homie.h>
-#include "modulator.h"
 #include "renderstage.h"
-#include "color.h"
+#include "envelope.h"
+// #include "color.h"
 #include "util.h"
 
-// try using blah = whah instead, "Usings can be templatized while typedefs cannot"
 using DmaGRB      = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266Dma800KbpsMethod>;
 using DmaGRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>;
 using UartGRB     = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266AsyncUart800KbpsMethod>;
@@ -299,25 +298,88 @@ class Strip: public Outputter {
       driver->Begin();
     }
 
-    virtual uint16_t getIndexOfField(uint16_t position) {
-      if(beFolded) { // pixelidx differs from pixel recieved
-        if(position % 2) { // if uneven
-          position /= 2;  // since every other pixel is from opposite end
-        } else {
-          position = fieldCount-1 - position/2;
-        }
+
+class Blinky {
+  public:
+  Blinky(LEDS fieldSize, uint16_t ledCount):
+    Blinky(new Strip("Strip tester", fieldSize, ledCount)) {
+  }
+  Blinky(Strip* s): s(s) { generatePalette(); }
+  ~Blinky() { delete s; }
+
+  std::map<String, RgbwColor> colors;
+
+  void generatePalette() {
+    colors["black"]  = RgbwColor(0, 0, 0, 0);
+    colors["white"]  = RgbwColor(150, 150, 150, 255);
+    colors["red"]    = RgbwColor(255, 15, 5, 8);
+    colors["orange"] = RgbwColor(255, 40, 20, 35);
+    colors["yellow"] = RgbwColor(255, 112, 12, 30);
+    colors["green"]  = RgbwColor(20, 255, 22, 35);
+    colors["blue"]   = RgbwColor(37, 85, 255, 32);
+  }
+
+  bool color(const String& name = "black") {
+    if(colors.find(name) != colors.end()) {
+        s->setColor(colors[name]);
+          return true;
       }
-      if(beFlipped) {
-        position = fieldCount-1 - position;
-      }
-      return position;
+      return false;
+  }
+
+  void gradient(const String& from = "white", const String& to = "black") {
+    RgbwColor* one = colors.find(from) != colors.end()? &colors[from]: nullptr; //colors["white"];
+    RgbwColor* two = colors.find(to)   != colors.end()? &colors[to]:   nullptr; //colors["black"];
+    s->setGradient(one, two);
+    // RgbwColor one = colors.find(from) != colors.end()? colors[from]: colors["white"];
+    // RgbwColor two = colors.find(to)   != colors.end()? colors[to]:   colors["black"];
+    // s->setGradient(&one, &two);
+  }
+
+  void test() {
+    LN.logf(__func__, LoggerNode::DEBUG, "Run gradient test");
+    color("black");
+    gradient("black", "blue");
+    gradient("blue", "green");
+    gradient("green", "red");
+    gradient("red", "orange");
+    gradient("orange", "black");
+    // homiedelay (and also reg delay? causing crash :/)
+    // color("black"); homieDelay(50);
+    // gradient("black", "blue"); homieDelay(300);
+    // // color("blue");  homieDelay(100);
+    // gradient("blue", "green"); homieDelay(300);
+    // gradient("green", "red"); homieDelay(300);
+    // gradient("red", "orange"); homieDelay(300);
+    // gradient("orange", "black");
+  }
+
+  void blink(const String& colorName, uint8_t blinks = 1, bool restore = true, uint16_t numLeds = 0) {
+    uint16_t originalLedCount = s->fieldCount();
+    if(numLeds && numLeds != s->fieldCount()) s->setLedCount(numLeds); //so can do like clear to end of entire strip if garbage there and not using entire...
+
+    uint16_t sBytes = s->fieldCount() * s->fieldSize();
+    uint8_t was[sBytes];
+    if(s->getBuffer() && restore) {
+      memcpy(was, s->getBuffer(), sBytes);
     }
 
-    virtual uint16_t getFieldOfIndex(uint16_t field) { return field; } // wasnt defined = vtable breaks
-
-    virtual void applyModulator(Modulator<uint8_t>* mod) {
-      return;
+    for(int8_t b = 0; b < blinks; b++) {
+      color(colorName);
+      homieDelay(100);
+      if(restore) {
+        memcpy(s->getBuffer(), was, sBytes);
+      } else {
+        color("black");
+      }
+      homieDelay(50);
     }
+    if(originalLedCount != s->fieldCount()) s->setLedCount(originalLedCount);
+  }
 
-  protected:
+  void fadeRealNiceLike() { //proper, worthy, impl of above...
+    // scheduler->registerAnimation(lala); //nahmean
+  }
+
+  Strip* s;
 };
