@@ -15,8 +15,11 @@ def homie_ota_upload(source, target, env):
     host = b64decode(ARGUMENTS.get("OTA_HOST"))
     # unit = b64decode(ARGUMENTS.get("UNIT"))
     print "\nUploading firmware.bin to ota server.\n"
-    env.Execute("curl -F upload=@$BUILD_DIR/firmware.bin -F description='pixtol' http://" + host + ":9080/upload")
+    # env.Execute("curl -F upload=@$BUILD_DIR/firmware.bin -F description='pixtol' http://" + host + ":9080/upload")
+    env.Execute("curl -F upload=@$BUILD_DIR/firmware.bin -F \
+                description='$FW_NAME' http://" + host + ":9080/upload")
 
+                # description='$FW_NAME $PIOENV' http://" + host + ":9080/upload")
     # figure out what's wrong...
     # print "\nFlashing firmware.bin over mqtt...\n"
     # env.Execute("homie_ota_updater -t pixtol/ -i " + unit + " $BUILD_DIR/firmware.bin")
