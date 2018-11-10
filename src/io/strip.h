@@ -95,7 +95,12 @@ class StripRGBW: public iStripDriver {
     virtual void Begin()  { bus.Begin(); }
     virtual void Show()   { bus.Show(); }
     virtual void SetBrightness(uint16_t brightness)               { bus.SetBrightness(brightness); }
-    virtual void SetPixelColor(uint16_t pixel, RgbColor color)    { bus.SetPixelColor(pixel, RgbwColor(color)); }
+    virtual void SetPixelColor(uint16_t pixel, RgbColor color) {
+      // XXX this is the big one. Good conversion that doesn't just compensate with white
+      // zero-sum but adds and desaturates nicely so everything immune from allout ugly.
+      // And receive HSL with onboard saturation ADSR compressor like 90% limit 30ms response yada yad
+      bus.SetPixelColor(pixel, RgbwColor(color));
+    }
     virtual void SetPixelColor(uint16_t pixel, RgbwColor color)   { bus.SetPixelColor(pixel, color); }
     virtual void GetPixelColor(uint16_t pixel, RgbColor& result) {
       RgbwColor rgbw = bus.GetPixelColor(pixel);
@@ -135,7 +140,6 @@ class Strip: public Outputter {
     Strip():
       Outputter("Default strip", RGBW, 120), bytesPerLed(RGBW) {}
 
-    // explicit
     Strip(iStripDriver* d):
       Outputter("Strip, ext driver", LEDS(d->PixelSize()), d->PixelCount()),
       driver(d), externalDriver(true), bytesPerLed(LEDS(d->PixelSize())) {
@@ -146,50 +150,51 @@ class Strip: public Outputter {
       bytesPerLed(fieldSize) {
         initDriver();
     }
-    ~Strip() { if(externalDriver) delete driver; } //actually dumb? if providing externally then might be using for other stuff
+    virtual ~Strip() { if(externalDriver) delete driver; } //actually dumb? if providing externally then might be using for other stuff
 
     // will have to get rid of below ones if want Outputter clean? nah cant be But would be alright, just conveniance stuff no?
     void setLedCount(uint16_t ledCount) {
-      fieldCount = ledCount; initDriver();
+      _fieldCount = ledCount;
+      initDriver();
     }
-    void setBrightness(uint16_t brightness) {
-      if(brightness < totalBrightnessCutoff) {
-        brightness = 0; //until dithering...
-      }
-      driver->SetBrightness(brightness);
+    void setBrightness(uint16_t newBrightness) {
+      if(newBrightness < totalBrightnessCutoff) newBrightness = 0; //until dithering...
+      brightness = newBrightness;
+      // driver->SetBrightness(brightness); //XXX be non-destructive & copy to new buffer before fucking? or just use ext buffers anyways
+      // cause remember if this way order also becomes important, can't set level before pixelbuffer
+      // ready, tho easily fixabble skipping SetBrightness here and running it later...
     }
 
-    void setColor(RgbColor color)       { driver->ClearTo(color);           show(); }
-    void setColor(RgbwColor color)      { driver->ClearTo(color);           show(); }
-    void setColor(HslColor color)       { driver->ClearTo(RgbColor(color)); show(); }
+    void setColor(RgbColor color)  { driver->ClearTo(color);           show(); }
+    void setColor(RgbwColor color) { driver->ClearTo(color);           show(); }
+    void setColor(HslColor color)  { driver->ClearTo(RgbColor(color)); show(); }
+
+    void setGradient(RgbwColor* from, RgbwColor* to) { // XXX do with N points/colors...
+      for(uint16_t pixel = 0; pixel < _fieldCount; pixel++) {
+        if(!from) getPixelColor(pixel, *to); // like, if either nullptr, instead blend with whatever current...
+        if(!to)   getPixelColor(pixel, *from); // also use alpha once color lib a'go
+        RgbwColor color = RgbwColor::LinearBlend(*from, *to, (float)pixel/_fieldCount);
+        setPixelColor(pixel, color);
+      }
+      show();
+    }
 
     void setPixelColor(uint16_t pixel, RgbwColor color) {
       pixel = getIndexOfField(pixel);
-      if(color.CalculateBrightness() < pixelBrightnessCutoff) {
-        color.Darken(pixelBrightnessCutoff);
-      }
-      if(beGammaCorrect) {
-        color = colorGamma->Correct(color);
-      }
+      if(color.CalculateBrightness() < pixelBrightnessCutoff) color.Darken(pixelBrightnessCutoff);
+      if(_gammaCorrect) color = colorGamma->Correct(color);
 
       driver->SetPixelColor(pixel, color);
-			if(beMirrored) {
-        driver->SetPixelColor(ledsInStrip-1 - pixel, color);
-      }
+			if(_mirror) driver->SetPixelColor(ledsInStrip-1 - pixel, color);
     }
+
     void setPixelColor(uint16_t pixel, RgbColor color) {
       pixel = getIndexOfField(pixel);
-      if(color.CalculateBrightness() < pixelBrightnessCutoff) {
-        color.Darken(pixelBrightnessCutoff);
-      }
-      if(beGammaCorrect) {
-        color = colorGamma->Correct(color);
-      }
+      if(color.CalculateBrightness() < pixelBrightnessCutoff) color.Darken(pixelBrightnessCutoff);
+      if(_gammaCorrect) color = colorGamma->Correct(color);
 
       driver->SetPixelColor(pixel, color);
-			if(beMirrored) {
-        driver->SetPixelColor(ledsInStrip-1 - pixel, color);
-      }
+      if(_mirror) driver->SetPixelColor(ledsInStrip-1 - pixel, color);
     }
 
     void getPixelColor(uint16_t pixel, RgbwColor& color) {
@@ -201,23 +206,28 @@ class Strip: public Outputter {
       driver->GetPixelColor(pixel, color); // and back it goes
     }
 
-    void rotateBack(uint16_t pixels) {
-      driver->RotateLeft(pixels);
-    }
-    void rotateFwd(uint16_t pixels) {
-      driver->RotateRight(pixels);
-    }
-    void rotateBack(float fraction) {
-      driver->RotateLeft(fieldCount * fraction);
-    }
-    void rotateFwd(float fraction) {
-      driver->RotateRight(fieldCount * fraction);
+    void adjustPixel(uint16_t pixel, String action, uint8_t value) { //should go off callback really...
+      if(_fieldSize == 4) {
+        RgbwColor color;
+        getPixelColor(pixel, color);
+        if(action == "lighten") {
+          color.Lighten(value);
+        } else if(action == "darken") {
+          color.Darken(value);
+        }
+        setPixelColor(pixel, color);
+      }
     }
 
+    void rotateBack(uint16_t pixels) { driver->RotateLeft(pixels); }
+    void rotateFwd(uint16_t pixels) {  driver->RotateRight(pixels); }
+    void rotateBack(float fraction) {  driver->RotateLeft(_fieldCount * fraction); }
+    void rotateFwd(float fraction) {   driver->RotateRight(_fieldCount * fraction); }
 
     bool show() {
-      if(!isActive) return false;
+      if(!_isActive) return false;
       if(driver->CanShow()) {
+        driver->SetBrightness(brightness);
         driver->Show();
         return true;
       }
@@ -225,78 +235,108 @@ class Strip: public Outputter {
       return false;
     }
 
-    virtual bool canEmit()    { return driver->CanShow(); }
+    virtual bool ready() { return driver->CanShow(); }
+    virtual uint16_t microsTilReady() {
+      if(ready()) return 0;
+      else {
+        return (throughput * length() + 50) - (micros() - timeLastRun);
+      }
+    }
 
-    virtual void emit(uint8_t* data, uint16_t length) {
-      memcpy(driver->Pixels(), data, length);
-      // should allow multiple ways: pass raw data to put out (involves copy to driver's buffer, whole or per-pixel...)
-      // or (as driver would be shared with PixelBuffer, so can use lib manip fns at that stage as well), simply flush that?
-      for(uint16_t pos = 0; pos < length; pos += fieldSize) { // loop each pixel, getIndexOfField, apply gamma etc
-
-      } // run through any geometry adaptions, mirroring/flip, gamma correct etc...  and dithering...
+    virtual bool run() {
+      memcpy(driver->Pixels(), buffers[0]->get(), buffers[0]->length());
       driver->Dirty();
       show();
     }
 
-    // virtual void setActive(bool state = true, int8_t bufferIndex = -1) {
-    //
-    // }
+    void updateWithEnvelope(uint8_t* data, BlendEnvelope& e, float progress) { // XXX also pass fraction in case interpolating >2 frames
+      int pixel = 0; //512/bytes_per_pixel * (universe - 1);  // for one-strip-multiple-universes
+      float brightnessFraction = 255 / (brightness? brightness: 1); // ahah can't believe divide by zero got me
 
-    iStripDriver& getDriver()    { return *driver; }
+      for(int t = 0; t < length(); t += _fieldSize, pixel++) {
+        uint8_t subPixel[_fieldSize];
+        for(uint8_t i = 0; i < _fieldSize; i++) subPixel[i] = data[t+i];
 
-    Strip& setMirrored(bool state = true) {
-      beMirrored = state;
-      initDriver(); // affects output size so yeah
-      return *this;
-    }
-    Strip& setFolded(bool state = true) {
-      beFolded = state;
-      return *this;
-    }
-    Strip& setFlipped(bool state = true) {
-      beFlipped = state;
-      return *this;
-    }
-    Strip& setGammaCorrect(bool state = true) {
-      beGammaCorrect = state;
-      colorGamma = new NeoGamma<NeoGammaTableMethod>;
-      return *this;
-    }
-    uint8_t pixelBrightnessCutoff = 8;
-    uint8_t totalBrightnessCutoff = 6;
+        if(_fieldSize == 3) { // when this is moved to input->pixelbuffer stage there will be multiple configs: format of input (RGB, RGBW, HSL etc) and output (WS/SK). So all sources can be used with all endpoints.
+          RgbColor color = RgbColor(subPixel[0], subPixel[1], subPixel[2]);
+          RgbColor lastColor;
+          getPixelColor(pixel, lastColor); // get from pixelbus since we can resolve dimmer-related changes
+          bool brighter = color.CalculateBrightness() >
+                          (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
+          color = RgbColor::LinearBlend(color, lastColor, (brighter ? e.A(progress) : e.R(progress)));
+          setPixelColor(pixel, color);
 
-    iStripDriver* driver = nullptr; // keep public since interface identical either way, no need further abstraction // iStripDriver& driver; // figure out later...  ""As pointed out, failing to make a dtor virtual when a class is deleted through a base pointer could fail to invoke the subclass dtors (undefined behavior).
-    bool externalDriver = false;
+        } else if(_fieldSize == 4) {
+          RgbwColor color = RgbwColor(subPixel[0], subPixel[1], subPixel[2], subPixel[3]);
+          RgbwColor lastColor;
+          getPixelColor(pixel, lastColor);
+          bool brighter = color.CalculateBrightness() >
+                          (brightnessFraction * lastColor.CalculateBrightness()); // handle any offset from lowering dimmer
+          color = RgbwColor::LinearBlend(color, lastColor, (brighter? e.A(progress): e.R(progress)));
 
-    uint16_t droppedFrames = 0;
-    uint16_t microsTicker = 0;
-
-
-  private:
-    LEDS bytesPerLed;
-    uint8_t ledsInStrip;
-    bool beMirrored     = false;
-    bool beGammaCorrect = false;
-    bool beFolded       = false;
-    bool beFlipped      = false;
-
-    NeoGamma<NeoGammaTableMethod> *colorGamma;
-
-    uint16_t maxFrameRate; // calculate from ledCount etc, use inherited common vars and methodds for that...
-
-    // uint8_t brightness, lastBrightness = 0;
-
-    void initDriver() {
-      ledsInStrip = beMirrored? fieldCount * 2: fieldCount;
-
-      if(!externalDriver) {
-        if(driver) delete driver;
-
-        if(fieldSize == RGB)        driver = new StripRGB(ledsInStrip);
-        else if(fieldSize == RGBW)  driver = new StripRGBW(ledsInStrip);
+        setPixelColor(pixel, color);
       }
-      driver->Begin();
     }
+  }
+
+  // virtual void setActive(bool state = true, int8_t bufferIndex = -1) { }
+  iStripDriver& getDriver() { return *driver; }
+  uint8_t* getBuffer()      { return driver->Pixels(); }
+
+  Strip& mirror(bool state = true) {
+    _mirror = state;
+    initDriver(); // affects output size so yeah
+    return *this;
+  }
+  Strip& fold(bool state = true) { _fold = state; return *this; }
+  Strip& flip(bool state = true) { _flip = state; return *this; }
+  Strip& gammaCorrect(bool state = true) {
+    _gammaCorrect = state;
+    if(state) colorGamma = new NeoGamma<NeoGammaTableMethod>;
+    else delete colorGamma;
+    return *this;
+  }
+
+  uint8_t ledsInStrip;
+  uint8_t brightness;
+
+private:
+  iStripDriver* driver = nullptr; // iStripDriver& driver; // figure out later...  ""As pointed out, failing to make a dtor virtual when a class is deleted through a base pointer could fail to invoke the subclass dtors (undefined behavior).
+  bool externalDriver = false;
+
+  LEDS bytesPerLed;
+  bool _mirror = false, _fold = false, _flip = false, _gammaCorrect = false;
+  NeoGamma<NeoGammaTableMethod> *colorGamma;
+
+  uint16_t maxFrameRate; // calculate from ledCount etc, use inherited common vars and methodds for that...
+
+  uint8_t pixelBrightnessCutoff = 8, totalBrightnessCutoff = 6; //in lieu of dithering, have less of worse than nothing
+
+  void initDriver() {
+    ledsInStrip = _mirror? _fieldCount * 2: _fieldCount;
+
+    if(!externalDriver) {
+      if(driver) delete driver;
+
+      if(_fieldSize == RGB)        driver = new StripRGB(ledsInStrip);
+      else if(_fieldSize == RGBW)  driver = new StripRGBW(ledsInStrip);
+    }
+    driver->Begin();
+  }
+
+  virtual uint16_t getIndexOfField(uint16_t position) {
+    if(position >= _fieldCount) position = _fieldCount-1; //bounds...
+    else if(position < 0) position = 0;
+
+    if(_fold) { // pixelidx differs from pixel recieved
+      if(position % 2) position /= 2; // since every other pixel is from opposite end
+      else position = _fieldCount-1 - position/2;
+    }
+    if(_flip) position = _fieldCount-1 - position;
+    return position;
+  }
+  virtual uint16_t getFieldOfIndex(uint16_t field) { return field; } // wasnt defined = vtable breaks
+};
 
 
 class Blinky {
