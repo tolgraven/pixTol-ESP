@@ -18,6 +18,7 @@ bool colorNodeHandler(const String& property, const HomieRange& range, const Str
 bool controlsHandler(const HomieRange& range, const String& value);
 bool blendHandler(const HomieRange& range, const String& value);
 bool settingsHandler(const HomieRange& range, const String& value);
+bool powerHandler(const HomieRange& range, const String& value);
 
 bool globalInputHandler(const HomieNode& node, const String& property, const HomieRange& range, const String& value);
 bool broadcastHandler(const String& level, const String& value);

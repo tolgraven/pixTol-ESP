@@ -51,7 +51,7 @@ class Buffer {
       if(updatedBytes >= length() && autoLock) lock();
       else dirty = true; //XXX no good, might have updated with some garbage prev...
     }
-    void set(Buffer& from, uint16_t length = 0 uint16_t readOffset = 0, uint16_t writeOffset = 0, bool autoLock = true) {
+    void set(Buffer& from, uint16_t length = 0, uint16_t readOffset = 0, uint16_t writeOffset = 0, bool autoLock = true) {
       set(from.get(), length, readOffset, writeOffset, autoLock);
     }
 
@@ -111,35 +111,36 @@ class Buffer {
       }
     }
 
-    uint8_t averageInBuffer(uint16_t startField = 0; uint16_t endField) { //calculate avg brightness for buffer. Or put higher and averageValue?
+    uint8_t averageInBuffer(uint16_t startField = 0, uint16_t endField = MILLION) { //calculate avg brightness for buffer. Or put higher and averageValue?
       //XXX offload value calc to field? bc diff fieldtypes might have more advanced scaling than linear 0-255?
       uint32_t tot = 0;
-      for(uint16_t byte = 0; byte < length(); byte++) tot += byte;
-      return tot / length();
+      endField = endField <= length()? endField: length();
+      for(uint16_t byte = startField * _fieldCount; byte < endField; byte++) tot += byte;
+      return tot / endField - startField;
     } // or static/elsewhere util fn passing bufptr, len, fieldsize?
 
   protected:
-    uint8_t* data = nullptr;
-    bool dirty = true;
-  private:
     String _id;
     uint8_t _fieldSize;
     uint16_t _fieldCount;
     bool ownsData;
     uint16_t updatedBytes = 0;
+    uint8_t* data = nullptr;
+    bool dirty = true;
+  private:
 };
 
 class PixelBuffer: public Buffer {
   private:
     uint8_t* targetData = nullptr;
     Color* pixelData = nullptr;
-      Color* targetPixelData = nullptr; //each Color's data* points to specific section of raw buffer, so no additional overhead apart from alpha
+    Color* targetPixelData = nullptr; //each Color's data* points to specific section of raw buffer, so no additional overhead apart from alpha
   public:
     PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels):
       Buffer("PixelBuffer", bytesPerPixel, numPixels),
       targetData(new uint8_t[length()]{0}) {}
 
-    void setTarget()
+    void setTarget();
 
     void blendWith(const PixelBuffer& buffer, float amount) { } // later add methods like overlay, darken etc
     // void blendUsingEnvelope(uint8_t* data, BlendEnvelope& e, float progress = 1.0); // should go here eventually
@@ -148,7 +149,6 @@ class PixelBuffer: public Buffer {
     // but if targetData already in here, no need pass data at least. Just set core data, targetData,
     // call this getting new buffers...
     PixelBuffer& getInterpolated(BlendEnvelope& e, float progress = 1.0); // should go here eventually
-
 
     PixelBuffer& getScaled(uint16_t numPixels); // scale up or down... later xy etc
 

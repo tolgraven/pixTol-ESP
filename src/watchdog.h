@@ -3,6 +3,7 @@
 #include <functional>
 #include "Arduino.h"
 #include <Ticker.h>
+#include <H4.h>
 extern "C" {
 #include "user_interface.h"
 }
@@ -16,7 +17,8 @@ extern "C" {
   Max uint32_t value, 0xffffffff = LWD_ID_LOOP_END marks end of loop() */
 // using lwdFlag_t   = uint8_t;
 // using lwdReason_t = uint8_t;
-using lwdFlag_t, lwdReason_t = uint8_t;
+using lwdFlag_t              = uint8_t;
+using lwdReason_t            = uint8_t;
 using lwdCount_t             = uint16_t; //should be uint8_t? when'd you ever up cap > 255?
 using lwdID_t                = uint32_t; //32 due to size of exccause.... cast?
 #define LWD_ID_INVALID        0x0
@@ -59,7 +61,7 @@ using lwdID_t                = uint32_t; //32 due to size of exccause.... cast?
  * Espressif, ESP8266 Non-OS SDK API Reference, Version 2.2.1 (2018/05) "3.3.23 system_rtc_mem_write" p. 19
  * https://www.espressif.com/sites/default/files/documentation/2c-esp8266_non_os_sdk_api_reference_en.pdf#page=1&zoom=auto,-13,792 */
 struct __attribute__((packed)) {
-  uint8_t       flag; // 1 byte lwdData structure flag
+  lwdFlag_t     flag; // 1 byte lwdData structure flag
   lwdReason_t reason; // 1 byte lwdData reason
   lwdCount_t   count; // 2 byte (16 bit) count of consecutive boots for same reason
   lwdID_t         id; // 4 byte (32 bit) id (module id or exception cause or user defined)
@@ -71,6 +73,7 @@ struct __attribute__((packed)) {
 #define LWD_MAX_VALID_RTC_ADDRESS  LWD_RTC_SYSTEM + LWD_RTC_USER - (LWD_BLOCK_SIZE / 4)
 
 
+
 class LoopWatchdog {
   Ticker wdt;
   volatile unsigned long fedAt, lapseAt, timeout, negTimeout;
@@ -78,7 +81,9 @@ class LoopWatchdog {
   uint8_t rtcAddress = LWD_MAX_VALID_RTC_ADDRESS;
 
   bool validFlag() { return (lwdData.flag & LWD_USER_FLAG_MASK) == LWD_USER_FLAG; }
-  void save() { system_rtc_mem_write(rtcAddress, &lwdData, sizeof(lwdData)); }
+  void save() {
+    system_rtc_mem_write(rtcAddress, &lwdData, sizeof(lwdData));
+  }
   void load() {
     system_rtc_mem_read(rtcAddress, &lwdData, sizeof(lwdData));
     if(!validFlag() || lwdData.reason >= LWD_INVALID_REASON)
@@ -90,10 +95,23 @@ class LoopWatchdog {
     fedAt = millis();
     lapseAt = fedAt + timeout;
     if(lwdData.id != LWD_ID_LOOP_END) {
-      setReason(LWD_REASON_BETWEEN_LOOPS_RST);
+      setReason(LWD_REASON_BETWEEN_RST);
       ESP.restart();
     }
   }
+
+  void ICACHE_RAM_ATTR callback() {
+  // void callback() {
+    if(timeout != lapseAt - fedAt || timeout != -negTimeout || !validFlag()) // something's been overwritten
+      setReason(LWD_REASON_CORRUPT);
+    else if(millis() - fedAt < timeout) // if(millis() - fedAt < LWD_TIMEOUT) //wrong using define surely, custom timeout lacks effect?
+      return; // all good, keep going
+    else
+      setReason(LWD_REASON_LOOP_RST); // hit watchdog timer...
+    ESP.restart(); // timeout or memory correuption - restart
+  }
+
+  enum RepeatCause { MAYBE = -1, FALSE, TRUE };
 
   void initData() {
     lwdData.flag = LWD_RESTART_FLAG;
@@ -102,21 +120,31 @@ class LoopWatchdog {
     lwdData.id = LWD_ID_LOOP_END;
   }
   void stamp(lwdID_t id = LWD_ID_LOOP_END) { lwdData.id = id; } //closes loop if no ID passed
-  void start(unsigned long timeout = LWD_TIMEOUT); { // called once in setup() to start loop wdt, optionally setting custom timeout interval
+  void start(unsigned long timeout = LWD_TIMEOUT) { // called once in setup() to start loop wdt, optionally setting custom timeout interval
     this->timeout = timeout;
     negTimeout = -timeout;
-    // ticker.attach_ms(timeout / 2, callback); //why half?
-    std::function<void(const LoopWatchdog&)> cb = &LoopWatchdog::callback;
-    H4::every(timeout / 2, cb(*this)); //good&rite?
+    // std::function<void(LoopWatchdog*)> cb = std::bind(&LoopWatchdog::callback, *this);
+    // std::function<void(LoopWatchdog*)> cb = std::bind(&LoopWatchdog::callback, this);
+    auto cb = std::bind(&LoopWatchdog::callback, this);
+    // wdt.attach_ms(timeout / 2, cb); //why half?
+    // std::function<void(LoopWatchdog*)> cb = &LoopWatchdog::callback;
+    // H4::every(timeout / 2, cb(*this)); //good&rite?
+    H4::every(timeout / 2, cb); //good&rite?
     stamp(LWD_ID_LOOP_END); //= start of loop()
     feed();
   }
 
-  void setReason(lwdReason_t reason, bool sameReason, uint8_t flag = 0) { //sets reason, incrementing count if same, and optionally modifying flag
+  void setReason(lwdReason_t reason, lwdFlag_t flag = 0) { //sets reason, incrementing count if same, and optionally modifying flag
+    bool repeatCause = (reason == lwdData.reason);
+    if(reason == REASON_EXCEPTION_RST) { //just override here yeh..
+      lwdID_t exceptionCause = ESP.getResetInfoPtr()->exccause;
+      repeatCause = repeatCause && (exceptionCause == lwdData.id); //not same if different ids = different exceptions
+      lwdData.id = exceptionCause;
+    }
     // if(reason != lwdData.reason) lwdData.count = 0; // will then be incremented by getRestartReason
-    lwdData.count = sameReason? ++lwdData.count: 1; // lwdData.count + 1: 1;
+    lwdData.count = repeatCause? ++lwdData.count: 1; // lwdData.count + 1: 1;
     lwdData.reason = reason;
-    lwdData.flag = flag? flag: lwdData.flag; //flag; //LWD_USER_FLAG;
+    lwdData.flag = flag? flag: lwdData.flag; //only save if valid/>0 //flag; //LWD_USER_FLAG;
     save();
   }
 
@@ -129,16 +157,10 @@ class LoopWatchdog {
       if(lwdData.flag == LWD_USER_FLAG && reason == REASON_SOFT_RESTART)
         reason = lwdData.reason;
 
-      bool sameReason = (reason == lwdData.reason);
-      if(reason == REASON_EXCEPTION_RST) {
-        lwdID_t exceptionCause = ESP.getResetInfoPtr()->exccause;
-        sameReason = sameReason && (exceptionCause == lwdData.id); //not same if different ids = different exceptions
-        lwdData.id = exceptionCause;
-      }
-      // lwdData.count = sameReason? ++lwdData.count: 1; // lwdData.count = sameReason? lwdData.count + 1: 1;
+      // lwdData.count = repeatCause? ++lwdData.count: 1; // lwdData.count = repeatCause? lwdData.count + 1: 1;
       // lwdData.reason = reason;
       // lwdData.flag = LWD_RESTART_FLAG;
-      setReason(reason, sameReason, LWD_RESTART_FLAG); //wat exactly this marker for?
+      setReason(reason, LWD_RESTART_FLAG); //wat exactly this marker for?
       save();
       doneGet = true;
     }
@@ -147,19 +169,10 @@ class LoopWatchdog {
     return lwdData.reason;
   }
 
-  void ICACHE_RAM_ATTR callback() {
-    if(timeout != lapseAt - fedAt || timeout != -negTimeout || !validFlag()) // something's been overwritten
-      setReason(LWD_REASON_CORRUPT);
-    else if(millis() - fedAt < timeout) // if(millis() - fedAt < LWD_TIMEOUT) //wrong using define surely, custom timeout lacks effect?
-      return; // all good, keep going
-    else
-      setReason(LWD_REASON_LOOP_RST); // hit watchdog timer...
-    ESP.restart(); // timeout or memory correuption - restart
-  }
 
-  void userRestart(lwdID_t id = 0, lwdReason_t reason = LWD_REASON_USER_RESTART); {// Does ESP.restart() (default) or ESP.reset(), setting id if > 0.  Count will ignore id, only considering reason
+  void userRestart(lwdID_t id = 0, lwdReason_t reason = LWD_REASON_USER_RESTART) {// Does ESP.restart() (default) or ESP.reset(), setting id if > 0.  Count will ignore id, only considering reason
     lwdData.id = id? id: lwdData.id; // only put id if actively set
-    setReason(reason, (reason = lwdData.reason), LWD_USER_FLAG);
+    setReason(reason, LWD_USER_FLAG);
     if(reason == LWD_REASON_USER_RESTART)    ESP.restart();
     else if(reason == LWD_REASON_USER_RESET) ESP.reset();
   }
@@ -168,8 +181,8 @@ class LoopWatchdog {
     char buff[80];
     lwdCount_t count;
     lwdID_t id;
-    lwdReason_t restartReason = getRestartReason(count, id);
-    // switch(getRestartReason(count, id)) {
+    lwdReason_t restartReason = getReason(count, id);
+    // switch(getReason(count, id)) {
     //   case :
     //    break;
     // }
@@ -179,11 +192,11 @@ class LoopWatchdog {
       snprintf(buff, sizeof(buff), "%s, count %d", ESP.getResetReason().c_str(), count);
     } else if(restartReason == LWD_REASON_USER_RESET) {
       snprintf_P(buff, sizeof(buff), PSTR("User reset, id %d, count %d"), id, count);
-    } else if(restartReason == REASON_USER_RESTART) {
+    } else if(restartReason == LWD_REASON_USER_RESTART) {
       snprintf_P(buff, sizeof(buff), PSTR("User restart, id %d, count %d"), id, count);
     } else if(restartReason == LWD_REASON_LOOP_RST) {
       snprintf_P(buff, sizeof(buff), PSTR("Loop watchdog in %d, count %d"), id, count);
-    } else if(restartReason == LWD_REASON_BETWEEN_LOOPS_RST) {
+    } else if(restartReason == LWD_REASON_BETWEEN_RST) {
       snprintf_P(buff, sizeof(buff), PSTR("Loop watchdog incomplete in %d, count %d"), id, count);
     } else if(restartReason == LWD_REASON_CORRUPT) {
       snprintf_P(buff, sizeof(buff), PSTR("Loop watchdog overwritten in %d, count %d"), id, count);

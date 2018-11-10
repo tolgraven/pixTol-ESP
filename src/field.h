@@ -8,13 +8,13 @@
 //   uint8_t size;
 //   int16_t alpha;
 // };
-enum class FieldSize: uint8_t {
+enum FieldSize: uint8_t {
   SINGLE = 1, DMX = 1, BYTE = 1, WHITE = 1, UV = 1, //etc
   DMX_FINE = 2, TWO_BYTE = 2,
   RGB = 3, RGBW = 4
 };
 
-enum class Blend {
+enum class Blend: uint8_t {
   OVERLAY = 0, HTP, LOTP, AVERAGE, ADD, SUBTRACT, MULTIPLY, DIVIDE
 }; // not suitable tho?: "SCALE" - like live "modulate", would need extra var setting zero-point (1.0 = existing value is maximum possible, 0.5 can reach double etc). Putting such meta-params on oscillators etc = likely exciting
 
@@ -26,8 +26,9 @@ struct FieldFlags { //in case need optimize to pack individual flags/whatever in
 };
 
 class Field {
+  protected:
   uint8_t* data = nullptr;
-  FieldSize size; // uint8_t size;
+  uint8_t size; // uint8_t size;
   float alpha = 1.0; //uint8_t alpha = 255; //switch to int if too slow.
   Blend mode = Blend::OVERLAY; // could also have pointers for both alpha and mode, so optional and then
   //  always returning values 1.0 / OVERLAY? or better yet "DEFER" = Buffer-wide setting handles...
@@ -47,16 +48,16 @@ class Field {
   // Alpha alpha;
 
   public:
-  Field(uint8_t value, float alpha = 1.0):
-    Field(&value, 1, 1.0, true) {}
-  // Field(uint8_t* field, uint8_t size, float alpha = 1.0, bool copy = false):
-  Field(uint8_t* data, FieldSize size, float alpha = 1.0, bool copy = false):
+  Field(uint8_t fieldData, float alpha = 1.0):
+    // Field(&fieldData, FieldSize::SINGLE, 1.0, true) {}
+    Field(&fieldData, 1, 1.0, true) {}
+  Field(uint8_t* fieldData, uint8_t size, float alpha = 1.0, bool copy = false):
     size(size), alpha(alpha) {
     if(copy) {
       data = new uint8_t[size];
-      memcpy(data, data, size);
+      memcpy(data, fieldData, size);
     } else {
-      data = data;
+      data = fieldData;
     }
   }
   ~Field() { delete[] data; }; //how goz dis when we dont created array, just using ptr?
@@ -71,7 +72,8 @@ class Field {
       int cum = data[p] + other.get()[p];
       field[p] = cum > 255? 255: cum < 0? 0: cum;
     }
-    return Field(field, size);
+    // return *(new Field(field, size));
+    return *(new Field(field, size));
   }
   Field& operator-(const uint8_t delta) { value(delta, false); return *this; } // darken
   Field& operator-(const Field& other) {
@@ -80,7 +82,7 @@ class Field {
       int cum = data[p] - other.get()[p];
       field[p] = cum > 255? 255: cum < 0? 0: cum;
     }
-    return Field(field, size);
+    return *(new Field(field, size));
   }
 
   uint8_t value() const {

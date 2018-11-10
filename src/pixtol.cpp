@@ -5,9 +5,10 @@ void setup() {
   initHomie();  bootLog(doneHOMIE);
   initScheduler();
   initState();  bootLog(doneMAIN);
+  initUpdaters();
 
-  b->blink("black", 1, false, 288); // clear strip
-  b->test();
+  // b->blink("black", 1, false, 288); // clear strip
+  // b->test();
 }
 
 void renderFrame(float progress) {
@@ -18,7 +19,7 @@ void renderFrame(float progress) {
 
 void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
   if(universe != cfg->startUni.get()) return; //in case some fucker is broadcasting... XXX support multiple universes duh..
-  wasBuffer->set(targetBuffer.get());
+  wasBuffer->set(targetBuffer->get());
 
   targetFunctions->set(data, f->numChannels);
   uint16_t destLen = cfg->stripLedCount.get() * cfg->stripBytesPerPixel.get(); //rather, targetBuffer...
@@ -32,8 +33,8 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
 
 void loop() {
   lastArtnetOpCode = artnet->read(); // skip callback stuff and just use .read once move to class? prob makes more sense
-  float progress = (micros() - gotFrameAt) / (float)interval; //remember to adjust stuff to interpolation can overshoot...
-  uint16_t keyFrameCount = (micros() - start) / interval; //remember to adjust stuff to interpolation can overshoot...
+  float progress = (micros() - gotFrameAt) / (float)keyFrameInterval; //remember to adjust stuff to interpolation can overshoot...
+  uint16_t keyFrameCount = (micros() - start) / keyFrameInterval; //remember to adjust stuff to interpolation can overshoot...
   if(!(keyFrameCount % cfg->dmxHz.get())) {
     LN.logf(_DEBUG_, "Keyframe %d, Progress %f", keyFrameCount, progress);
   }
@@ -47,33 +48,30 @@ void loop() {
   //   updates = 0; // Reset counter
   // }
 
-  ArduinoOTA.handle(); // redundant once homie's ota stops being a buggy pos...
+  // ArduinoOTA.handle(); // redundant once homie's ota stops being a buggy pos...
 	Homie.loop(); // XXX DUH DUH DAH, fucking save all networks ever configured and try them lol finally an IoT thing for the 90's
 
   static uint16_t wasOnlineAt;
   static bool firstConnect = true;
-  if(Homie.isConnected()) { // kill any existing go-into-wifi-finder timer, etc
-    if(firstConnect) {
-      bootLog(doneONLINE);
-      bootInfoPerMqtt();
-      firstConnect = false;
-    }
-    wasOnlineAt = millis();
-  } else { // stays stuck in this state for a while on boot... set a timer if not already exists, yada yada blink statusled for sure...
-    if(!firstConnect) { //already been connected, so likely temp hickup, chill
-      if(millis() - wasOnlineAt < 10000) //give it 10s
-        return;
-      else {
-        static bool justDisconnected = true;
-        if(justDisconnected) {
-          LN.logf(_DEBUG_, "Wifi appears well down");
-          justDisconnected = false;
-        }
-      }
-
-    } else {
-      // fade up some sorta boot anim I guess?
-
-    }
-  }
+  // if(Homie.isConnected()) { // kill any existing go-into-wifi-finder timer, etc
+  //   if(firstConnect) {
+  //     bootLog(doneONLINE);
+  //     bootInfoPerMqtt();
+  //     firstConnect = false;
+  //   }
+  //   wasOnlineAt = millis();
+  // } else { // stays stuck in this state for a while on boot... set a timer if not already exists, yada yada blink statusled for sure...
+  //   if(!firstConnect) { //already been connected, so likely temp hickup, chill
+  //     if(millis() - wasOnlineAt < 10000) //give it 10s
+  //       return;
+  //     else {
+  //       static bool justDisconnected = true;
+  //       if(justDisconnected) {
+  //         LN.logf(_DEBUG_, "Wifi appears well down");
+  //         justDisconnected = false;
+  //       }
+  //     }
+  //   } else { // fade up some sorta boot anim I guess?
+  //   }
+  // }
 }

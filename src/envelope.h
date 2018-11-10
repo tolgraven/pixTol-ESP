@@ -8,7 +8,7 @@ class ADSREnvelope {
 	enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
 };
 
-enum EnvStage { AT = 0, RE }; //should be dynamic and that...
+enum EnvStage: uint8_t { AT = 0, RE }; //should be dynamic and that...
 // template<typename T>
 class BlendEnvelope { // simple "envelope" to control how much an incoming value should affect the current
   private:
@@ -28,9 +28,11 @@ class BlendEnvelope { // simple "envelope" to control how much an incoming value
     }
   public:
 //
-    BlendEnvelope(const String& id = "BlendEnvelope", float divisors[RE+1] = {1.0, 1.0}, bool invert = false, float baseline = 1.0):
+    //BlendEnvelope(const String& id = "BlendEnvelope", float divisors[RE+1] = (float[]){1.0, 1.0}, bool invert = false, float baseline = 1.0):
+    BlendEnvelope(const String& id = "BlendEnvelope", float at = 1.0, float re = 1.0, bool invert = false, float baseline = 1.0):
       _id(id), invert(invert), _baseline(baseline) {
-        for(uint8_t es = AT; es <= RE; es++) divisor[es] = divisors[es] > 1.0? divisors[es]: 1.0;
+        value[AT] = at; value[RE] = re;
+        for(uint8_t es = AT; es <= RE; es++) divisor[es] = divisor[es] > 1.0? divisor[es]: 1.0;
         // divisor[AT] = attackDivisor > 1.0? attackDivisor: 1.0;
         // divisor[RE] = releaseDivisor > 1.0? releaseDivisor: 1.0;
         adjustForDirection();
@@ -52,10 +54,12 @@ class BlendEnvelope { // simple "envelope" to control how much an incoming value
       value[RE] = _baseline - _baseline * (r / divisor[RE]);
       adjustForDirection();
     }
-    void set(float values[RE+1]) {
-      for(EnvStage es = AT; es <= RE; es++)
-        value[es] = _baseline - _baseline * (vals[es] / divisor[es]); // dont ever quite arrive like this, two runs at max = 75% not 100%...
-    }
+    // void set(float values[RE+1]) {
+    // void set(float at = 1.0, float re = 1.0) {
+    //   value[AT] = at; value[RE] = re;
+    //   for(uint8_t es = AT; es <= RE; es++)
+    //     value[es] = _baseline - _baseline * (value[es] / divisor[es]); // dont ever quite arrive like this, two runs at max = 75% not 100%...
+    // }
     float A(float progress) { return value[AT] * progress; } //lol i was dividing...
     float R(float progress) { return value[RE] * progress; }
     float get(EnvStage es, float progress) { return value[es] * progress; }

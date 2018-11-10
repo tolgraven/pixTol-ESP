@@ -5,24 +5,28 @@
 
 #define FW_BRAND "tolgrAVen"
 #define FW_NAME "pixTol"
-#define FW_VERSION "1.0.44"
+#define FW_VERSION "1.0.46"
 
 #define LED_PIN             5  // D1=5, D2=4, D3=0, D4=2  D0=16, D55=14, D6=12, D7=13, D8=15
 #define LED_STATUS_PIN      2
 #define RX_PIN              3
 #define TX_PIN              1
-#define SERIAL_BAUD     74880 // same rate as bootloader...
+// #define SERIAL_BAUD     74880 // same rate as bootloader...
 #define MILLION       1000000
-#define DEFAULT_HZ         40
+// #define DEFAULT_HZ         40
 
 
 // FIX somehow: dont drop into config mode off invalid settings, or at least reads rest of config and
 // preselect that + default for wrong one. Also event blink angry etc
 
-typedef HomieSetting<bool> optBool;
-typedef HomieSetting<long> optInt;
-typedef HomieSetting<double> optFloat;
-typedef HomieSetting<const char*> optString;
+using optBool   = HomieSetting<bool>;
+using optInt    = HomieSetting<long>;
+using optFloat  = HomieSetting<double>;
+using optString = HomieSetting<const char*>;
+// typedef HomieSetting<bool> optBool;
+// typedef HomieSetting<long> optInt;
+// typedef HomieSetting<double> optFloat;
+// typedef HomieSetting<const char*> optString;
 //this prob makes no sense. Put debug/log in log node, dmx in that node, strip-related in strip node...
 //could use class for the config management thing tho
 // HomieSetting<const char*> ConfigNode::mode("mode", "what mode iz running?");
@@ -33,7 +37,7 @@ typedef HomieSetting<const char*> optString;
 // XXX sort own spiffs-writer/reader (or take theirs), allow persistent settings over RDM, mqtt...
 class ConfigNode: public HomieNode { // seems homie (now?) has a 10 settings limit. scale down settings, or patch homie?
   public:
-  ConfigNode::ConfigNode(): HomieNode("pixTol", "config"),
+  ConfigNode(): HomieNode("pixTol", "config"),
     logArtnet("log_artnet", "log level for incoming artnet packets"),
 
     stripBytesPerPixel("bytes_per_pixel", "3 for RGB, 4 for RGBW"),
@@ -46,8 +50,8 @@ class ConfigNode: public HomieNode { // seems homie (now?) has a 10 settings lim
     // startAddr("starting_address", "index of beginning of strip, within starting_universe."), // individual pixel control starts after x function channels offset (for strobing etc)
     dmxHz("dmx_hz", "dmx frame rate"),      // use to calculate strobe and interpolation stuff
 
-    mirrored("mirror_second_half", "whether to mirror strip back onto itself, for controlling folded strips >1 uni as if one"),
-    folded("folded_alternating", "alternating pixels")
+    mirror("mirror_second_half", "whether to mirror strip back onto itself, for controlling folded strips >1 uni as if one"),
+    fold("folded_alternating", "alternating pixels")
     // flipped("flip", "flip strip direction")
   {
     logArtnet.setDefaultValue(0);
@@ -70,8 +74,8 @@ class ConfigNode: public HomieNode { // seems homie (now?) has a 10 settings lim
     dmxHz.setDefaultValue(40).setValidator([] (long val) {
         return (val > 0 && val < 176);}); // 4 x dmx max
 
-    mirrored.setDefaultValue(false);
-    folded.setDefaultValue(false);
+    mirror.setDefaultValue(false);
+    fold.setDefaultValue(false);
     // flipped.setDefaultValue(false);
   }
     optInt logArtnet;
@@ -86,18 +90,18 @@ class ConfigNode: public HomieNode { // seems homie (now?) has a 10 settings lim
     // optInt startAddr;
     optInt dmxHz;
 
-    optBool mirrored;
-    optBool folded;
+    optBool mirror;
+    optBool fold;
     // optBool flipped;
 
   protected:
-  virtual bool handleInput(const String& property, const HomieRange& range, const String& value) {
-    // Homie.getLogger() << "Property: " << property << ", " << "value: " << value;
-    LN.logf(__func__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
-    // write to json or whatever, makes sense to can update straight mqtt no json-over-mqtt?
-   return true;
-  }
-  virtual void setup() override {
-    // advertise("debug").settable(); //don't need this cause can update settings ocer mqtt anyways
-  }
+  // virtual bool handleInput(const String& property, const HomieRange& range, const String& value) {
+  //   // Homie.getLogger() << "Property: " << property << ", " << "value: " << value;
+  //   LN.logf(__func__, LoggerNode::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
+  //   // write to json or whatever, makes sense to can update straight mqtt no json-over-mqtt?
+  //  return true;
+  // }
+  // virtual void setup() override {
+  //   // advertise("debug").settable(); //don't need this cause can update settings ocer mqtt anyways
+  // }
 };

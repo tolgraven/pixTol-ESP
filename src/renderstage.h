@@ -2,11 +2,11 @@
 #include <vector>
 #include "buffer.h"
 
-enum LEDS: uint8_t {
-  Invalid = 0,
-  Single = 1, RED = 1, GREEN = 1, BLUE = 1, WHITE = 1,
-  RGB = 3, RGBW = 4, RGBWAU = 6
-};
+// enum LEDS: uint8_t {
+//   Invalid = 0,
+//   Single = 1, RED = 1, GREEN = 1, BLUE = 1, WHITE = 1,
+//   RGB = 3, RGBW = 4, RGBWAU = 6
+// };
 
 
 class RenderStage {
@@ -16,6 +16,13 @@ class RenderStage {
     RenderStage(const String& id, uint8_t fieldSize, uint16_t fieldCount, uint8_t bufferCount = 1):
       _id(id), _fieldSize(fieldSize), _fieldCount(fieldCount) {
       buffers.push_back(new Buffer(_id, _fieldSize, _fieldCount)); // make buffer id like renderstageID_buffer_size
+    }
+    RenderStage(const String& id, Buffer* buffer) {
+      _id = id;
+      _fieldSize = buffer->fieldSize();
+      _fieldCount = buffer->fieldCount();
+      buffers.push_back(buffer);
+
     }
     virtual ~RenderStage() {}
 
@@ -37,7 +44,7 @@ class RenderStage {
       return _fieldCount;
     }
     uint16_t length() { return _fieldSize * _fieldCount; }
-    Buffer& get(uint8_t index = 0) { return buffers[index]; } //XXX check bounds
+    Buffer& get(uint8_t index = 0) { return *buffers[index]; } //XXX check bounds
 
     uint16_t hz = 40; // generally fixed value for inputters, buffers get theirs from outputter with highest value, outputters dynamic value from size*rate? 0 = full tilt
     uint16_t currentHz = hz; // will have to rethink if stick with multiple inheritance so one object can be eg both inputter and outputter...  if inherit virtual then get stuck with same rates in and out which isnt necessarily at all what you'd want...
@@ -62,7 +69,6 @@ class Inputter: public RenderStage { //so thinking as this dealing with lotsa ca
       RenderStage(id, bufferSize) {}
     Inputter(const String& id, uint8_t fieldSize, uint16_t fieldCount, uint8_t bufferCount = 1):
       RenderStage(id, fieldSize, fieldCount) {}
-
 
   private:
     uint8_t priority = 0;
@@ -94,7 +100,6 @@ class Outputter: public RenderStage {
       RenderStage(id, fieldSize, fieldCount, bufferCount) {}
 
     uint16_t droppedFrames = 0; //makes sense? inputter cant really drop and know about it tho generally?
-  protected:
 
   private:
     virtual uint16_t getIndexOfField(uint16_t position) { return position; }

@@ -6,6 +6,9 @@ Strip* s;
 Blinky* b;
 Functions* f;
 
+Updater* ota;
+Updater* homieUpdater;
+
 uint16_t start;
 uint32_t keyFrameInterval, gotFrameAt; // target interval between keyframes, abs time (micros) last frame read
 
@@ -16,7 +19,7 @@ PixelBuffer* wasBuffer;
 // we'd have, prev, target, output?
 
 HomieEvent* lastEvent = nullptr;
-uint8_t disconnections = 0;
+uint8_t disconnects = 0;
 
 ArtnetnodeWifi* artnet;
 int lastArtnetOpCode;
@@ -37,20 +40,25 @@ void initDevice() { // init Serial, random seed, some first boot animation? anyt
   randomSeed(analogRead(0));
 }
 
+void initUpdaters() {
+  ota = new ArduinoOTAUpdater("d1-1", s, b);
+  homieUpdater = new HomieUpdater(s, b);
+}
+
 void initScheduler() {
   keyFrameInterval = MILLION / cfg->dmxHz.get();
   start = micros();
 }
 
 void initState() { //retain something like this turning settings and defaults into actual stuff... prob part of "state" class, getting data from all places keeping track of that it means, and eg writing state from mqtt into json settings...
-  s = new Strip("Bad aZZ", LEDS(cfg->stripBytesPerPixel.get()), cfg->stripLedCount.get());
-  s->mirror(cfg->setMirrored.get()).fold(cfg->setFolded.get()); // s->flip(false); //no need for now as no setting for it //cfg->setFlipped.get();
+  s = new Strip("Bad aZZ", cfg->stripBytesPerPixel.get(), cfg->stripLedCount.get());
+  s->mirror(cfg->mirror.get()).fold(cfg->fold.get()); // s->flip(false); //no need for now as no setting for it //cfg->setFlipped.get();
   b = new Blinky(s);
   LN.logf(__func__, LoggerNode::DEBUG, "Done strip");
 
   f = new Functions(MILLION / cfg->dmxHz.get(),
-                    BlendEnvelope("pixelEnvelope", (float[]){1.2, 1.0}, true),
-                    BlendEnvelope("dimmerEnvelope", (float[]){1.2, 1.2}),
+                    BlendEnvelope("pixelEnvelope", 1.2, 1.0, true),
+                    BlendEnvelope("dimmerEnvelope", 1.2, 1.2),
                     s);
   LN.logf(__func__, LoggerNode::DEBUG, "Done functions");
 
@@ -58,7 +66,7 @@ void initState() { //retain something like this turning settings and defaults in
   targetFunctions = new Buffer("Strip fn target", 1, f->numChannels);
   LN.logf(__func__, LoggerNode::DEBUG, "Done buffer");
 
-  initArduinoOTA(b, s); //initOTA();
+  // initArduinoOTA(b, s); //initOTA();
 
   uint8_t universes = 1; //for now anyways
 	initArtnet(Homie.getConfiguration().name, universes, cfg->startUni.get(), onDmxFrame);

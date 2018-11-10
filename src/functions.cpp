@@ -1,7 +1,10 @@
 #include "functions.h"
 
 
-float Shutter::_apply(float value, float progress, Strip& s, bool force = false) {
+// float Dimmer::_apply(float value, float progress, Strip& s, bool force) {
+// }
+
+float Shutter::_apply(float value, float progress, Strip& s, bool force) {
     // LN.logf(__func__, LoggerNode::DEBUG, "strobe %f", value);
     if(value == 0.0) { //end effect
       open = true;
@@ -52,14 +55,14 @@ void Shutter::tickStrobe(int passedMs) {
 }
 
 
-float RotateStrip::_apply(float value, float progress, Strip& s, bool force = false) {
+float RotateStrip::_apply(float value, float progress, Strip& s, bool force) {
   if(forward) s.rotateFwd(value); // these would def benefit from anti-aliasing = decoupling from leds as steps
   else s.rotateBack(value); // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
   return value;
 }
 
 
-float Bleed::_apply(float value, float progress, Strip& s, bool force = false) {
+float Bleed::_apply(float value, float progress, Strip& s, bool force) {
   if(!value) return value;
 
   if(s.fieldSize() == 3) return value; // XXX would crash below when RGB and no busW...
@@ -112,7 +115,7 @@ float Bleed::_apply(float value, float progress, Strip& s, bool force = false) {
 // }
 
 
-float Noise::_apply(float value, float progress, Strip& s, bool force = false) {
+float Noise::_apply(float value, float progress, Strip& s, bool force) {
   if(!value) return value;
 
   maxNoise = (1 + value) / 4 + maxNoise; // CH_NOISE at max gives +-48
@@ -139,7 +142,7 @@ float Noise::_apply(float value, float progress, Strip& s, bool force = false) {
 
 
 
-void Functions::update(float progress, uint8_t* fun = nullptr) { //void update(uint32_t elapsed, uint8_t* fun = nullptr) {
+void Functions::update(float progress, uint8_t* fun) { //void update(uint32_t elapsed, uint8_t* fun = nullptr) {
   if(fun == nullptr) fun = ch; //use backup
 
   for(uint8_t i=0; i < numChannels; i++) { // prep for when moving entirely onto float

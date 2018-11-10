@@ -42,7 +42,7 @@ void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for lo
     uint16_t totalTime = millis() - first;
     first = millis();
     sendIfChanged(statusNode, "freeHeap", ESP.getFreeHeap());
-    sendIfChanged(statusNode, "heapFragmentation", ESP.getHeapFragmentation()());
+    sendIfChanged(statusNode, "heapFragmentation", ESP.getHeapFragmentation());
     sendIfChanged(statusNode, "maxFreeBlockSize", ESP.getMaxFreeBlockSize());
     sendIfChanged(statusNode, "fps", dmxFrameCounter / (totalTime / 1000));
     sendIfChanged(statusNode, "droppedFrames", s->droppedFrames);
@@ -173,4 +173,3 @@ void bootInfoPerMqtt() {
   LN.logf("Boot", LoggerNode::DEBUG, "ms for homie/main, elapsed til setup()/wifi: %d / %d,  %d / %d",
       ms[doneHOMIE] - ms[doneBOOT], ms[doneMAIN] - ms[doneHOMIE], ms[doneMAIN] - ms[doneBOOT], ms[doneONLINE] - ms[doneBOOT]);
 }
-

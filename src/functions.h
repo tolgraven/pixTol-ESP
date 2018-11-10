@@ -21,7 +21,7 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
     FunctionChannel(const String& id, BlendEnvelope e = BlendEnvelope()):
       _id(id), e(e) {}
     FunctionChannel(const String& id, float a, float r):
-      FunctionChannel(id, BlendEnvelope(_id)) { e.set(a, r); }
+      FunctionChannel(id, BlendEnvelope()) { e.set(a, r); }
 
     void apply(float value, float progress, Strip& s) { //Buffer& b...
      // if(!b && !target) return;
@@ -52,11 +52,12 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
     String _id;
     // Buffer* target; std::vector<Buffer*> targets;
     float target = 0, current = 0;
-    BlendEnvelope e = BlendEnvelope(); //or pointer? so some can share, skip or w/e
+    BlendEnvelope e; //or pointer? so some can share, skip or w/e
     // ADSREnvelope adsr; //dis the goal
 };
 
 class Dimmer: public FunctionChannel {
+  // float _apply(float value, float progress, Strip& s, bool force = false);
   public:
   Dimmer(BlendEnvelope e): FunctionChannel("Dimmer", e) {}
   Dimmer(float a, float r): FunctionChannel("Dimmer", a, r) {}
@@ -75,11 +76,11 @@ class Shutter: public FunctionChannel { //this would later contain FunctionChann
   float lastProgress = 0;
   uint8_t eachFrameFade = 255 / 50; // for FADING, should be ms-based instead...
 
-  // float _apply(float value, float progress, Strip& s, bool force = false); //this was why not being called... turned into different function without Strip arg
   void start(float value);
   void initStage(int debt);
   void tickStrobe(int passedMs);
 
+  float _apply(float value, float progress, Strip& s, bool force = false); //this was why not being called... turned into different function without Strip arg
   public:
   Shutter(uint16_t keyFrameInterval = MILLION/40, float hzMin = 1.0, float hzMax = 12.5):
    FunctionChannel("Strobe"), hzMin(hzMin), hzMax(hzMax),
@@ -99,14 +100,14 @@ class RotateStrip: public FunctionChannel {
  // then can have sorta anti-aliased without actual
  // (tho need proper as well)
     bool forward;
-    // float _apply(float value, float progress, Strip& s, bool force = false);
+    float _apply(float value, float progress, Strip& s, bool force = false);
   public:
     RotateStrip(bool forward): FunctionChannel("Rotate Strip"), forward(forward) {}
 };
 
 class Bleed: public FunctionChannel {
   enum { BEHIND = 0, AHEAD, THIS, BLEND };
-  // float _apply(float value, float progress, Strip& s, bool force = false);
+  float _apply(float value, float progress, Strip& s, bool force = false);
   public:
   Bleed(): FunctionChannel("Bleed") {}
 };
@@ -118,7 +119,7 @@ class HueRotate: public FunctionChannel {
 };
 
 class Noise: public FunctionChannel { // ugh
-  // float _apply(float value, float progress, Strip& s, bool force = false);
+  float _apply(float value, float progress, Strip& s, bool force = false);
   public:
     int8_t subPixelNoise[125][4] = {{0}}; // cant do it like this anyways. put noise on hold yo...
     int8_t maxNoise = 64; //baseline
@@ -135,6 +136,7 @@ class Functions { // receives control values and runs on-chip effect functions l
   Strip* s = nullptr; //temp, for now Buffer buffer; //target for functions
 
   public:
+  Dimmer dimmer; uint8_t outBrightness;
   Functions(uint16_t keyFrameInterval, BlendEnvelope pixelEnvelope, BlendEnvelope dimmerEnvelope, Strip* s): //for now
     keyFrameInterval(keyFrameInterval), shutter(keyFrameInterval, 1.0, 10.0),
     rotFwd(true), rotBack(false), s(s), dimmer(dimmerEnvelope), e(pixelEnvelope) {
@@ -147,9 +149,8 @@ class Functions { // receives control values and runs on-chip effect functions l
 
   void update(float progress, uint8_t* fun = nullptr); //void update(uint32_t elapsed, uint8_t* fun = nullptr) {
 
-  Dimmer dimmer; uint8_t outBrightness;
-  BlendEnvelope e; //remember attack and dimattack are inverted, fix so anim works same way...
   static const uint8_t numChannels = 12; //static for now
   uint8_t ch[numChannels] = {0}; int chOverride[numChannels] = {-1};
   float val[numChannels] = {0}, blendOverride[numChannels] = {0.5};
+  BlendEnvelope e; //remember attack and dimattack are inverted, fix so anim works same way...
 };

@@ -4,50 +4,65 @@
 #include <ArduinoOTA.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
-#include <mdEspRestart.h>
 #include <Homie.h>
 
 #include "config.h"
 #include "watchdog.h"
+#include "io/unit.h"
 // #include "state.h"
 #include "io/strip.h"
 
 extern Strip* s;
 extern Blinky* b;
 
-using std::function<void(const Updater&)> = upCB;
-
 class Updater { //holds various OTA update strategies and logic
   public:
-    Updater() {}
+  Strip* s;
+  Blinky* b;
+    Updater(Strip* s, Blinky* b): s(s), b(b) {
+    }
     virtual ~Updater() {}
 
     //some types use callbacks, some not... hence no pure virtual
     virtual void onStart() {}
     virtual void onTick(uint16_t progress, uint16_t total) {}
-    virtual void onError(enum error) {}
+    virtual void onError(uint8_t error) {}
     virtual void onEnd() {}
 
     virtual bool run() {}
-  private:
-    upCB fStart = &Updater::onStart, fEnd = &Updater::onEnd;;
-    std::function<void(const Updater&, uint16_t progress, uint16_t total)> fTick = &Updater::onTick;
-    std::function<void(const Updater&, enum error)> fError = &Updater::onError;
+  protected:
+    using upCB = std::function<void(const Updater&)>;
+    // std::function<void(Updater*)> fStart   = &Updater::onStart;
+    // std::function<void(Updater*)> fStart;
+    // std::function<void(const Updater&)> fStart;
+    // upCB fEnd; // = &Updater::onEnd;
+    // std::function<void(const Updater&, uint16_t progress, uint16_t total)> fTick; //= &Updater::onTick;
+    // std::function<void(const Updater&, uint8_t error)> fError; //= &Updater::onError;
 };
 
 class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies and logic
   int prevPixel = -1;
   const RgbwColor* otaColor;
-  // Strip* s;
-  // Blinky* b;
   public:
-  ArduinoOTAUpdater(const String& hostname): Updater() {
+  ArduinoOTAUpdater(const String& hostname, Strip* s, Blinky* b): Updater(s, b) {
+    using namespace std::placeholders;
     ArduinoOTA.setHostname(hostname.c_str()); //Homie.getConfiguration().name);
 
-    ArduinoOTA.onStart(fStart(*this));
-    ArduinoOTA.onProgress(fTick(*this));
-    ArduinoOTA.onError(fError(*this));
-    ArduinoOTA.onEnd(fEnd(*this));
+    // auto fStart = std::bind(&ArduinoOTAUpdater::onStart, this);
+    // ArduinoOTA.onStart(fStart);
+
+    ArduinoOTA.onStart(std::bind(&ArduinoOTAUpdater::onStart, this));
+    ArduinoOTA.onProgress(std::bind(&ArduinoOTAUpdater::onTick, this, _1, _1));
+    ArduinoOTA.onEnd(std::bind(&ArduinoOTAUpdater::onEnd, this));
+    ArduinoOTA.onError(std::bind(&ArduinoOTAUpdater::onError, this, _1));
+    // auto fStart = &ArduinoOTAUpdater::onStart;
+
+    // ArduinoOTA.onStart(fStart(*this));
+    // ArduinoOTA.onProgress(fTick(*this));
+    // std::function<void(int,int)> f = std::bind(&Foo::doSomethingArgs, this, _1, _2);
+    //
+    // ArduinoOTA.onError(fError(*this));
+    // ArduinoOTA.onEnd(fEnd(*this));
 
     ArduinoOTA.begin();
 
@@ -75,7 +90,7 @@ class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies 
   }
 
   void onTick(uint16_t progress, uint16_t total) {
-    uint16_t pixel   = progress / (total / cfg->stripLedCount.get());
+    uint16_t pixel   = progress / (total / s->fieldCount());
     uint16_t percent = progress / (total / 100);
 
     if(pixel == prevPixel) { // called multiple times each percent of upload...
@@ -86,7 +101,7 @@ class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies 
     if(pixel) { // >0 hence -1 >= 0
       s->adjustPixel(prevPixel, "darken", 10);
       for(uint16_t i = pixel; i; i--) {
-        s->adjustPixel(i, "darken", -(i - cfg->stripLedCount.get())); //tailin
+        s->adjustPixel(i, "darken", -(i - s->fieldCount())); //tailin
       }
     }
     s->setPixelColor(pixel, *otaColor);
@@ -96,7 +111,7 @@ class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies 
   }
 
 // void aOTAOnError(ota_error_t error) {
-  void onError(enum error) {
+  void onError(uint8_t error) {
       Serial.printf("OTA Error[%u]: ", error);
       switch(error) {
         case OTA_AUTH_ERROR:		Serial.println("Auth Failed"); 		break;
@@ -116,7 +131,7 @@ class HomieUpdater: public Updater {
   int prevPixel = -1;
   const RgbwColor* otaColor;
   public:
-  HomieUpdater(): Updater() {}
+  HomieUpdater(Strip* s, Blinky* b): Updater(s, b) {}
 
   void onStart() {
     Serial.println("\nOTA flash starting...");
@@ -124,13 +139,14 @@ class HomieUpdater: public Updater {
     b->color("white");
   }
   void onTick(uint16_t progress, uint16_t total) { // can use event.sizeDone and event.sizeTotal
-    uint16_t pixel = progress / (total / cfg->stripLedCount.get());
+    uint16_t pixel = progress / (total / s->fieldCount());
     if(pixel == prevPixel) return; // called multiple times each percent of upload...
     s->setPixelColor(pixel, b->colors["blue"]);
     Serial.printf("OTA updating - %u%%\r", pixel);
     prevPixel = pixel;
   }
-  void onError(enum error) {
+  // void onError(enum error) {
+  void onError(uint8_t error) {
     LN.logf("OTA", LoggerNode::WARNING, "OTA FAILE");
     b->color("red");
   }
@@ -140,16 +156,18 @@ class HomieUpdater: public Updater {
   }
 };
 
+const String httpHost = "http://nu.local";
+const String httpPath = "/lala/blabla/ota";
 class HttpUpdater: public Updater {
-  const String httpHost = "http://nu.local";
-  const String httpPath = "/lala/blabla/ota";
+  public:
+    HttpUpdater(Strip* s, Blinky* b): Updater(s, b) { }
 
   void onEnd() {
     LN.logf("httpOTA", LoggerNode::INFO, "HTTP OTA ok.");
     delay(1000);
     ESP.restart();
   }
-  void onError(enum error) {
+  void onError(uint8_t error) {
     LN.logf("httpOTA", LoggerNode::INFO, "HTTP OTA failed. Error %d: %s\n",
         ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
   }
@@ -195,10 +213,10 @@ enum class Status { //based off homie, wrap that first and extend with eg RDM, O
 class Device { //holds Updater, PhysicalUI/components, more?
   public:
     Device() {}
-    writeFile();
-    readFile();
-    writeRTC();
-    readRTC();
+    bool writeFile();
+    void readFile();
+    bool writeRTC();
+    void readRTC();
 
     std::vector<Updater*> updaters;
     PhysicalUI knobheads;
@@ -223,7 +241,6 @@ class Device { //holds Updater, PhysicalUI/components, more?
         }
         wifi_station_ap_change(lastId);
         // try connection etc
-        //
 
         // inbetween each, also look for (hardcoded?) mesh leader station, whether it's got news
       }

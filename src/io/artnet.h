@@ -4,18 +4,24 @@
 #include <LoggerNode.h>
 #include "renderstage.h"
 
+#include "espArtNetRDM.h"
+#define ART_FIRM_VERSION 0x0A00   // 2-byte Artnet FW ver
+#define ARTNET_OEM 0x00ff    // Artnet OEM code - "unknown"
+#define ESTA_MAN 0x7fff      // ESTA Manufacturer code - prototyping reserved
+#define ESTA_DEV 0xEE000000  // RDM Device ID (used with Man Code to make 48bit UID)
+
+
 class IO {
   public:
     IO() {}
     IO(Inputter* in, Outputter* out) {
       if(in != nullptr) input = in;
       if(out != nullptr) output = out;
-
     }
     virtual void enableInput(bool state, int8_t bufferIndex = -1) = 0; // idx -1 = all
     virtual void enableOutput(bool state, int8_t bufferIndex = -1) = 0;
 
-    // virtual void 
+    // virtual void
 
   protected:
     Inputter* input = nullptr;
@@ -24,17 +30,17 @@ class IO {
 
 
 class ArtnetInput: public Inputter {
-
   public:
     ArtnetInput(const String& id, uint8_t numPorts, ArtnetnodeWifi* artnet)
     : Inputter(id, 1, 512)
-    , artnet(artnet)
-  {
-      artnet->setArtDmxCallback(ArtnetInput::inputCallback);
-    // artnet->getDmxFrame();
-    // artnet->artDmxCallback(); //etc, whichever feels right...
+    , artnet(artnet) {
+      // artnet->getDmxFrame();
+      // std::function<void(const ArtnetInput&, uint16_t, uint16_t, uint8_t, uint8_t*)> = cb;
+      // artnet->setArtDmxCallback(cb(*this));
+      using namespace std::placeholders;
+      auto cb = std::bind(&ArtnetInput::callback, *this, _1, _2, _3, _4);
+      artnet->setArtDmxCallback(cb);
   }
-    // virtual bool canRead() { return isActive; }
     virtual bool read() {
       if(canRead()) {
         switch(artnet->read()) { // calls handleDMX which calls callback...
@@ -54,15 +60,17 @@ class ArtnetInput: public Inputter {
       return false;
       }
     }
-    uint16_t startUni;
 
-    static void inputCallback(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
+    void callback(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
       // handle sequence check, update droppedFrames?
       data[universe - index] = data;
-      
+
 
     }
+
   private:
+    // int lastArtnetCode;
+    uint16_t startUni;
     uint8_t lastSeq;
     ArtnetnodeWifi* artnet;
 
@@ -72,10 +80,10 @@ class ArtnetOutput: public Outputter {
 
   public:
     ArtnetOutput(const String& id, uint8_t numPorts, ArtnetnodeWifi* artnet)
-    : Outputter(id, 1, 512, numPorts) 
+    : Outputter(id, 1, 512, numPorts)
     , artnet(artnet)
   {
-    // below would go in dmxserial class tho 
+    // below would go in dmxserial class tho
     // artnet->setDMXOutput(uint8_t outputID, uint8_t uartNum, uint16_t attachedUniverse)<|0|>
   }
     virtual bool canEmit() { return true; }
@@ -95,6 +103,7 @@ class Artnet: public IO {
 
   private:
     ArtnetnodeWifi artnet;
+    esp8266ArtNetRDM artRDM;
 
   public:
     Artnet(const String& deviceName, uint8_t numPorts, uint8_t startingUniverse, uint8_t sourceHz)
@@ -108,7 +117,7 @@ class Artnet: public IO {
 
       output = new ArtnetOutput("artnet - out", numPorts, &artnet);
       for(uint8_t i=0; i < numPorts; i++) {
-          artnet.enableDMXOutput(i); 
+          artnet.enableDMXOutput(i);
       }
 
       artnet.begin();

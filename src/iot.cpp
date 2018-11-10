@@ -7,7 +7,8 @@ HomieNode inputNode("inputs",   "io", inputNodeHandler);
 HomieNode colorNode("color",    "fx", colorNodeHandler);
 
 void initHomie() {
-  Homie_setFirmware(FW_NAME, FW_VERSION); Homie_setBrand(FW_BRAND);
+  Homie_setFirmware(FW_NAME, FW_VERSION);
+  Homie_setBrand(FW_BRAND);
 	Homie.setConfigurationApPassword(FW_NAME);
 
   // Homie.setLedPin(D2, HIGH); Homie.disableLedFeedback();
@@ -34,10 +35,10 @@ void initHomie() {
   outputNode.advertise("strip").settable();
   inputNode.advertise("artnet").settable();
 
-  String statusProperties[] = {"freeHeap", "heapFragmentation", "maxFreeBlockSize",
+  const String statusProperties[] = {"freeHeap", "heapFragmentation", "maxFreeBlockSize",
                                "vcc", "fps", "droppedFrames",
                                "dimmer.base", "dimmer.force", "dimmer.out"};
-  for(String prop: statusProperties) statusNode.advertise(prop);
+  for(String prop: statusProperties) statusNode.advertise(prop.c_str());
 
 	Homie.setup();
 }
@@ -87,6 +88,10 @@ bool blendHandler(const HomieRange& range, const String& value) {
   if(range.index <= f->numChannels)
     f->blendOverride[range.index-1] = value.toFloat();
   return true;
+}
+
+bool powerHandler(const HomieRange& range, const String& value) {
+  //yada
 }
 
 RgbwColor globalRgbwColor = RgbwColor(255, 30, 20, 20);
@@ -164,7 +169,7 @@ bool broadcastHandler(const String& level, const String& value) { // not sure wh
 void onHomieEvent(const HomieEvent& event) {
   static Blinky* pre;
   static int prevPixel = -1;
-  lastEvent = *event; //can do this? or fall outta scope badd?
+  *lastEvent = event; //can do this? or fall outta scope badd?
   switch(event.type) {
     case HomieEventType::STANDALONE_MODE: break;
     case HomieEventType::CONFIGURATION_MODE:
@@ -183,13 +188,13 @@ void onHomieEvent(const HomieEvent& event) {
       break;
 
     case HomieEventType::OTA_STARTED:
-      homieUpdater.onStart(); break;
+      homieUpdater->onStart(); break;
     case HomieEventType::OTA_PROGRESS:
-      homieUpdater.onTick(event.sizeDone, event.sizeTotal); break;
+      homieUpdater->onTick(event.sizeDone, event.sizeTotal); break;
     case HomieEventType::OTA_FAILED:
-      homieUpdater.onError(0); break;
+      homieUpdater->onError(0); break;
     case HomieEventType::OTA_SUCCESSFUL:
-      homieUpdater.onEnd(); break;
+      homieUpdater->onEnd(); break;
 
     case HomieEventType::ABOUT_TO_RESET:
       Homie.setIdle(false);

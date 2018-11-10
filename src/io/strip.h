@@ -141,11 +141,12 @@ class Strip: public Outputter {
       Outputter("Default strip", RGBW, 120), bytesPerLed(RGBW) {}
 
     Strip(iStripDriver* d):
-      Outputter("Strip, ext driver", LEDS(d->PixelSize()), d->PixelCount()),
-      driver(d), externalDriver(true), bytesPerLed(LEDS(d->PixelSize())) {
+      // Outputter("Strip, ext driver", LEDS(d->PixelSize()), d->PixelCount()),
+      Outputter("Strip, ext driver", d->PixelSize(), d->PixelCount()),
+      driver(d), externalDriver(true), bytesPerLed(d->PixelSize()) {
         initDriver();
     }
-    Strip(const String& id, LEDS fieldSize, uint16_t ledCount):
+    Strip(const String& id, uint8_t fieldSize, uint16_t ledCount):
       Outputter(id, (uint8_t)fieldSize, ledCount),
       bytesPerLed(fieldSize) {
         initDriver();
@@ -225,7 +226,7 @@ class Strip: public Outputter {
     void rotateFwd(float fraction) {   driver->RotateRight(_fieldCount * fraction); }
 
     bool show() {
-      if(!_isActive) return false;
+      if(!_active) return false;
       if(driver->CanShow()) {
         driver->SetBrightness(brightness);
         driver->Show();
@@ -304,7 +305,8 @@ private:
   iStripDriver* driver = nullptr; // iStripDriver& driver; // figure out later...  ""As pointed out, failing to make a dtor virtual when a class is deleted through a base pointer could fail to invoke the subclass dtors (undefined behavior).
   bool externalDriver = false;
 
-  LEDS bytesPerLed;
+  // LEDS bytesPerLed;
+  uint8_t bytesPerLed;
   bool _mirror = false, _fold = false, _flip = false, _gammaCorrect = false;
   NeoGamma<NeoGammaTableMethod> *colorGamma;
 
@@ -341,7 +343,7 @@ private:
 
 class Blinky {
   public:
-  Blinky(LEDS fieldSize, uint16_t ledCount):
+  Blinky(uint8_t fieldSize, uint16_t ledCount):
     Blinky(new Strip("Strip tester", fieldSize, ledCount)) {
   }
   Blinky(Strip* s): s(s) { generatePalette(); }

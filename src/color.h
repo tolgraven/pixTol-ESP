@@ -7,10 +7,10 @@
 class Color: public Field {
   public:
   Color(uint8_t r, uint8_t g, uint8_t b, float alpha = 1.0):
-    Field(new uint8_t[3]{r, g, b}, 3) { }
+    Field(new uint8_t[3]{r, g, b}, 3) { } //safe since no copy by Field default
   Color(uint8_t r, uint8_t g, uint8_t b, uint8_t w, float alpha = 1.0):
     Field(new uint8_t[4]{r, g, b, w}, 4) { }
-  Color(uint8_t* data, uint8_t size, float alpha = 1.0):
+  Color(uint8_t* data, FieldSize size, float alpha = 1.0):
     Field(data, size) { }
 
   Color(const RgbColor& color, uint8_t subPixels);
@@ -19,12 +19,13 @@ class Color: public Field {
   Color(const HslColor& color, uint8_t subPixels);
   Color(const HsbColor& color, uint8_t subPixels);
 
-  Color& value(float absolute) override {
-    for(uint8_t p = 0; p < subPixels; p++) {
+  // void value(float absolute) override {
+  void value(float absolute) {
+    for(uint8_t p = 0; p < size; p++) {
       // as HS(L) 0.5 = middle 1.0 = fully white etc, formula?
       // so not turn auto grayscale bs...
     }
-    float c[subPixels];
+    float c[size];
     HslColor hsl = HslColor(RgbColor(data[0], data[1], data[2])); // fix proper...
     hsl.L = absolute;
     // then convert back...
@@ -44,16 +45,16 @@ class Color: public Field {
   }
 
   RgbColor& getNeoRgb(bool useAlpha = false) {
-    if(useAlpha) return RgbColor(data[0] * alpha, data[1] * alpha, data[2] * alpha);
-    else return RgbColor(data[0], data[1], data[2]);
+    if(useAlpha) return *(new RgbColor(data[0] * alpha, data[1] * alpha, data[2] * alpha));
+    else return *(new RgbColor(data[0], data[1], data[2]));
   } //temp test to use curr neopixelbus strip put
-  RgbwColor& getNeoRgbw() {
-    if(useAlpha) return RgbwColor(data[0] * alpha, data[1] * alpha, data[2] * alpha, data[3] * alpha);
-    else return RgbwColor(data[0], data[1], data[2], data[3]);
+  RgbwColor& getNeoRgbw(bool useAlpha = false) {
+    if(useAlpha) return *(new RgbwColor(data[0] * alpha, data[1] * alpha, data[2] * alpha, data[3] * alpha));
+    else return *(new RgbwColor(data[0], data[1], data[2], data[3]));
   }
 
   Color& withSubPixels(uint8_t numSubPixels) {
-    if(numSubPixels == subPixels) return *this;
+    if(numSubPixels == size) return *this;
     switch(numSubPixels) {
       case 3: //convert RGBW -> RGB
         break;
@@ -62,9 +63,9 @@ class Color: public Field {
     }
 
     delete[] data; // delete[subPixels] data;
-    subPixels = numSubPixels;
-    data = new uint8_t[subPixels];
-    for(uint8_t p = 0; p < subPixels; p++) {
+    size = numSubPixels;
+    data = new uint8_t[size];
+    for(uint8_t p = 0; p < size; p++) {
     }
   }
 };
@@ -73,10 +74,11 @@ class Color: public Field {
 // // tables computed at runtime, for gamma correction and dithering.  RAM used = 256 * 9 + ledsInStrip * 4 bytes.
 struct ColorComponentGammaTable {
   ColorComponentGammaTable(uint16_t maxPixels):
-    maxPixels(maxPixels), error(new uint8_t[maxPixels]) { }
+    maxPixels(maxPixels), error(new uint8_t[maxPixels]{0}) { }
+  ~ColorComponentGammaTable() { delete[] low; delete[] high, delete[] fraction; delete[] error; }
   uint16_t maxPixels;
   uint8_t low[256], high[256], fraction[256];
-  uint8_t error*;
+  uint8_t* error;
 };
 
 class GammaCorrection {
@@ -89,7 +91,7 @@ class GammaCorrection {
 
   void generate() {
     if(table) delete table;
-    table = new ColorComponentGammaTable[subPixels];
+    table = new ColorComponentGammaTable(subPixels);
 
     uint16_t i, j, n;
     for(uint8_t p = 0; p < subPixels; p++) {

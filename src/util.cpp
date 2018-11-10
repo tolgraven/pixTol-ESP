@@ -1,5 +1,5 @@
+#include <algorithm>
 #include "util.h"
-#include "algorithm.h"
 
 template<typename T>
 T bound(T value, T min, T max) {
@@ -21,7 +21,6 @@ void homieDelay(unsigned long ms) {
 }
 
 template<class T>
-constexpr const T& clamp(const T& v, const T& lo, const T& hi)
-{
-  return clamp( v, lo, hi, std::less<>() );
+constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
+  return clamp( v, lo, hi, std::less<T>() );
 }

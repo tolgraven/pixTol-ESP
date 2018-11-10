@@ -9,12 +9,15 @@
 #include "renderstage.h"
 #include "buffer.h"
 #include "functions.h"
+#include "device.h"
 
 extern ConfigNode* cfg;
 extern BatteryNode* battery;
 extern Strip* s;
 extern Blinky* b;
 extern Functions* f;
+extern Updater* ota;
+extern Updater* homieUpdater;
 
 extern uint16_t start;
 extern uint32_t gotFrameAt, keyFrameInterval; // abs time (micros) last frame read
@@ -32,6 +35,6 @@ void initArtnet(const String& name, uint8_t numPorts, uint8_t startingUniverse, 
 extern void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data);
 
 void initDevice();
+void initUpdaters();
 void initState();
 void initScheduler();
-
