@@ -1,128 +1,162 @@
 #pragma once
 
-#include <NeoPixelBrightnessBus.h>
-#include "renderstage.h"
-#include "strip.h"
+#include "config.h"
+#include "envelope.h"
+#include "field.h"
+#include "color.h"
 
-typedef iStripDriver iBufferDriver;
-typedef StripRGB BufferRGB;
-typedef StripRGBW BufferRGBW;
-
-class Field { // make template? should be as lean as possible packing bits, ie BlendMode fits in half a byte...
-  // so a field of fields probably makes more sense than individual objects
-  // no premature optimization tho, make it fancy then trim later. But need one per field _per incoming stream_, plus end dest... lots
-  // same type should store value + metadata, whether field is single float or 4-byte pixel
-  enum BlendMode {
-    OVERLAY = 0, HTP, LOWTP, SCALE, AVERAGE, ADD, SUBTRACT, MULTIPLY, DIVIDE
-  }; // "SCALE" - like live "modulate", would need extra var setting zero-point (1.0 = existing value is maximum possible, 0.5 can reach double etc). Putting such meta-params on oscillators etc = likely exciting
-  BlendMode mode;
-  uint8_t size; //recycle enum from strip tho
-  int16_t amount; //float prob, but slow?
-};
 
 // template<typename T>
-class Buffer: public RenderStage {
+class Buffer {
   public:
     Buffer(): Buffer("Buffer", 1, 512) {}
-    Buffer(const String& id, uint8_t fieldSize, uint16_t fieldCount):
-      RenderStage(id, fieldSize, fieldCount), ownsData(true) {
-      data = new uint8_t[dataLength];
-      // tricky is i guess a buffer ought both to handle its own data, and just having
-      // it point to some other location where it's already stored for whatever reason
+    Buffer(const String& id, uint8_t _fieldSize, uint16_t fieldCount):
+      _id(id), _fieldSize(_fieldSize), _fieldCount(fieldCount), ownsData(true)
+      , data(new uint8_t[length()]{0}) {
+      // data = new uint8_t[length()]{0};
     }
     Buffer(const String& id, uint8_t fieldSize, uint16_t fieldCount, uint8_t* dataPtr):
-      RenderStage(id, fieldSize, fieldCount), data(dataPtr), ownsData(false) {
+      _id(id), _fieldSize(fieldSize), _fieldCount(fieldCount), data(dataPtr), ownsData(true) {
     }
     ~Buffer() { if(ownsData) delete[] data; }
 
-    void set(uint8_t* incomingData, uint16_t length=512, uint16_t offset=0) {
-      if(ownsData) {
-          memcpy(&incomingData[offset], &data[offset], length); //or just set pointer but then we're just a passive observer
-      } else {
-        data = incomingData;
+    const String& id() const { return _id; }
+    uint8_t fieldSize(uint8_t newFieldSize = 0) {
+      if(!newFieldSize) return _fieldSize;
+      else {
+        _fieldSize = newFieldSize;
+        return _fieldSize;
       }
-      updatedBytes += length;
-      if(updatedBytes >= dataLength) {
-        finalize();
-      } else {
-        dirty = true;
-      }
-
     }
-    void finalize() { // lock in keyframe, at that point can be flushed or interpolated against
+    uint16_t fieldCount(uint16_t newFieldCount = 0) {
+      if(!newFieldCount) return _fieldCount;
+      else {
+        _fieldCount = newFieldCount;
+        return _fieldCount;
+      }
+    }
+    uint16_t length() { return _fieldSize * _fieldCount; }
+
+    uint8_t* outOfBounds() {
+      LN.logf(__func__, LoggerNode::ERROR, "Buffer %s lacks valid buffer ptr, or out of range", _id.c_str());
+      return nullptr;
+    }
+
+    void set(uint8_t* newData, uint16_t copyLength = 0, uint16_t readOffset = 0, uint16_t writeOffset = 0, bool autoLock = true) {
+      copyLength == length()? copyLength: length(); //use internal size unless specified
+      if(ownsData) memcpy(data + writeOffset, newData + readOffset, copyLength); // watch out offset, if using to eg skip past fnChannels then breaks
+      else data = newData; // bc target shouldnt be offset... but needed for if buffer arrives in multiple dmx unis or whatever...  but make sure "read-offset" done in-ptr instead...
+
+      updatedBytes += copyLength;
+      if(updatedBytes >= length() && autoLock) lock();
+      else dirty = true; //XXX no good, might have updated with some garbage prev...
+    }
+    void set(Buffer& from, uint16_t length = 0 uint16_t readOffset = 0, uint16_t writeOffset = 0, bool autoLock = true) {
+      set(from.get(), length, readOffset, writeOffset, autoLock);
+    }
+
+    void setField(uint16_t index, uint8_t* newData) {
+      if(index < length()) memcpy(data + index * _fieldSize, newData, _fieldSize);
+      updatedBytes += _fieldSize;
+    }
+
+    void lock() { // finalize keyframe?, at that point can be flushed or interpolated against
       dirty = false;
       updatedBytes = 0;
     }
-    // hopefully ok performance - workflow becomes keep two
-    // buffer objects, "current" and "target", continously pass target to current to interpolate?
-    // Or just do once each keyframe, save diff and reapply
+
+    // workflow becomes keep two buffer objects, "current" and "target", continously pass target to current to interpolate?  Or just do once each keyframe, save diff and reapply
     // Also save buffers continously and mix them together while rotating and manipulating each continousy... =)
     bool canGet() { return dirty; }
-    uint8_t* get(uint16_t* length, uint16_t offset=0) { // length=0 should automatically get full buffer, passed pointer is updated with actual
-      if(!data || offset > dataLength) return nullptr;
-      *length = dataLength;
-      return &data[offset];
+
+    uint8_t* get(uint16_t offset = 0) {
+      if(!data || offset >= length()) return outOfBounds();
+      return data + offset;
     }
+    uint8_t* getField(uint16_t index) {
+      if(!data || index >= _fieldCount) return outOfBounds();
+      return data + index * _fieldSize;
+    }
+
+    // Buffer<& difference(Buffer& other, float fraction) const { // uh oh how handle negative?
+    // Buffer<int>& difference(Buffer& other, float fraction) const {
+    // DiffBuffer& difference(Buffer& other, float fraction) const {
+    //   uint8_t* otherData = other.get();
+    //   DiffBuffer diffBuf(_fieldSize, _fieldCount);
+    //   for(uint16_t i=0; i < _fieldCount; i++) {
+    //     for(uint8_t j=0; j < _fieldSize; j++) {
+    //       int value = data[i+j] - otherData[i+j]; //value < 0? 0: value > 255? 255: value;
+    //       diffBuf.set(&value, i+j);
+    //     }
+    //   }
+    //   return diffBuf;
+    // }
+    void add(Buffer& other) {
+      uint8_t* otherData = other.get();
+      for(uint16_t i=0; i < length(); i++) {
+        data[i] = data[i] + otherData[i] <= 255? data[i] + otherData[i]: 255;
+      }
+    }
+    void sub(Buffer& other) {
+      uint8_t* otherData = other.get();
+      for(uint16_t i=0; i < length(); i++) {
+        data[i] = data[i] - otherData[i] >= 0? data[i] - otherData[i]: 0;
+      }
+    }
+    void average(Buffer& other) {
+      uint8_t* otherData = other.get();
+      for(uint16_t i=0; i < length(); i++) {
+        uint16_t temp = data[i] + otherData[i];
+        data[i] = temp/2;
+      }
+    }
+
+    uint8_t averageInBuffer(uint16_t startField = 0; uint16_t endField) { //calculate avg brightness for buffer. Or put higher and averageValue?
+      //XXX offload value calc to field? bc diff fieldtypes might have more advanced scaling than linear 0-255?
+      uint32_t tot = 0;
+      for(uint16_t byte = 0; byte < length(); byte++) tot += byte;
+      return tot / length();
+    } // or static/elsewhere util fn passing bufptr, len, fieldsize?
 
   protected:
     uint8_t* data = nullptr;
-    bool ownsData;
     bool dirty = true;
+  private:
+    String _id;
+    uint8_t _fieldSize;
+    uint16_t _fieldCount;
+    bool ownsData;
     uint16_t updatedBytes = 0;
 };
 
-
 class PixelBuffer: public Buffer {
-  public:
-    PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels): //
-      Buffer("PixelBuffer", bytesPerPixel, numPixels) {
-    /* } */
-    /* PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels, uint8_t* dataptr=nullptr): //  */
-    /* PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels): // */
-    /*   Buffer("some ID like", bytesPerPixel, numPixels, nullptr) { */
-
-      driver = new StripRGBW(125);
-      /* if(dataptr == nullptr) { */
-      bufdata = driver->Pixels();
-      /* } */
-    }
-
-    void blendWith(const PixelBuffer& buffer, float amount) {
-    } // later add methods like overlay, darken etc
-
-    PixelBuffer difference(const PixelBuffer& buffer, float fraction) const {
-      /* uint16_t* buflen; */
-      uint8_t* otherData = buffer.get();
-      PixelBuffer diff(fieldSize, fieldCount); // = PixelBuffer(fieldSize, fieldCount);
-      uint8_t* diffData = diff.get();
-      for(uint16_t i=0; i < dataLength; i++) {
-        diffData[i] = bufdata[i] - otherData[i];
-      }
-      return diff;
-
-    }
-    void add(const PixelBuffer& buffer) {
-      uint8_t* otherData = buffer.get();
-      for(uint16_t i=0; i < this->dataLength; i++) {
-        bufdata[i] += otherData[i];
-      }
-    }
-    // all below should actually be modulators, but do we wrap them like this for easy access? maybe
-    // void rotate(int x, int y=0);
-    // void shift(int x, int y=0);
-    // void adjustHue(int degrees);
-    // void adjustSaturation(int amount);
-    // void adjustLightness(int amount); //makes sense?
-    // void setGain(float amount=1.0f); // like brightness but at buffer (not strip) level, plus can go higher than full, to overdrive pixels...
-    // void fill(ColorObject color);
-    // void setGeometry(int16_t* howeveryoudoit);
-    //
-    // PixelBuffer operator+(const PixelBuffer& b);
-    // PixelBuffer operator-(const PixelBuffer& b); // darken?
-    // PixelBuffer operator*(const PixelBuffer& b); // average?
-    // PixelBuffer operator/(const PixelBuffer& b); //
   private:
-    /* iBufferDriver* driver; */
-    iStripDriver* driver = nullptr;
-};
+    uint8_t* targetData = nullptr;
+    Color* pixelData = nullptr;
+      Color* targetPixelData = nullptr; //each Color's data* points to specific section of raw buffer, so no additional overhead apart from alpha
+  public:
+    PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels):
+      Buffer("PixelBuffer", bytesPerPixel, numPixels),
+      targetData(new uint8_t[length()]{0}) {}
 
+    void setTarget()
+
+    void blendWith(const PixelBuffer& buffer, float amount) { } // later add methods like overlay, darken etc
+    // void blendUsingEnvelope(uint8_t* data, BlendEnvelope& e, float progress = 1.0); // should go here eventually
+    // ^^ so since will keep buffers last, target, and current (interpolated, to output)
+    // sep, this shouldn't mod in-place but return a new PixelBuffer.
+    // but if targetData already in here, no need pass data at least. Just set core data, targetData,
+    // call this getting new buffers...
+    PixelBuffer& getInterpolated(BlendEnvelope& e, float progress = 1.0); // should go here eventually
+
+
+    PixelBuffer& getScaled(uint16_t numPixels); // scale up or down... later xy etc
+
+    Color averageColor(int startPixel = -1, int endPixel = -1) {} // -1 = no subset
+
+
+  //based on adafruit, interpolate between two input buffers, gamma- and color-correcting the interpolated result with 16-bit dithering
+  //XXX how make this work with overshooting? compute delta for average timeBetweenFrames?
+  void interpolate(uint8_t *was, uint8_t *target, uint8_t progress);
+  void tickInterpolation(uint32_t elapsed); // scheduler should keep track of timing, just tell how long since last tick...
+};
