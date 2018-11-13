@@ -63,6 +63,36 @@ class Dimmer: public FunctionChannel {
   Dimmer(float a, float r): FunctionChannel("Dimmer", a, r) {}
 };
 
+struct AnimationStage {
+ AnimationStage(const String& id, uint32_t maxDuration, float fraction):
+  _id(id), maxDuration(maxDuration), fraction(fraction) {}
+ String _id;
+ uint32_t duration, maxDuration;
+ float fraction = -1; //fraction of total animation this stage should run for, 0 = container decides
+}; // contained in eg Shutter.
+   // OR in a full class and Shutter inherits both Animation and FunctionChannel?
+
+class ValueGenerator { //generates an over time progressing, single value, on loop/oneshot off of initially set input value, thereafter updates with amount of time passed
+ //sameish framework to implement LFOs etc...
+  uint32_t keyFrameInterval;
+  float lastProgress = 0;
+  std::vector<AnimationStage> stages = {AnimationStage("Run", 0, -1)};
+  float result = 1.0; // should be T...
+  BlendEnvelope e;
+
+  virtual void start(float value) = 0;
+  virtual void end(bool force = false) = 0; // force to end effect immediately? else might wrap up over coming frames like
+  virtual void initStage(int debt = 0) = 0;
+  virtual void tick(uint32_t passedMicros) = 0;
+ public:
+  ValueGenerator(uint32_t keyFrameInterval = MILLION/40) {}
+  virtual ~ValueGenerator() {}
+  virtual void update(uint32_t passedMicros) = 0; // called directly or by eg _apply if also a FunctionChannel
+  float get() { return result; }
+};
+
+// chain effects/animations ie strobe is just a value scaler effect (...modulator, hehhh) pointed at Dimmer.
+// Point it to HueRotate or whatever for more funky party trix
 class Shutter: public FunctionChannel { //this would later contain FunctionChannels Strobe & Dimmer, I guess...
   private:
   float hzMin, hzMax;
