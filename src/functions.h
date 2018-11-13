@@ -36,8 +36,8 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
       apply((float)value/255, progress, s);
     }
     void force(float value, float progress, Strip& s) { // how do this without fucking up time in _apply?
-      if(_id == "Strobe" && value > 0)
-        LN.logf(__func__, LoggerNode::DEBUG, "val %f", value);
+      // if(_id == "Strobe" && value > 0)
+      //   LN.logf(__func__, LoggerNode::DEBUG, "val %f", value);
       target = value;
       current = _apply(target, progress, s, true);
     }
@@ -65,24 +65,25 @@ class Dimmer: public FunctionChannel {
 
 class Shutter: public FunctionChannel { //this would later contain FunctionChannels Strobe & Dimmer, I guess...
   private:
-  float hzMin, hzMax, hz;
+  float hzMin, hzMax;
   enum StrobeStage { OPEN = 0, FADING, CLOSED, TOTAL, PRE };
-  int ms[5] = {0};
-  uint8_t activeStage;
-  float fraction[2] = {3.5, 7.0}; //OPEN, FADING
-  int maxMs[2] = {120, 60};
+  uint32_t micros[5] = {0};
+  int32_t microsStage = 0;
+  uint8_t activeStage = PRE;
+  float fraction[2] = {1/3.5, 1/7.0}; //OPEN, FADING
+  uint32_t maxMicros[2] = {(MILLION/8), (MILLION/16)};
 
   uint32_t keyFrameInterval;
   float lastProgress = 0;
-  uint8_t eachFrameFade = 255 / 50; // for FADING, should be ms-based instead...
+  uint8_t eachFrameFade = 255 / 40; // for FADING, should be micros-based instead...
 
   void start(float value);
-  void initStage(int debt);
-  void tickStrobe(int passedMs);
+  void initStage(uint32_t debt = 0);
+  void tickStrobe(uint32_t passedMicros);
 
   float _apply(float value, float progress, Strip& s, bool force = false); //this was why not being called... turned into different function without Strip arg
   public:
-  Shutter(uint16_t keyFrameInterval = MILLION/40, float hzMin = 1.0, float hzMax = 12.5):
+  Shutter(uint32_t keyFrameInterval = MILLION/40, float hzMin = 1.0, float hzMax = 12.5):
    FunctionChannel("Strobe"), hzMin(hzMin), hzMax(hzMax),
    keyFrameInterval(keyFrameInterval), open(true), amountOpen(255) {};
 

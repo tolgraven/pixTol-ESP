@@ -1,55 +1,53 @@
 #include "functions.h"
 
-
-// float Dimmer::_apply(float value, float progress, Strip& s, bool force) {
-// }
-
 float Shutter::_apply(float value, float progress, Strip& s, bool force) {
-    // LN.logf(__func__, LoggerNode::DEBUG, "strobe %f", value);
     if(value == 0.0) { //end effect
+      // if(current) LN.logf(__func__, LoggerNode::DEBUG, "Strobe ending");
       open = true;
       current = 0;
       return current;
     }
-
-    if(value != current) start(value); // reset timer for new state
-    else tickStrobe(keyFrameInterval * (progress - lastProgress)); // handle running strobe: decr/reset tickers, adjust shutter
+    if(value != current) {
+      start(value); // reset timer for new state
+    } else {
+      tickStrobe(keyFrameInterval * (progress - lastProgress)); // handle running strobe: decr/reset tickers, adjust shutter
+    }
     lastProgress = progress;
     current = value;
     return current;
 }
 
 void Shutter::start(float value) {
-  hz = (hzMax-hzMin) * value / 1 + hzMin;
-  ms[TOTAL] = 1000 / hz;
-  initStage(PRE);
-  LN.logf(__func__, LoggerNode::DEBUG, "val %.3f, hz %.1f, period %d ms", value, hz, ms[TOTAL]);
+  float hz = (hzMax-hzMin) * value + hzMin;
+  micros[TOTAL]  = MILLION / hz;
+  micros[PRE]    = 30000; //debounce
+  micros[OPEN]   = std::min((uint32_t)(micros[TOTAL] * fraction[OPEN]), maxMicros[OPEN]);
+  micros[FADING] = std::min((uint32_t)(micros[TOTAL] * fraction[FADING]), maxMicros[FADING]);
+  micros[CLOSED] = micros[TOTAL] - micros[OPEN] - micros[FADING];
+  activeStage = PRE;
+
+  initStage();
+  LN.logf(__func__, LoggerNode::DEBUG, "val %.2f, hz %.1f, period %d ms", value, hz, micros[TOTAL]/1000);
+  LN.logf(__func__, LoggerNode::DEBUG, "%d/%d/%d/%d/%d OPEN/FADING/CLOSED/PRE",
+      micros[0]/1000, micros[1]/1000, micros[2]/1000, micros[4]/1000);
 }
 
-void Shutter::initStage(int debt) {
+void Shutter::initStage(uint32_t debt) {
   switch(activeStage) {
-    case PRE:    open = false; amountOpen = 0; break;
-    case OPEN:   open = true; break;
+    case PRE:    open = false; amountOpen = 0;   break;
+    case OPEN:   open = true;                    break;
     case FADING: open = false; amountOpen = 255; break;
-    case CLOSED:               amountOpen = 0; break;
+    case CLOSED:               amountOpen = 0;   break;
   }
-  ms[activeStage] = activeStage == PRE?      30:
-                    activeStage == CLOSED?   ms[TOTAL] - ms[OPEN] - ms[FADING]:
-                    // OPEN and FADING below have fractions and maximum lengths
-                    ms[TOTAL] / fraction[activeStage] < maxMs[activeStage]?
-                      ms[TOTAL] / fraction[activeStage]:
-                    maxMs[activeStage];
-  ms[activeStage] -= debt; // offset any lateness
-  LN.logf(__func__, LoggerNode::DEBUG, "%s started, %d ms", activeStage, ms[activeStage]);
+  microsStage = micros[activeStage] - debt;
 }
 
-void Shutter::tickStrobe(int passedMs) {
-  ms[activeStage] -= passedMs; // use that as control counter instead
-  int remaining = ms[activeStage];
-  if(remaining <= 0) {
+void Shutter::tickStrobe(uint32_t passedMicros) {
+  microsStage -= passedMicros; // use that as control counter instead
+  if(microsStage <= 0) {
     activeStage++;
     if(activeStage > CLOSED) activeStage = OPEN; // roll over, skipping pre and (non-stage) TOTAL
-    initStage(-remaining); // pass on any debt incurred by late update
+    initStage(-microsStage); // pass on any debt incurred by late update
   }
   amountOpen -= (eachFrameFade < amountOpen? eachFrameFade: amountOpen);
 }
