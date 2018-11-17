@@ -5,18 +5,33 @@
 #include "envelope.h"
 #include "field.h"
 #include "color.h"
-#include <NeoPixelBrightnessBus.h>
+#include <NeoPixelBrightnessBus.h> //get rid asap, for unit testing...
 
 // template<typename T>
 class Buffer {
   public:
     Buffer(): Buffer("Buffer", 1, 512) {}
-    Buffer(const String& id, uint8_t fieldSize, uint16_t fieldCount, uint8_t* dataPtr = nullptr):
+    Buffer(uint8_t* dataPtr, uint16_t fieldCount):
+      Buffer("Buffer", 1, fieldCount, dataPtr) {}
+    Buffer(Buffer& buffer, uint16_t numFields, uint16_t offset = 0):
+      Buffer(buffer.id(), buffer.fieldSize(), numFields, buffer.get(offset), true) {}
+    Buffer(const String& id, uint8_t fieldSize, uint16_t fieldCount,
+           uint8_t* dataPtr = nullptr, bool copy = false):
       _id(id), _fieldSize(fieldSize), _fieldCount(fieldCount),
       // data(dataPtr), ownsData(!dataPtr) { //, field(new Field[fieldCount](data, fieldSize)) {
       // data(dataPtr), ownsData(!dataPtr), field(std::vector<Field*>(fieldCount, fieldSize)) {
-      data(dataPtr), ownsData(!dataPtr) {
-        if(!data) data = new uint8_t[length()]{0};
+      data(dataPtr), ownsData(!data || copy) {
+        if(ownsData) {
+          LN.logf(__func__, LoggerNode::DEBUG, "Buffer %s in charge of its data, fieldSize %u, fieldCount %u, length %u",
+              _id.c_str(), _fieldSize, _fieldCount, length());
+          data = new uint8_t[length()]{0};
+        }
+        if(dataPtr && copy) memcpy(data, dataPtr, length());
+        // if(!length()) {
+        //     LN.logf(__func__, LoggerNode::ERROR, "Buffer %s lacks valid length: %u. Setting fieldSize to 1...", _id.c_str(), length());
+        //     _fieldSize = 1;
+        //     // ^ XXX figure out why the fuck...
+        // }
 
         // field = new Field[fieldCount];
         // for(auto i=0; i<fieldCount; i++) {
@@ -31,6 +46,7 @@ class Buffer {
 
     }
     ~Buffer() {
+      LN.logf(__func__, LoggerNode::DEBUG, "Buffer %s deleted.", _id.c_str());
       if(ownsData) delete[] data;
       // vfield.clear();
       // if(field) { delete[] field; }
@@ -38,7 +54,7 @@ class Buffer {
 
     const String& id() const { return _id; }
     uint8_t fieldSize(uint8_t newFieldSize = 0) {
-      if(!newFieldSize) _fieldSize = newFieldSize; // XXX adjust fields...
+      if(newFieldSize) _fieldSize = newFieldSize; // XXX adjust fields...
       return _fieldSize;
     }
     uint16_t fieldCount(uint16_t newFieldCount = 0) {
@@ -47,10 +63,15 @@ class Buffer {
     }
     uint16_t length() { return _fieldSize * _fieldCount; }
 
-    uint8_t* outOfBounds() {
-      // LN.logf(__func__, LoggerNode::ERROR, "Buffer %s lacks valid buffer ptr, or out of range", _id.c_str());
-      LN.logf(__func__, LoggerNode::ERROR, "Buffer lacks valid buffer ptr, or out of range");
-      return nullptr;
+    void logProperties() {
+      LN.logf(__func__, LoggerNode::DEBUG, "Buffer %s: fieldSize %u, fieldCount %u, length %u",
+          _id.c_str(), _fieldSize, _fieldCount, length());
+    }
+    // uint8_t* outOfBounds() {
+    void outOfBounds() {
+      LN.logf(__func__, LoggerNode::ERROR, "Buffer s lacks data, or out of range.");
+      logProperties();
+      // return nullptr;
     }
 
     // dun work doing partial updates unless copying, obviously.
@@ -86,7 +107,7 @@ class Buffer {
     bool ready() { return dirty; }
 
     uint8_t* get(uint16_t offset = 0) {
-      if(!data || offset >= length()) return outOfBounds();
+      if(!data || offset >= length()) outOfBounds();
       return data + offset;
     }
     // Field& getField(uint16_t fieldIndex) {
