@@ -1,7 +1,6 @@
 #include "state.h"
 
-ConfigNode* cfg;
-BatteryNode* battery;
+IOT* iot;
 Strip* s;
 Blinky* b;
 Functions* f;
@@ -18,56 +17,36 @@ PixelBuffer* wasBuffer;
 // uint8_t buffers[3][512] = {0}; // prev, target, discard buffers
 // we'd have, prev, target, output?
 
-HomieEvent* lastEvent = nullptr;
-uint8_t disconnects = 0;
-
-ArtnetnodeWifi* artnet;
-int lastArtnetOpCode;
-
-void initArtnet(const String& name, uint8_t numPorts, uint8_t startingUniverse, void (*callback)(uint16_t, uint16_t, uint8_t, uint8_t*) ) {
-  artnet = new ArtnetnodeWifi();
-
-  artnet->setName(name.c_str());
-  artnet->setNumPorts(numPorts);
-	artnet->setStartingUniverse(startingUniverse);
-	for(int i = 0; i < numPorts; i++) artnet->enableDMXOutput(i);
-	artnet->begin();
-	artnet->setArtDmxCallback(callback);
-}
 
 void initDevice() { // init Serial, random seed, some first boot animation? anything else pre-homie/state?
 	Serial.begin(SERIAL_BAUD);
   randomSeed(analogRead(0));
 }
 
-void initUpdaters() {
-  ota = new ArduinoOTAUpdater("d1-1", s, b);
-  homieUpdater = new HomieUpdater(s, b);
+void initIOT() {
+  iot = new IOT("pixTol");
 }
 
 void initScheduler() {
-  keyFrameInterval = MILLION / cfg->dmxHz.get();
+  keyFrameInterval = MILLION / iot->cfg->dmxHz.get();
   start = micros();
 }
 
 void initState() { //retain something like this turning settings and defaults into actual stuff... prob part of "state" class, getting data from all places keeping track of that it means, and eg writing state from mqtt into json settings...
-  s = new Strip("Bad aZZ", cfg->stripBytesPerPixel.get(), cfg->stripLedCount.get());
-  s->mirror(cfg->mirror.get()).fold(cfg->fold.get()); // s->flip(false); //no need for now as no setting for it //cfg->setFlipped.get();
+  s = new Strip("Bad aZZ", iot->cfg->stripBytesPerPixel.get(), iot->cfg->stripLedCount.get());
+  s->mirror(iot->cfg->mirror.get()).fold(iot->cfg->fold.get()); // s->flip(false); //no need for now as no setting for it //iot->cfg->setFlipped.get();
   b = new Blinky(s);
   LN.logf(__func__, LoggerNode::DEBUG, "Done strip");
 
-  f = new Functions(MILLION / cfg->dmxHz.get(),
-                    BlendEnvelope("pixelEnvelope", 1.2, 1.0, true),
-                    BlendEnvelope("dimmerEnvelope", 1.2, 1.2),
-                    s);
+  f = new Functions(MILLION / iot->cfg->dmxHz.get(), s);
   LN.logf(__func__, LoggerNode::DEBUG, "Done functions");
 
-  targetBuffer = new PixelBuffer(cfg->stripBytesPerPixel.get(), cfg->stripLedCount.get());
-  targetFunctions = new Buffer("Strip fn target", 1, f->numChannels);
-  LN.logf(__func__, LoggerNode::DEBUG, "Done buffer");
+  iot->finishSetup(s, b, f);
 
   // initArduinoOTA(b, s); //initOTA();
 
-  uint8_t universes = 1; //for now anyways
-	initArtnet(Homie.getConfiguration().name, universes, cfg->startUni.get(), onDmxFrame);
+  inputter.push_back(new sAcnInput("pixTol-sACN", iot->cfg->startUni.get(), 1));
+  inputter.push_back(new ArtnetInput("pixTol-ArtNet", iot->cfg->startUni.get(), 1));
+  // inputter.push_back(new OPC(s->fieldCount()));
+  LN.logf(__func__, LoggerNode::DEBUG, "Done inputters");
 }

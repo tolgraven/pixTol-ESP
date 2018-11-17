@@ -1,8 +1,8 @@
 #include "pixtol.h"
 
 void setup() {
-  initDevice(); bootLog(doneBOOT); //should have a first anim thing here...
-  initHomie();  bootLog(doneHOMIE);
+  initDevice(); //Debug::bootLog(Debug::doneBOOT); //should have a first anim thing here...
+  initIOT();  //Debug::bootLog((Debug::BootStage)1);
   initScheduler();
   initState();  bootLog(doneMAIN);
   initUpdaters();
@@ -36,7 +36,11 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
   targetBuffer->set(data + f->numChannels, readLen); //no offset arg, breaks
   gotFrameAt = micros();
 
-  logDMXStatus(universe, data, length);
+  iot->debug->logDMXStatus(universe, data);
+}
+
+PixelBuffer *artnetBuffer, *sacnBuffer;
+void getDmxFrame(uint16_t universe, Buffer* functions, PixelBuffer* pixels, Inputter* source) {
 }
 
 void loop() {
@@ -91,30 +95,5 @@ void loop() {
   //   updates = 0; // Reset counter
   // }
 
-  // ArduinoOTA.handle(); // redundant once homie's ota stops being a buggy pos...
-	Homie.loop(); // XXX DUH DUH DAH, fucking save all networks ever configured and try them lol finally an IoT thing for the 90's
-
-  static uint16_t wasOnlineAt;
-  static bool firstConnect = true;
-  // if(Homie.isConnected()) { // kill any existing go-into-wifi-finder timer, etc
-  //   if(firstConnect) {
-  //     bootLog(doneONLINE);
-  //     bootInfoPerMqtt();
-  //     firstConnect = false;
-  //   }
-  //   wasOnlineAt = millis();
-  // } else { // stays stuck in this state for a while on boot... set a timer if not already exists, yada yada blink statusled for sure...
-  //   if(!firstConnect) { //already been connected, so likely temp hickup, chill
-  //     if(millis() - wasOnlineAt < 10000) //give it 10s
-  //       return;
-  //     else {
-  //       static bool justDisconnected = true;
-  //       if(justDisconnected) {
-  //         LN.logf(_DEBUG_, "Wifi appears well down");
-  //         justDisconnected = false;
-  //       }
-  //     }
-  //   } else { // fade up some sorta boot anim I guess?
-  //   }
-  // }
+  iot->loop();
 }
