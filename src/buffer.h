@@ -5,7 +5,7 @@
 #include "envelope.h"
 #include "field.h"
 #include "color.h"
-#include <NeoPixelBrightnessBus.h>
+#include <NeoPixelBrightnessBus.h> //get rid asap, for unit testing...
 
 // template<typename T>
 class Buffer {
@@ -31,6 +31,7 @@ class Buffer {
 
     }
     ~Buffer() {
+      LN.logf(__func__, LoggerNode::DEBUG, "Buffer %s deleted.", _id.c_str());
       if(ownsData) delete[] data;
       // vfield.clear();
       // if(field) { delete[] field; }
@@ -38,7 +39,7 @@ class Buffer {
 
     const String& id() const { return _id; }
     uint8_t fieldSize(uint8_t newFieldSize = 0) {
-      if(!newFieldSize) _fieldSize = newFieldSize; // XXX adjust fields...
+      if(newFieldSize) _fieldSize = newFieldSize; // XXX adjust fields...
       return _fieldSize;
     }
     uint16_t fieldCount(uint16_t newFieldCount = 0) {
@@ -47,10 +48,15 @@ class Buffer {
     }
     uint16_t length() { return _fieldSize * _fieldCount; }
 
-    uint8_t* outOfBounds() {
-      // LN.logf(__func__, LoggerNode::ERROR, "Buffer %s lacks valid buffer ptr, or out of range", _id.c_str());
-      LN.logf(__func__, LoggerNode::ERROR, "Buffer lacks valid buffer ptr, or out of range");
-      return nullptr;
+    void logProperties() {
+      LN.logf(__func__, LoggerNode::DEBUG, "Buffer %s: fieldSize %u, fieldCount %u, length %u",
+          _id.c_str(), _fieldSize, _fieldCount, length());
+    }
+    // uint8_t* outOfBounds() {
+    void outOfBounds() {
+      LN.logf(__func__, LoggerNode::ERROR, "Buffer s lacks data, or out of range.");
+      logProperties();
+      // return nullptr;
     }
 
     // dun work doing partial updates unless copying, obviously.
@@ -86,7 +92,7 @@ class Buffer {
     bool ready() { return dirty; }
 
     uint8_t* get(uint16_t offset = 0) {
-      if(!data || offset >= length()) return outOfBounds();
+      if(!data || offset >= length()) outOfBounds();
       return data + offset;
     }
     // Field& getField(uint16_t fieldIndex) {
