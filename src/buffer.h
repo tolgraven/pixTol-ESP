@@ -31,6 +31,7 @@ class Buffer {
         //     LN.logf(__func__, LoggerNode::ERROR, "Buffer %s lacks valid length: %u. Setting fieldSize to 1...", _id.c_str(), length());
         //     _fieldSize = 1;
         //     // ^ XXX figure out why the fuck...
+      LN.logf(__func__, LoggerNode::DEBUG, "Buffer %s deleted.", _id.c_str());
         // }
 
         // field = new Field[fieldCount];
