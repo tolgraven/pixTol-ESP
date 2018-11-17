@@ -18,39 +18,24 @@ class Buffer {
     Buffer(const String& id, uint8_t fieldSize, uint16_t fieldCount,
            uint8_t* dataPtr = nullptr, bool copy = false):
       _id(id), _fieldSize(fieldSize), _fieldCount(fieldCount),
-      // data(dataPtr), ownsData(!dataPtr) { //, field(new Field[fieldCount](data, fieldSize)) {
       // data(dataPtr), ownsData(!dataPtr), field(std::vector<Field*>(fieldCount, fieldSize)) {
-      data(dataPtr), ownsData(!data || copy) {
-        if(ownsData) {
-          LN.logf(__func__, LoggerNode::DEBUG, "Buffer %s in charge of its data, fieldSize %u, fieldCount %u, length %u",
-              _id.c_str(), _fieldSize, _fieldCount, length());
+      data(dataPtr), ownsData(!dataPtr || copy) {
+      // data(dataPtr), ownsData(!dataPtr) {
+        if(!data) data = new uint8_t[length()]{0};
+        if(ownsData) { // oh right, does this then clear the memory at that ptr location I guess? welp, explains...
+          // LN.logf(__func__, LoggerNode::DEBUG, "%s in charge of its data, fieldSize %u, fieldCount %u, length %u",
+          //     _id.c_str(), _fieldSize, _fieldCount, length());
           data = new uint8_t[length()]{0};
         }
         if(dataPtr && copy) memcpy(data, dataPtr, length());
-        // if(!length()) {
-        //     LN.logf(__func__, LoggerNode::ERROR, "Buffer %s lacks valid length: %u. Setting fieldSize to 1...", _id.c_str(), length());
-        //     _fieldSize = 1;
-        //     // ^ XXX figure out why the fuck...
-      LN.logf(__func__, LoggerNode::DEBUG, "Buffer %s deleted.", _id.c_str());
-        // }
-
-        // field = new Field[fieldCount];
-        // for(auto i=0; i<fieldCount; i++) {
-        //   field[i].size(fieldSize);
-        //   field[i].set(data, i);
-        // }
-        // field = new std::vector<Field>(fieldCount, Field(fieldSize));
-        // for(auto i=0; i<_fieldCount; i++) (*field)[i].set(data, i);
 
         // vfield.reserve(fieldCount);
         // for(auto i=0; i<_fieldCount; i++) vfield.emplace_back(data, fieldSize, i);
-
     }
     ~Buffer() {
-      LN.logf(__func__, LoggerNode::DEBUG, "Buffer %s deleted.", _id.c_str());
+      // LN.logf(__func__, LoggerNode::DEBUG, "%s deleted.", _id.c_str());
       if(ownsData) delete[] data;
       // vfield.clear();
-      // if(field) { delete[] field; }
     }
 
     const String& id() const { return _id; }
@@ -68,11 +53,9 @@ class Buffer {
       LN.logf(__func__, LoggerNode::DEBUG, "Buffer %s: fieldSize %u, fieldCount %u, length %u",
           _id.c_str(), _fieldSize, _fieldCount, length());
     }
-    // uint8_t* outOfBounds() {
     void outOfBounds() {
       LN.logf(__func__, LoggerNode::ERROR, "Buffer s lacks data, or out of range.");
       logProperties();
-      // return nullptr;
     }
 
     // dun work doing partial updates unless copying, obviously.

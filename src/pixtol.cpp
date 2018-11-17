@@ -52,8 +52,8 @@ void loop() {
       // buffer["origin"]->set(buffer["target"]->get());
       buffer["origin"]->set(buffer["current"]->get()); //dont jump on earlier than expected frames
 
-      // Buffer tf = Buffer(source->get(), f->numChannels);
-      Buffer tf = Buffer("temp functions", 1, f->numChannels, source->get().get());
+      Buffer tf = Buffer(source->get(), f->numChannels);
+      // Buffer tf = Buffer("temp functions", 1, f->numChannels, source->get().get());
       // f->setTarget(tf.get());
       // targetFunctions->htp(tf); //also needs frames synced up, so doesnt prevent newer from taking over...
       // targetFunctions->avg(tf);
