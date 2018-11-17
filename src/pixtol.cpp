@@ -12,9 +12,17 @@ void setup() {
 }
 
 void renderFrame(float progress) {
-  s->updateWithEnvelope(targetBuffer->get(), f->e, progress); //gotta fix so env responds to passed time...
-  f->update(progress, targetFunctions->get());
-  s->show();
+  if(progress > 1.0) return; //for now...
+  // outBuffer->interpolate(wasBuffer, buffer["target"], progress, f->e); //i guess
+  // s->updateWithEnvelope(buffer["target"]->get(), f->e, progress); //gotta fix so env responds to passed time...
+  buffer["current"]->blendUsingEnvelope(*buffer["origin"], *buffer["target"], f->e, progress);
+  f->update(progress);
+  // s->get(), set(buffer["current"]);
+  s->setBuffer(*buffer["current"]);
+  s->run();
+  // LN.logf(_DEBUG_, "%.4f %.4f/%.4f", progress, f->e.get(AT, progress), f->chan[chDimmer]->e->get(AT, progress));
+  // f->update(progress, targetFunctions->get());
+  // s->show();
 }
 
 void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
@@ -32,13 +40,48 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
 }
 
 void loop() {
-  lastArtnetOpCode = artnet->read(); // skip callback stuff and just use .read once move to class? prob makes more sense
-  float progress = (micros() - gotFrameAt) / (float)keyFrameInterval; //remember to adjust stuff to interpolation can overshoot...
-  uint16_t keyFrameCount = (micros() - start) / keyFrameInterval; //remember to adjust stuff to interpolation can overshoot...
-  if(!(keyFrameCount % cfg->dmxHz.get())) {
-    LN.logf(_DEBUG_, "Keyframe %d, Progress %f", keyFrameCount, progress);
+  for(auto& source: inputter) {
+    if(source->run() && source->newData) { //or rather w callbacks etc should be OR?
+      gotFrameAt = micros();
+      uint16_t keyFrameCount = (micros() - start) / keyFrameInterval; //remember to adjust stuff to interpolation can overshoot...
+
+      // buffer["origin"]->set(buffer["target"]->get());
+      buffer["origin"]->set(buffer["current"]->get()); //dont jump on earlier than expected frames
+
+      // Buffer tf = Buffer(source->get(), f->numChannels);
+      Buffer tf = Buffer("temp functions", 1, f->numChannels, source->get().get());
+      // f->setTarget(tf.get());
+      // targetFunctions->htp(tf); //also needs frames synced up, so doesnt prevent newer from taking over...
+      // targetFunctions->avg(tf);
+      targetFunctions->add(tf);
+      f->setTarget(targetFunctions->get());
+
+      PixelBuffer pb = PixelBuffer(s->fieldSize(), s->fieldCount(), source->get().get(f->numChannels));
+      switch(f->ch[2]) {
+        case 0: buffer["target"]->avg(pb); break;
+        case 1: buffer["target"]->add(pb); break;
+        case 2: buffer["target"]->sub(pb); break;
+        case 3: buffer["target"]->set(pb); break;
+        case 4: buffer["target"]->htp(pb); break;
+        case 5: buffer["target"]->ltp(pb); break;
+        case 6: buffer["target"]->lotp(pb); break; //heheh oh yeah it'll never leave zero w/ current LoTP, duh. So gotta be "lowest non-0 takes precedence"
+      }
+
+      if(!(keyFrameCount % (10 * iot->cfg->dmxHz.get()))) {
+        LN.logf(_DEBUG_, "%u %u %u %u %u %d %u %u %u %u %u %d", tf.get()[0], tf.get()[1], tf.get()[2],
+            tf.get()[3], tf.get()[4], tf.get()[5], tf.get()[6], tf.get()[7], tf.get()[8], tf.get()[9], tf.get()[10], tf.get()[11]);
+        LN.logf(_DEBUG_, "%u %u %u %u %u %d %u %u %u %u %u %d", targetFunctions->get()[0], targetFunctions->get()[1], targetFunctions->get()[2],
+            targetFunctions->get()[3], targetFunctions->get()[4], targetFunctions->get()[5], targetFunctions->get()[6], targetFunctions->get()[7], targetFunctions->get()[8], targetFunctions->get()[9], targetFunctions->get()[10], targetFunctions->get()[11]);
+        LN.logf(_DEBUG_, "%u %u %u %u %u %d %u %u %u %u %u %d", f->ch[0], f->ch[1], f->ch[2],
+            f->ch[3], f->ch[4], f->ch[5], f->ch[6], f->ch[7], f->ch[8], f->ch[9], f->ch[10], f->ch[11]);
+        LN.logf(_DEBUG_, "%.4f fake progress, %.4f/%.4f", 0.5, f->e.get(AT, 0.5), f->chan[chDimmer]->e->get(AT, 0.5));
+        // LN.logf(_DEBUG_, "Keyframe %d", keyFrameCount);
+      }
+      iot->debug->logDMXStatus(2, source->get().get());
+    }
   }
 
+  float progress = (micros() - gotFrameAt) / (float)keyFrameInterval; //remember to adjust stuff to interpolation can overshoot...
   renderFrame(progress);
   // static uint32_t updates = 0, priorSeconds = 0;
   // uint32_t seconds;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <NeoPixelBrightnessBus.h>
+#include <algorithm>
 
 #include "field.h"
 
@@ -19,19 +20,21 @@ class Color: public Field {
   Color(const HslColor& color, uint8_t subPixels);
   Color(const HsbColor& color, uint8_t subPixels);
 
+  enum SubPixel { RED=0, GREEN, BLUE, WHITE };
+
   // void value(float absolute) override {
   void value(float absolute) {
-    for(uint8_t p = 0; p < size; p++) {
+    for(uint8_t p = 0; p < _size; p++) {
       // as HS(L) 0.5 = middle 1.0 = fully white etc, formula?
       // so not turn auto grayscale bs...
     }
-    float c[size];
+    float c[_size];
     HslColor hsl = HslColor(RgbColor(data[0], data[1], data[2])); // fix proper...
     hsl.L = absolute;
     // then convert back...
-
-    // float h = color.H; float s = color.S; float l = color.L;
-    // if (s == 0.0f || l == 0.0f) r = g = b = l; // achromatic or black
+    float r = data[0]/255.0f, g = data[1]/255.0f, b=data[2]/255.0f;
+    float h = hsl.H, s = hsl.S, l = hsl.L;
+    if (s == 0.0f || l == 0.0f) r = g = b = l; // achromatic or black
     // else {
     //     float q = l < 0.5f ? l * (1.0f + s) : l + s - (l * s);
     //     float p = 2.0f * l - q;
@@ -44,6 +47,28 @@ class Color: public Field {
     // B = (uint8_t)(b * 255.0f);
   }
 
+  Color& rotateHue(float rotations) { //or just -1.0/1.0 full circle back/fwd?
+    // auto result = std::minmax_element(rgb.begin(), rgb.end());
+    // std::cout << "min element at: " << (result.first - rgb.begin()) << '\n';
+    // std::cout << "max element at: " << (result.second - rgb.begin()) << '\n';
+    float r = data[0]/255.0f, g = data[1]/255.0f, b=data[2]/255.0f;
+
+    float max = std::max({r, g, b}), min = std::min({r, g, b});
+    float h, s, l = (max + min) / 2.0f;
+    if(max == min) h = s = 0.0f;
+    else {
+      float d = max - min;
+      s = (l > 0.5f)? d / (2.0f - (max + min)): d / (max + min);
+
+      if(r>g && r>b) h = (g-b) / d + (g<b? 6.0f: 0.0f);
+      else if(g>b)   h = (b-r) / d + 2.0f;
+      else           h = (r-g) / d + 4.0f;
+      h /= 6.0f;
+    }
+    // HslColor hsl = HslColor(RgbColor(data[0], data[1], data[2])); // fix proper...
+    // float hue = hsl.H +
+  }
+
   RgbColor& getNeoRgb(bool useAlpha = false) {
     if(useAlpha) return *(new RgbColor(data[0] * alpha, data[1] * alpha, data[2] * alpha));
     else return *(new RgbColor(data[0], data[1], data[2]));
@@ -54,7 +79,7 @@ class Color: public Field {
   }
 
   Color& withSubPixels(uint8_t numSubPixels) {
-    if(numSubPixels == size) return *this;
+    if(numSubPixels == _size) return *this;
     switch(numSubPixels) {
       case 3: //convert RGBW -> RGB
         break;
@@ -63,9 +88,9 @@ class Color: public Field {
     }
 
     delete[] data; // delete[subPixels] data;
-    size = numSubPixels;
-    data = new uint8_t[size];
-    for(uint8_t p = 0; p < size; p++) {
+    _size = numSubPixels;
+    data = new uint8_t[_size];
+    for(uint8_t p=0; p<_size; p++) {
     }
   }
 };

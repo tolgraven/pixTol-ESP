@@ -1,6 +1,5 @@
 #include "color.h"
 
-
 static float _CalcColor(float p, float q, float t) { //read up on exactly what this does and how mod to RGBW...
     if (t < 0.0f) t += 1.0f;
     if (t > 1.0f) t -= 1.0f;
