@@ -21,91 +21,79 @@
 // fragmentation, and makes sure that there are no empty unused slots left over in
 // the container at the end.
 
-bool sendIfChanged(HomieNode& hn, const String& property, int value) {
-  static std::map<String, int> propertyValues;
-  if(propertyValues.find(property) != propertyValues.end()) {
-    int last = propertyValues[property];
-    if(value == last || (value > 0.90*last && value < 1.10*last)) //XXX settable tolerance...
-      return false;
-  }
-  hn.setProperty(property).send(String(value)); //new property or new value...
-  propertyValues[property] = value;
-  return true; //set and sent
-}
-
-void logDMXStatus(uint16_t universe, uint8_t* data, uint16_t length) { // for logging and stuff... makes sense?
-  static int first = millis();
-  static uint16_t dmxFrameCounter = 0;
-  dmxFrameCounter++;
-
-  if(!(dmxFrameCounter % (cfg->dmxHz.get()*10))) { // every 10s (if input correct and stable)
-    uint16_t totalTime = millis() - first;
-    first = millis();
-    sendIfChanged(statusNode, "freeHeap", ESP.getFreeHeap());
-    sendIfChanged(statusNode, "heapFragmentation", ESP.getHeapFragmentation());
-    sendIfChanged(statusNode, "maxFreeBlockSize", ESP.getMaxFreeBlockSize());
-    sendIfChanged(statusNode, "fps", dmxFrameCounter / (totalTime / 1000));
-    sendIfChanged(statusNode, "droppedFrames", s->droppedFrames);
-
-    sendIfChanged(statusNode, "dimmer.base", f->dimmer.getByte());
-    sendIfChanged(statusNode, "dimmer.force", f->chOverride[chDimmer]); //whyyy this gets spammed when no change?
-    sendIfChanged(statusNode, "dimmer.out", f->outBrightness);
-    dmxFrameCounter = 0;
-  }
-  switch(lastArtnetOpCode) { // check opcode for logging purposes, actual logic in callback function
-    case OpDmx:
-      break;
-    case OpPoll:
-      if(cfg->logArtnet.get() >= 2) LN.logf("artnet", LoggerNode::DEBUG, "Art Poll Packet");
-      break;
-  }
-}
-
-void logAndSave(const String& msg) { //possible approach...  log to serial + save message, then post by LN once MQTT up
-  // cause now lose info if never connects...
-}
-
-/* #define LOGF() */
-/* enum Log { */
-/*   INVALID = -1, DEBUG = 0, INFO, WARNING, ERROR, CRITICAL */
-/* }; */
-
-// in case do more hardcore watchdog stuff...
-// struct bootflags {
-//   unsigned char raw_rst_cause: 4;
-//   unsigned char raw_bootdevice: 4;
-//   unsigned char raw_bootmode: 4;
+// #ifndef UNIT_TESTING //something like that, redefine logger to simple cout for native testing
+// class Log: public HomieNode {
+// public:
+//   Log(): level(DEBUG), serial(true), mqtt(true), HomieNode("Log", "Logger") {
+//     for(auto s; {"Level", "Serial", "MQTT"}) advertise(s).settable();
+//   }
+// 	enum Level: int8_t { INVALID=-1, DEBUG=0, INFO, WARNING, ERROR, CRITICAL }; //add an "NONE" at end to disable output fully?
+//   static const Level defaultLevel = DEBUG;
 //
-//   unsigned char rst_normal_boot: 1;
-//   unsigned char rst_reset_pin: 1;
-//   unsigned char rst_watchdog: 1;
+// 	virtual bool handleInput(const String& property, const HomieRange& range, const String& value) override {
+//     LN.logf("Log settings", DEBUG, "requested setting property %s to %s", property.c_str(), value.c_str());
+//     if(property == "Level") {
+//       Level newLevel = convert(value);
+//       if(newLevel == INVALID) {
+//         logf("Log settings", WARNING, "Received invalid level %s.", value.c_str());
+//         return false;
+//       }
+//       _level = newLevel;
+//       logf("Log settings", INFO, "Level now %s", value.c_str());
+//       setProperty("Level").send(convert[_level]);
+//       return true;
+//     } else if(property == "Serial") {
+//       bool on = (value == "ON");
+//       serial = on;
+//       LN.logf("Log settings", INFO, "Serial output %s", on? "on": "off");
+//       setProperty("Serial").send(on? "On": "Off");
+//       return true;
+//     }
+//     logf("Log settings", ERROR, "Invalid property %s, value %s", property.c_str(), value.c_str());
+//     return false;
+//   }
 //
-//   unsigned char bootdevice_ram: 1;
-//   unsigned char bootdevice_flash: 1;
+// 	void log(const String location, const Level level, const String text) const {
+//     if (!shouldLog(level)) return;
+//     String mqtt_path(convert[level]);
+//     mqtt_path.concat('/');
+//     mqtt_path.concat(function);
+//     if (mqtt   && Homie.isConnected())  setProperty(mqtt_path).setRetained(false).send(text);
+//     if (serial || !Homie.isConnected()) Serial.printf("%d: %s:%s\n", millis(), mqtt_path.c_str(), text.c_str());
+//   }
+// 	void logf(const String location, const Level level, const char *format, ...) const {
+//     if (!shouldLog(level)) return;
+//     va_list arg;
+//     va_start(arg, format);
+//     char temp[100]; // char* buffer = temp;
+//     size_t len = vsnprintf(temp, sizeof(temp), format, arg);
+//     va_end(arg);
+//     log(function, level, temp);
+//   }
+//
+// 	bool shouldLog(Level lvl) const { return ((uint_fast8_t) lvl >= (uint_fast8_t) _level); }
+// 	void setLevel(Level lvl) { if(lvl >= DEBUG && lvl <= CRITICAL) _level = l; }
+//
+// private:
+// 	Level _level;
+// 	bool serial;
+//   bool mqtt;
+//
+// 	static Level convert(const String& lvl) {
+//     String lvlStr[CRITICAL+1] = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"};
+//     for(uint8_t iLevel = DEBUG; iLevel <= CRITICAL; iLevel++)
+//       if(_level.equalsIgnoreCase(lvlStr[iLevel])) return static_cast<Level>(iLevel);
+//     return INVALID;
+//   }
+// 	static String convert(const Level lvl) {
+//     String lvlStr[CRITICAL+1] = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"};
+//     auto index = constrain(lvl, INVALID, CRITICAL+1);
+//     if(index >= 0) return lvlStr[index];
+//     else return INVALID;
+//   }
 // };
 //
-// struct bootflags bootmode_detect(void) {
-//   int reset_reason, bootmode;
-//   asm ("movi %0, 0x60000600\n\t"
-//        "movi %1, 0x60000200\n\t"
-//        "l32i %0, %0, 0x114\n\t"
-//        "l32i %1, %1, 0x118\n\t"
-//        : "+r" (reset_reason), "+r" (bootmode) /* Outputs */
-//        : /* Inputs (none) */
-//        : "memory" /* Clobbered */);
-//
-//   struct bootflags flags;
-//
-//   flags.raw_rst_cause = (reset_reason & 0xF);
-//   flags.raw_bootdevice = ((bootmode >> 0x10) & 0x7);
-//   flags.raw_bootmode = ((bootmode >> 0x1D) & 0x7);
-//
-//   flags.rst_normal_boot = flags.raw_rst_cause == 0x1;
-//   flags.rst_reset_pin = flags.raw_rst_cause == 0x2;
-//   flags.rst_watchdog = flags.raw_rst_cause == 0x4;
-//
-//   flags.bootdevice_ram = flags.raw_bootdevice == 0x1;
-//   flags.bootdevice_flash = flags.raw_bootdevice == 0x3;
+// Log log;
 //
 //   return flags;
 // }
