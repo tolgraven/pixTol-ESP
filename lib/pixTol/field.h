@@ -85,41 +85,50 @@ class Field {
 
 
   // might be overkill and that should do this directly in Buffer, but let's see
-  void mix(Field& other, std::function<uint8_t(uint8_t, uint8_t)> op, bool perByte = true) { // could auto this even or?
+  Field& mix(Field& other, std::function<uint8_t(uint8_t, uint8_t)> op, bool perByte = true) { // could auto this even or?
     uint8_t* otherData = other.get();
     if(perByte) {
       for(auto i=0; i<_size; i++) data[i] = op(data[i], otherData[i]);
     } else {
       // compare "total" value and use accordingly...
     }
+    return *this;
   }
-  void add(Field& other) {
-    mix(other, [](uint8_t a, uint8_t b) { return constrain((int)a + b, 0, 255); });
+  Field& add(Field& other) {
+    return mix(other, [](uint8_t a, uint8_t b) {
+        return constrain((int)a + b, 0, 255); });
   }
-  void sub(Field& other) {
-    mix(other, [](uint8_t a, uint8_t b) { return constrain((int)a - b, 0, 255); });
+  Field& sub(Field& other) {
+    return mix(other, [](uint8_t a, uint8_t b) {
+        return constrain((int)a - b, 0, 255); });
   }
-  void avg(Field& other) {
-    mix(other, [](uint8_t a, uint8_t b) { return ((int)a + b) / 2; });
+  Field& avg(Field& other, bool ignoreZero = true) {
+    return mix(other, [ignoreZero](uint8_t a, uint8_t b) {
+      uint8_t divisor = 2;
+      if(ignoreZero && (a + b == a || a + b == b))
+        divisor = 1;
+      return (uint8_t)(((int)a + b) / divisor); });
   }
-  void htp(Field& other, bool perByte = false) {
+  Field& htp(Field& other, bool perByte = true) {
     if(!perByte) {
       uint8_t a = average(), b = other.average();
       if(b > a) set(other.get());
     }
-    else mix(other, [](uint8_t a, uint8_t b) { return max(a, b); });
+    else return mix(other, [](uint8_t a, uint8_t b) {
+        return max(a, b); });
   }
-  void ltp(Field& other) {
-    set(other.get()); //eh, i guess? return rightmost, for lack of timing metadata
+  Field& ltp(Field& other) {
+    return set(other.get()); //eh, i guess? return rightmost, for lack of timing metadata
   }
-  void lotp(Field& other, bool perByte = false) {
+  Field& lotp(Field& other, bool perByte = true) {
     if(!perByte) {
       uint8_t a = average(), b = other.average();
-      if(b < a) set(other.get());
+      if(b < a) return set(other.get());
+      else return *this;
     }
-    else mix(other, [](uint8_t a, uint8_t b) { return min(a, b); });
+    else return mix(other, [](uint8_t a, uint8_t b) {
+        return min(a, b); });
   }
-
 
   uint8_t average() const { //average value of field elements or like?
     uint16_t cum = 0;
@@ -144,17 +153,22 @@ class Field {
   uint8_t* get(uint8_t offset = 0) const {
     if(offset > 0 && offset < _size) return data + offset;
   }
-  Field& set(uint8_t* newData) { //set data
+  Field& set(uint8_t* newData) { //set data by copy
     for(auto i=0; i<_size; i++) data[i] = newData[i];
   }
-  Field& set(uint8_t* bufferStart, uint8_t fieldIndex) { //set ptr thing
+  Field& set(uint8_t* bufferStart, uint8_t fieldIndex) { //set ptr, or copy block
     if(ownsData) {
       if(!data) data = new uint8_t[_size];
       memcpy(data, bufferStart + fieldIndex * _size, _size);
     } else  data = bufferStart + fieldIndex * _size;
   }
   uint8_t size(uint8_t size = 0) {
-    if(size) _size = size;
+    if(size) {
+      _size = size;
+      // XXX ensure we can actually access the underlying memory if expanding size, tho easier said than done...
+      // also if eg changing a bunch of fields to represent an underlyiong buffer differently,
+      // starting data ptrs would have to be updated as well.
+    }
     return _size;
   }
 
@@ -182,3 +196,4 @@ class Field {
     alpha = alpha * wx0 + x1.alpha * wx1 + y1.alpha * wy0 + y1.alpha * wy1;
   }
 };
+
