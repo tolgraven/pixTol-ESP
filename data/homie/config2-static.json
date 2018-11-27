@@ -1,0 +1,31 @@
+{
+  "name": "d1",
+  "device_id": "d1-artnet-2",
+  "device_stats_interval": 150,
+  "wifi": {
+    "ssid": "paj",
+    "password": "pacopaco",
+    "ip": "192.168.2.12",
+    "mask": "255.255.0.0",
+    "gw": "192.168.2.1"
+  },
+  "mqtt": {
+    "host": "192.168.2.2",
+    "base_topic": "pixtol/",
+    "auth": false
+  },
+  "ota": {
+    "host": "192.168.2.2",
+    "enabled": true,
+		"port": 9080,
+    "path": "/ota"
+  },
+  "settings": {
+    "log_artnet": 2,
+		"mirror_second_half": false,
+    "folded_alternating": false,
+		"led_count": 125,
+		"bytes_per_pixel": 4,
+		"starting_universe": 2
+  }
+}

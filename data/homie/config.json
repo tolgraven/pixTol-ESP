@@ -1,0 +1,29 @@
+{
+  "name": "pixtol-2",
+  "device_id": "pixtol-2",
+  "device_stats_interval": 300,
+  "wifi": {
+    "ssid": "TBA",
+    "password": "dubtechno"
+  },
+  "mqtt": {
+    "host": "nu",
+    "base_topic": "pixtol/",
+    "auth": false
+  },
+  "ota": {
+    "host": "nu",
+    "enabled": true,
+		"port": 9080,
+    "path": "/ota"
+  },
+  "settings": {
+    "log_artnet": 0,
+    "dmx_hz": 40,
+		"mirror_second_half": false,
+    "folded_alternating": false,
+		"led_count": 125,
+		"bytes_per_pixel": 4,
+		"starting_universe": 2
+  }
+}

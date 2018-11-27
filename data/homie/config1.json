@@ -1,0 +1,28 @@
+{
+  "name": "pixtol",
+  "device_id": "pixtol-1",
+  "wifi": {
+    "ssid": "haj",
+    "password": "dubtechno"
+  },
+  "mqtt": {
+    "host": "paj",
+    "base_topic": "pixtol/",
+    "auth": false
+  },
+  "ota": {
+    "host": "paj",
+    "enabled": true,
+		"port": 9080,
+    "path": "/ota"
+  },
+  "settings": {
+    "status_interval": 300,
+    "log_artnet": 1,
+		"mirror_second_half": false,
+    "folded_alternating": false,
+		"led_count": 125,
+		"bytes_per_pixel": 4,
+		"starting_universe": 1
+  }
+}
