@@ -5,7 +5,8 @@
 #include "envelope.h"
 #include "field.h"
 #include "color.h"
-#include <NeoPixelBrightnessBus.h> //get rid asap, for unit testing...
+#include "log.h"
+// #include <NeoPixelBrightnessBus.h> //get rid asap, for unit testing...
 
 // template<typename T>
 class Buffer {

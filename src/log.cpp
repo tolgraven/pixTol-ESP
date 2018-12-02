@@ -24,16 +24,34 @@ bool Log::handleInput(const String& property, const HomieRange& range, const Str
 }
 
 void Log::log(const String& location, const Level level, const String& text) const {
-  if (!shouldLog(level)) return;
+  if(!shouldLog(level)) return;
   String mqtt_path(convert(level));
   mqtt_path.concat('/');
   mqtt_path.concat(location);
-  if (mqtt   && Homie.isConnected())  setProperty(mqtt_path).setRetained(false).send(text);
-  if (serial || !Homie.isConnected()) Serial.printf("%d: %s:%s\n", millis(), mqtt_path.c_str(), text.c_str());
+  if(mqtt   && Homie.isConnected())  setProperty(mqtt_path).setRetained(false).send(text);
+  if(serial || !Homie.isConnected()) Serial.printf("%d: %s:%s\n", millis(), mqtt_path.c_str(), text.c_str());
 }
 
 void Log::logf(const String& location, const Level level, const char *format, ...) const {
-  if (!shouldLog(level)) return;
+  if(!shouldLog(level)) return;
+  va_list arg;
+  va_start(arg, format);
+  char temp[100]; // char* buffer = temp;
+  size_t len = vsnprintf(temp, sizeof(temp), format, arg);
+  va_end(arg);
+  log(location, level, temp);
+}
+
+void Log::logfEvery(uint16_t numCalls, const String& id, const String& location, const Level level, const char *format, ...) const {
+  if(!shouldLog(level)) return;
+
+  static std::map<String, uint16_t> callTracker;
+  callTracker[id] = (callTracker.find(id) != callTracker.end())? callTracker++: 1;
+  // if(callTracker.find(id) != callTracker.end()) callTracker[id]++;
+  // else callTracker[id] = 1;
+  if(callTracker[id] < numCalls) return;
+  else callTracker.erase(id); //dunno when will be needed next so might as well remove, rather than zero
+
   va_list arg;
   va_start(arg, format);
   char temp[100]; // char* buffer = temp;
@@ -43,4 +61,3 @@ void Log::logf(const String& location, const Level level, const char *format, ..
 }
 
 Log lg;
-
