@@ -77,11 +77,33 @@ class Inputter: public RenderStage {
       return true;
     }
     Buffer& get(uint8_t index = 0) {
-      newData = false; return RenderStage::get(index);
+      // if(!_active) should return empty or rong or wha?
+      newData = false; //maybe bad resetting, in case getting internally or w/e...
+      return RenderStage::get(index);
     } //XXX check bounds
+    PixelBuffer& getPB() { //only one yeah? if can stitch shit like that easy nuff... ref bit shit since might not be a pixel kinda inputter = ???... temp
+      //yada lada create off of layout...
+      // ideally create on spot a thin copy of our Buffer, with only offset etc adjusted...
+      // pb->set(get(), 0, pixelsOffset); //like here, we using it form inside...
+      pb->set(*buffers[0], 0, pixelsOffset); //just make sure pointer is fresh in case main Buffer moved...
+      return *pb;
+    } //XXX TEMP SHIT
 
-  private:
-    uint8_t priority = 0;
+    void pin(bool state = true) { // so can mix in eg static local bg color with no timeout...
+      _isReceiving = _pinned = state;
+    }
+    bool receiving() { return _isReceiving; }
+  protected:
+    // XXX something, layout? seems maybe silly/tricky to put actual merged/split/whatever
+    // Buffers/PixelBuffers etc etc, but still, should know at this stage wtf is in incoming data...
+    // THOUGHT: ditch multiple buffers and just use one?
+    // thought to not copy data needlessly could require Buffer supporting multiple pointers for data
+    // which might make sense anyways, as long as we can encapsulate / properly move away from ever
+    // touching raw uint8_t*...
+    // OR never even think of "original" data but gut it as it comes...
+    // (no "buffer0")
+    bool _isReceiving = false;
+    bool _pinned = false; //pinned inputters are "always fresh", even if not continously fed data.
     bool dirty = true;
 };
 
