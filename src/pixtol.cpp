@@ -1,5 +1,23 @@
 #include "pixtol.h"
 
+Device* device;
+Scheduler* scheduler;
+IOT* iot;
+Blinky* b;
+
+void initDevice() { // init Serial, random seed, some first boot animation? anything else pre-homie/state?
+  device = new Device();
+  iot = new IOT("pixTol"); //also inits Homie. REMEMBER no cfg before that!!!
+
+  scheduler = new Scheduler(Homie.getConfiguration().deviceId, *iot);
+  lg.dbg("Done scheduler");
+  b = new Blinky(scheduler->output(0));
+  iot->finishSetup(scheduler->output(0), *b, *scheduler->renderer().f); //baddd design...
+  lg.dbg("Done state");
+
+  device->finalizeBoot();
+}
+
 void setup() {
   initDevice(); //Debug::bootLog(Debug::doneBOOT); //should have a first anim thing here...
   // Debug::bootLog((Debug::BootStage)2);
