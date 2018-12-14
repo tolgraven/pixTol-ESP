@@ -1,4 +1,10 @@
-#include "debug.h"
+#include "debuglog.h"
+
+// according to someone on the internet:
+// If you use std libs like std::vector, make sure to call its ::reserve() method
+// before filling it. This allows allocating only once, which reduces mem
+// fragmentation, and makes sure that there are no empty unused slots left over in
+// the container at the end.
 
 
 bool Debug::sendIfChanged(const String& property, int value) {
@@ -20,7 +26,7 @@ void Debug::logFunctionChannels(uint8_t* dataStart, const String& id, uint8_t nu
       dataStart[7], dataStart[8], dataStart[9], dataStart[10], dataStart[11]);
 }
 
-void Debug::logDMXStatus(uint16_t universe, uint8_t* data) { // for logging and stuff... makes sense?
+void Debug::logDMXStatus(uint8_t* data) { // for logging and stuff... makes sense?
   if(!first) first = millis();
   dmxFrameCounter++;
   if(dmxFrameCounter % (cfg->dmxHz.get()*10)) return;  // every 10s (if input correct and stable)
