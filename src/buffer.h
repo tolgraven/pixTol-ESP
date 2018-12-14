@@ -8,24 +8,30 @@
 #include "log.h"
 // #include <NeoPixelBrightnessBus.h> //get rid asap, for unit testing...
 
-// template<typename T>
-class Buffer {
+// will reasonably want:
+// uint8_t, uint16_t, int (for deltas), float
+// likely gotta mod lots for anything but bytes to actually function tho...
+template<class T>
+class iBuffer {
   public:
-    Buffer(): Buffer("Buffer", 1, 512) {}
-    Buffer(uint8_t* dataPtr, uint16_t fieldCount):
-      Buffer("Buffer", 1, fieldCount, dataPtr) {}
-    Buffer(Buffer& buffer, uint16_t numFields, uint16_t offset = 0):
-      Buffer(buffer.id(), buffer.fieldSize(), numFields, buffer.get(offset), true) {}
-    Buffer(const String& id, uint8_t fieldSize, uint16_t fieldCount,
-           uint8_t* dataPtr = nullptr, bool copy = false):
-      _id(id), _fieldSize(fieldSize), _fieldCount(fieldCount),
-      // data(dataPtr), ownsData(!dataPtr), field(std::vector<Field*>(fieldCount, fieldSize)) {
-      data(dataPtr), ownsData(!dataPtr || copy) {
-      // data(dataPtr), ownsData(!dataPtr) {
-        if(!data) data = new uint8_t[length()]{0};
-        if(ownsData) { // oh right, does this then clear the memory at that ptr location I guess? welp, explains...
-          // LN.logf(__func__, LoggerNode::DEBUG, "%s in charge of its data, fieldSize %u, fieldCount %u, length %u",
-          //     _id.c_str(), _fieldSize, _fieldCount, length());
+    iBuffer(): iBuffer("Buffer", 1, 512) {}
+    iBuffer(T* dataPtr, uint16_t fieldCount):
+      iBuffer("Buffer", 1, fieldCount, dataPtr) {}
+    iBuffer(iBuffer& buffer, uint16_t numFields, uint16_t offset = 0):
+      iBuffer(buffer.id(), buffer.fieldSize(), numFields, buffer.get(offset), true) {}
+    iBuffer(const String& id, uint8_t fieldSize, uint16_t fieldCount,
+           T* dataPtr = nullptr, bool copy = false):
+      _id(id), _fieldSize(fieldSize), _fieldCount(fieldCount), data(dataPtr),
+      ownsData(!dataPtr || copy) {
+      // ownsData(!dataPtr), field(std::vector<Field*>(fieldCount, fieldSize)) {
+        if(!data) data = new uint8_t[length()]{0}; //alloc mem if not passed valid ptr
+        if(ownsData) {
+          // // lg.dbg(String(_id.c_str() + " in charge of its data, fieldSize " + _fieldSize,
+          // // lg.dbg(String(_id + " owns its data. fieldSize " + _fieldSize,
+          // //       ", fieldCount " + _fieldCount + ", length " + length()));
+          // // lg.dbg(_id + " owns its data. fieldSize " + fieldSize,
+          // lg.dbg(_id + " owns its data. fieldSize " + fieldSize);
+          //     // ", fieldCount " + fieldCount + ", length " + length());
           data = new uint8_t[length()]{0};
         }
         if(dataPtr && copy) memcpy(data, dataPtr, length());
@@ -33,9 +39,8 @@ class Buffer {
         // vfield.reserve(fieldCount);
         // for(auto i=0; i<_fieldCount; i++) vfield.emplace_back(data, fieldSize, i);
     }
-    ~Buffer() {
-      // LN.logf(__func__, LoggerNode::DEBUG, "%s deleted.", _id.c_str());
-      if(ownsData) delete[] data;
+    ~iBuffer() { // lg.logf(__func__, Log::DEBUG, "%s deleted.", _id.c_str());
+      if(ownsData) delete[] data; //maybe some ext counter to log state of buffers dunno
       // vfield.clear();
     }
 
@@ -60,22 +65,34 @@ class Buffer {
     }
 
     // dun work doing partial updates unless copying, obviously.
-    Buffer& set(uint8_t* newData, uint16_t copyLength = 0, uint16_t readOffset = 0, uint16_t writeOffset = 0, bool autoLock = true) {
-      copyLength = copyLength && copyLength < length()? copyLength: length(); //use internal size unless specified
-      if(ownsData) memcpy(data + writeOffset, newData + readOffset, copyLength); // watch out offset, if using to eg skip past fnChannels then breaks
+    // this should surely be changed from bytes to fields??
+    // or have setRaw(T*...) / set(Buffer...)
+    iBuffer& set(T* newData, uint16_t copyLength = 0, uint16_t readOffset = 0, uint16_t writeOffset = 0, bool autoLock = true) {
+      copyLength = copyLength && copyLength < length() - readOffset? copyLength - readOffset: length(); //use internal size unless specified
+      // ^ XXX also check writeoffset...
+      if(ownsData)
+        memcpy(data + writeOffset, newData + readOffset, copyLength); // watch out offset, if using to eg skip past fnChannels then breaks
       else {
-        uint8_t* writeAt = data + writeOffset;
-        writeAt = newData + readOffset; // bc target shouldnt be offset... but needed for if buffer arrives in multiple dmx unis or whatever...  but make sure "read-offset" done in-ptr instead...
+        // T* writeAt = data + writeOffset;
+        data = newData + readOffset; // bc target shouldnt be offset... but needed for if buffer arrives in multiple dmx unis or whatever...  but make sure "read-offset" done in-ptr instead...
       }
-
       updatedBytes += copyLength; //or we count in fields prob?
       if(updatedBytes >= length() && autoLock) lock();
       else dirty = true; //XXX maybe no good, might have updated with some garbage prev and redone?
       return *this;
     }
-    Buffer& set(Buffer& from, uint16_t length = 0, uint16_t readOffset = 0, uint16_t writeOffset = 0, bool autoLock = true) {
+    iBuffer& set(iBuffer& from, uint16_t length = 0, uint16_t readOffset = 0, uint16_t writeOffset = 0, bool autoLock = true) {
       set(from.get(), length, readOffset, writeOffset, autoLock);
       return *this;
+    }
+    //will be real set() later
+    iBuffer& setByField(iBuffer& from, uint16_t numFields = 0, uint16_t readOffsetField = 0, uint16_t writeOffsetField = 0, bool autoLock = true) {
+      set(from.get(), numFields * fieldSize(), readOffsetField * fieldSize(), writeOffsetField * fieldSize(), autoLock);
+      return *this;
+    }
+    T* get(uint16_t byteOffset = 0) { //does raw offset make much sense ever? still, got getField.get() so...
+      if(!data || byteOffset >= length()) outOfBounds();
+      return data + byteOffset;
     }
 
     void setField(const Field& source, uint16_t fieldIndex) { //XXX also set alpha etc - really copy entire field, but just grab data at ptr
@@ -83,10 +100,17 @@ class Buffer {
       memcpy(data + fieldIndex * _fieldSize, source.get(), _fieldSize);
       updatedBytes += _fieldSize;
     }
-
-    void lock() { // finalize keyframe?, at that point can be flushed or interpolated against
-      dirty = false;
-      updatedBytes = 0;
+    Field& getField(uint16_t fieldIndex) {
+      if(!data || fieldIndex >= _fieldCount) fieldIndex = 0; //XXX makes no sense?
+      return vfield[fieldIndex];
+    }
+    Field& adjustField(int fieldIndex, const String& action, uint8_t value) {
+      // XXX
+      return vfield[fieldIndex];
+    }
+    iBuffer& fill(const Field& source, uint16_t from = 0, uint16_t to = 0) {
+      to = to? to: fieldCount(); // 0 means entire
+      for(auto f = from; f < to; f++) setField(source, f);
     }
 
     bool ready() { return dirty; }
@@ -117,28 +141,37 @@ class Buffer {
     // }
 
     // nice this! will need equiv over Field/Color later.
-    Buffer& mix(Buffer& other, std::function<uint8_t(uint8_t, uint8_t)> op) { // could auto this even or?
-      uint8_t* otherData = other.get();
+    iBuffer& mix(iBuffer& other, std::function<uint8_t(uint8_t, uint8_t)> op) { // could auto this even or?
+      T* otherData = other.get();
       for(auto i=0; i < length(); i++) data[i] = op(data[i], otherData[i]);
       return *this;
     }
-    // Buffer& operator+(const Buffer& other) {
-    Buffer& add(Buffer& other)  { return mix(other, [](uint8_t a, uint8_t b) {
+    // iBuffer& operator+(const iBuffer& other) {
+    iBuffer& add(iBuffer& other) { return mix(other, [](uint8_t a, uint8_t b) {
         return (uint8_t)constrain((int)a + (int)b, 0, 255); }); }
-    Buffer& sub(Buffer& other)  { return mix(other, [](uint8_t a, uint8_t b) {
+    // iBuffer& addBounce(iBuffer& other) { return mix(other, [](uint8_t a, uint8_t b) {
+    //     return (uint8_t)constrain((int)a + (int)b, 0, 255); }); }
+    iBuffer& sub(iBuffer& other) { return mix(other, [](uint8_t a, uint8_t b) {
         return (uint8_t)constrain((int)a - (int)b, 0, 255); }); }
-    Buffer& avg(Buffer& other)  { return mix(other, [](uint8_t a, uint8_t b) {
-        return (uint8_t)((int)a + (int)b) / 2; }); }
-    Buffer& htp(Buffer& other)  { return mix(other, [](uint8_t a, uint8_t b) {
+    // iBuffer& subBounce(iBuffer& other) { return mix(other, [](uint8_t a, uint8_t b) {
+    //     return (uint8_t)constrain((int)a - (int)b, 0, 255); }); }
+    iBuffer& avg(iBuffer& other, bool ignoreZero = true) {
+      return mix(other, [ignoreZero](uint8_t a, uint8_t b) {
+        // return (uint8_t)(((int)a + (int)b) / 2); }); } //watch for overflows, got me once...
+        uint8_t divisor = 2;
+        if(ignoreZero && (a + b == a || a + b == b))
+          divisor = 1;
+        return (uint8_t)(((int)a + b) / divisor); }); }
+    iBuffer& htp(iBuffer& other) { return mix(other, [](uint8_t a, uint8_t b) {
         return max(a, b); }); }
-    Buffer& ltp(Buffer& other)  { return mix(other, [](uint8_t a, uint8_t b) {
+    iBuffer& ltp(iBuffer& other) { return mix(other, [](uint8_t a, uint8_t b) {
         return b; }); }
-    Buffer& lotp(Buffer& other) { // only for values above 0, or would always end at zero when blending with init frame of 0. Tho if was perfectly lining up sacn+artnet+whatever else and doing everything frame by frame, sure. but yeah nah.
-      return mix(other, [](uint8_t a, uint8_t b) {
-        if(a && b) return min(a, b); //both above zero
-        else if(a && !b) return a;
-        else if(!a && b) return b;
-        else return a;
+    iBuffer& lotp(iBuffer& other, bool ignoreZero = true) { // only for values above 0, or would always end at zero when blending with init frame of 0. Tho if was perfectly lining up sacn+artnet+whatever else and doing everything frame by frame, sure. but yeah nah.
+      return mix(other, [ignoreZero](uint8_t a, uint8_t b) {
+        if(!ignoreZero || (a && b)) return min(a, b); //both above zero
+        if(a && !b) return a;
+        if(!a && b) return b;
+        return a; //0
         });
     }
 
@@ -157,16 +190,20 @@ class Buffer {
     uint8_t _fieldSize;
     uint16_t _fieldCount;
     bool ownsData;
-    uint16_t updatedBytes = 0;
-    uint8_t* data = nullptr;
-    // Field* field = nullptr;
-    // std::vector<Field>* field;
-    // std::vector<Field> vfield; // empty
+    uint16_t updatedBytes = 0; //rename updatedFields?
+    T* data = nullptr;
+    std::vector<Field> vfield; // empty
     float alpha = 1.0; //or weight, or something...
     bool dirty = true;
   private:
 };
 
+using Buffer =      iBuffer<uint8_t>;
+using ByteBuffer =  iBuffer<uint8_t>;
+using Buffer8 =     iBuffer<uint8_t>;
+using BufferInt =   iBuffer<int>;
+using Buffer16 =    iBuffer<uint16_t>;
+using BufferFloat = iBuffer<float>;
 
 class PixelBuffer: public Buffer {
   private:
