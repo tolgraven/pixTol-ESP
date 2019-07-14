@@ -1,13 +1,13 @@
 {
-  "name": "pixtol-2",
-  "device_id": "pixtol-2",
+  "name": "pixtol-5",
+  "device_id": "pixtol-5",
   "device_stats_interval": 300,
   "wifi": {
-    "ssid": "TBA",
-    "password": "dubtechno"
+    "ssid": "roke telkom: morally bankrupt",
+    "password": "microhouse"
   },
   "mqtt": {
-    "host": "nu",
+    "host": "192.168.5.62",
     "base_topic": "pixtol/",
     "auth": false
   },
@@ -22,7 +22,7 @@
     "dmx_hz": 40,
 		"mirror_second_half": false,
     "folded_alternating": false,
-		"led_count": 125,
+		"led_count": 120,
 		"bytes_per_pixel": 4,
 		"starting_universe": 2
   }
