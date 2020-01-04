@@ -1,13 +1,16 @@
 #pragma once
 
-#include <Homie.hpp>
-#include <LoggerNode.h>
+/* #include <Homie.hpp> */
+/* #include <LoggerNode.h> */
+#include "log.h"
 
-class BatteryNode: public HomieNode {
+/* class BatteryNode: public HomieNode { */
+class BatteryNode {
 public:
-  BatteryNode(): HomieNode("Battery", "charge") {}
+  /* BatteryNode(): HomieNode("Battery", "charge") {} */
+  BatteryNode() {}
   BatteryNode(uint16_t readInterval, int cutoffLevel):
-    HomieNode("Battery", "charge"),
+    /* HomieNode("Battery", "charge"), */
     interval(readInterval),
     cutoff(cutoffLevel)
   {}
@@ -19,10 +22,10 @@ public:
     rollingAverageCharge = lastCharge;
     status = lastCharge > cutoff? Safe: Danger;
 
-    advertise("level");
-    advertise("cutoff").settable();
-    advertise("safe");
-    LN.logf("Battery", LoggerNode::INFO, "BatteryNode initialized.");
+    /* advertise("level"); */
+    /* advertise("cutoff").settable(); */
+    /* advertise("safe"); */
+    lg.logf("Battery", Log::INFO, "BatteryNode initialized.");
   }
 
   void loop() {
@@ -52,15 +55,15 @@ private:
 
     if(lastCharge < cutoff-100 || rollingAverageCharge < cutoff) {
       if(lastStatus == Safe)
-        LN.logf("Battery", LoggerNode::ERROR, "Charge CRITICAL, %d, prepare to shutdown...", rollingAverageCharge);
+        lg.logf("Battery", Log::ERROR, "Charge CRITICAL, %d, prepare to shutdown...", rollingAverageCharge);
       status = Danger; // then if remains there for a few minutes, shut off stuff using battery.
     } else {           // But guess that'd be done elsewhere after polling this object? Rather than passing callback or some shite.
       if(lastStatus == Danger)
-        LN.logf("Battery", LoggerNode::INFO, "Charge back above cutoff! %d", rollingAverageCharge);
+        lg.logf("Battery", Log::INFO, "Charge back above cutoff! %d", rollingAverageCharge);
       status = Safe;
     }
-    setProperty("level").send(String(rollingAverageCharge));
-    if(status != lastStatus) setProperty("safe").send(String(status));
+    /* setProperty("level").send(String(rollingAverageCharge)); */
+    /* if(status != lastStatus) setProperty("safe").send(String(status)); */
 
     lastStatus = status;
   }
