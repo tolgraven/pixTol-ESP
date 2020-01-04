@@ -47,87 +47,79 @@ class Field {
   // }; Alpha alpha;
 
   public:
-  Field() {}
-  Field(uint8_t size): _size(size) {}
-  // Field(uint8_t fieldValue, uint8_t size = 1, float alpha = 1.0): // Field(&fieldData, FieldSize::Single, 1.0, true) {}
-  //   Field(&fieldValue, size, 0, 1.0, true) {}
-  // Field(Buffer* bufferStart, uint8_t index, float alpha = 1.0, bool copy = false):
-    // ^ this would be smartest (easy bounds checking, already know size, etc)
-    // but how avoid mutual dependence?
-  Field(uint8_t* bufferStart, uint8_t size, uint8_t fieldIndex = 0, float alpha = 1.0, bool copy = false):
-    _size(size), alpha(alpha), ownsData(copy) {
-      set(bufferStart, fieldIndex);
+  /* Field() {} */
+  Field(uint8_t size): Field(new uint8_t[size], size) { } // noo go gets to messy if we fuck with own allocs or smart ptrs
+  Field(uint8_t* bufferStart, uint8_t size, uint16_t fieldIndex = 0, float alpha = 1.0, bool copy = false):
+    _size(size) {
+      setPtr(bufferStart, fieldIndex);
   }
-  ~Field() { if(ownsData) delete[] data; }; //how goz dis when we dont created array, just using ptr?
+  Field(const Field& rhs): Field(rhs.get(), rhs.size()) {  }
+  ~Field() {}; // ~Field() { if(ownsData) delete[] data; }; //how goz dis when we dont created array, just using ptr?
 
-  bool operator==(const Field& other) const { return memcmp(other.get(), data, _size); } //XXX add alpha check n shite
-  bool operator!=(const Field& other) const { return !(*this == other); }
-  bool operator<(const Field& other) const { return (average() < other.average()); }
-  bool operator<=(const Field& other) const { return (average() <= other.average()); }
-  bool operator>(const Field& other) const { return (average() > other.average()); }
-  bool operator>=(const Field& other) const { return (average() >= other.average()); }
+  bool operator==(const Field& rhs) const { return memcmp(rhs.get(), data, _size); } //XXX add alpha check n shite
+  bool operator!=(const Field& rhs) const { return !(*this == rhs); }
+  bool operator<(const Field& rhs) const { return (average() < rhs.average()); }
+  bool operator<=(const Field& rhs) const { return (average() <= rhs.average()); }
+  bool operator>(const Field& rhs) const { return (average() > rhs.average()); }
+  bool operator>=(const Field& rhs) const { return (average() >= rhs.average()); }
 
+  uint8_t* operator[](uint8_t index) { return get(index); } //eh prob not so reasonable heh. but if want to be able to do f[0] = 5; f[1] = 30;
+  Field& operator=(const Field& rhs) { setCopy(rhs.get()); return *this; } // lighten
   Field& operator+(const uint8_t delta) { value(delta, true); return *this; } // lighten
-  Field& operator+(const Field& other) {
-    uint8_t field[_size];
-    for(auto p=0; p<_size; p++) field[p] = constrain((int)data[p] + *other.get(p), 0, 255);
-    return *(new Field(field, _size));
-  }
+  /* Field& operator+(const Field& other) { */
+  /*   uint8_t field[_size]; */
+  /*   for(auto p=0; p<_size; p++) field[p] = constrain((int)data[p] + *other.get(p), 0, 255); */
+  /*   return *(new Field(field, _size)); //XXX surely dumb and dangerous memleak fiesta?? */
+  /* } */
   Field& operator++() { return value(1); } // lighten
   // WRONG, cant change in-place... Field& operator-(const uint8_t delta) { return value(delta, false); } // darken
   // Field& operator-(const uint8_t delta) {  } // darken
-  Field& operator-(const Field& other) {
-    uint8_t field[_size];
-    for(auto p=0; p<_size; p++) field[p] = constrain((int)data[p] - *other.get(p), 0, 255);
-    return *(new Field(field, _size)); //surely dumb and dangerous memleak fiesta??
-  }
+  //
+  /* Field& operator-(const Field& other) { */
+  /*   uint8_t field[_size]; */
+  /*   for(auto p=0; p<_size; p++) field[p] = constrain((int)data[p] - *other.get(p), 0, 255); */
+  /*   return *(new Field(field, _size)); //XXX surely dumb and dangerous memleak fiesta?? */
+  /*   //return *Field(field, _size); */
+  /* } */
   Field& operator--() { return value(-1); } // darken
-
 
   // might be overkill and that should do this directly in Buffer, but let's see
   Field& mix(Field& other, std::function<uint8_t(uint8_t, uint8_t)> op, bool perByte = true) { // could auto this even or?
     uint8_t* otherData = other.get();
     if(perByte) {
       for(auto i=0; i<_size; i++) data[i] = op(data[i], otherData[i]);
-    } else {
-      // compare "total" value and use accordingly...
+    } else { // compare "total" value and use accordingly...
     }
     return *this;
   }
   Field& add(Field& other) {
-    return mix(other, [](uint8_t a, uint8_t b) {
-        return constrain((int)a + b, 0, 255); });
+    return mix(other, [](uint8_t a, uint8_t b) { return constrain((int)a + b, 0, 255); });
   }
   Field& sub(Field& other) {
-    return mix(other, [](uint8_t a, uint8_t b) {
-        return constrain((int)a - b, 0, 255); });
+    return mix(other, [](uint8_t a, uint8_t b) { return constrain((int)a - b, 0, 255); });
   }
   Field& avg(Field& other, bool ignoreZero = true) {
     return mix(other, [ignoreZero](uint8_t a, uint8_t b) {
-      uint8_t divisor = 2;
-      if(ignoreZero && (a + b == a || a + b == b))
-        divisor = 1;
+      uint8_t divisor = ignoreZero && (a + b == a || a + b == b)? 1: 2;
       return (uint8_t)(((int)a + b) / divisor); });
   }
   Field& htp(Field& other, bool perByte = true) {
     if(!perByte) {
       uint8_t a = average(), b = other.average();
-      if(b > a) set(other.get());
+      if(b > a) setCopy(other.get());
     }
-    else return mix(other, [](uint8_t a, uint8_t b) {
-        return max(a, b); });
+    else return mix(other, [](uint8_t a, uint8_t b) { return max(a, b); });
   }
   Field& ltp(Field& other) {
-    return set(other.get()); //eh, i guess? return rightmost, for lack of timing metadata
+    return setCopy(other.get()); //eh, i guess? return rightmost, for lack of timing metadata
   }
   Field& lotp(Field& other, bool perByte = true) {
     if(!perByte) {
       uint8_t a = average(), b = other.average();
-      if(b < a) return set(other.get());
+      if(b < a) return setCopy(other.get());
       else return *this;
     }
-    else return mix(other, [](uint8_t a, uint8_t b) {
-        return min(a, b); });
+    else return mix(other, [](uint8_t a, uint8_t b) { return min(a, b); });
   }
 
   uint8_t average() const { //average value of field elements or like?
@@ -135,8 +127,8 @@ class Field {
     for(auto p=0; p<_size; p++) cum += data[p];
     return (cum / _size);
   }
-  Field& value(int adjust) { //still 255 range, but +/-...
-    for(auto p=0; p<_size; p++) data[p] = constrain((int)data[p] + adjust, 0, 255);
+  Field& value(int adjustment) { //still 255 range, but +/-...
+    for(auto p=0; p<_size; p++) data[p] = constrain((int)data[p] + adjustment, 0, 255);
     return *this;
   }
   Field& value(float absolute) {
@@ -151,26 +143,21 @@ class Field {
 
 
   uint8_t* get(uint8_t offset = 0) const {
-    if(offset > 0 && offset < _size) return data + offset;
+    return data + offset; //call oob or something otherwise.
   }
-  Field& set(uint8_t* newData) { //set data by copy
+  Field& setCopy(uint8_t* newData) { //set data by copy. also need a copy constructor
     for(auto i=0; i<_size; i++) data[i] = newData[i];
+    return *this;
   }
-  Field& set(uint8_t* bufferStart, uint8_t fieldIndex) { //set ptr, or copy block
-    if(ownsData) {
-      if(!data) data = new uint8_t[_size];
-      memcpy(data, bufferStart + fieldIndex * _size, _size);
-    } else  data = bufferStart + fieldIndex * _size;
+  Field& setPtr(uint8_t* bufferStart, uint16_t fieldIndex) { //set ptr, or copy block
+    data = bufferStart + fieldIndex * _size;
+    return *this;
   }
-  uint8_t size(uint8_t size = 0) {
-    if(size) {
-      _size = size;
-      // XXX ensure we can actually access the underlying memory if expanding size, tho easier said than done...
-      // also if eg changing a bunch of fields to represent an underlyiong buffer differently,
-      // starting data ptrs would have to be updated as well.
-    }
-    return _size;
+  Field& setSubField(uint8_t value, uint16_t index) { //set subfield
+    data[index] = value;
+    return *this;
   }
+  uint8_t size() const { return _size; }
 
 
   enum AlphaMode { MIX = 0, WEIGHT };
