@@ -160,6 +160,10 @@ template<class T> class iBuffer { //rename tBuffer?
         return a; //0
       });
     }
+    /* T averageInBuffer(uint16_t startField = 0, uint16_t endField = 0); //calculate avg brightness for buffer. Or put higher and averageValue? */
+    void blendUsingEnvelopeB(const iBuffer& origin, const iBuffer& target, float progress, BlendEnvelope* e = nullptr);
+    void interpolate(const iBuffer& origin, const iBuffer& target, float progress, BlendEnvelope* e = nullptr);
+    /* void interpolate(iBuffer& origin, iBuffer& target, uint8_t progress); */
 
   protected:
     String _id;
@@ -186,68 +190,23 @@ using Buffer8   = iBuffer<uint8_t>;
 /* using Buffer16  = iBuffer<uint16_t>; */
 /* using BufferF   = iBuffer<float>; */
 
+// question is I guess, do we truly need PixelBuffer if Buffer contains Fields, which can be Colors,
+// and which themselves handle blending operations?
+// Usecase prob gamma shit and geometry whatever..
 class PixelBuffer: public Buffer {
-  private:
-    uint8_t* targetData = nullptr;
-    Color* pixelData = nullptr;
-    Color* targetPixelData = nullptr; //each Color's data* points to specific section of raw buffer, so no additional overhead apart from alpha
   public:
     PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels, uint8_t* dataPtr = nullptr):
-      Buffer("PixelBuffer", bytesPerPixel, numPixels, dataPtr)
-      //, targetData(new uint8_t[length()]{0}) {} //memleak lul
-       {}
+      Buffer("PixelBuffer", bytesPerPixel, numPixels, dataPtr) {}
+    PixelBuffer(Buffer& buffer):
+      Buffer("PixelBuffer " + buffer.id(), buffer.fieldSize(), buffer.fieldCount(), buffer.get()) {}
 
-    void setTarget();
-
-    Color& setPixelColor(uint16_t pixel, const Color& color);
-    Color& getPixelColor(uint16_t pixel);
-
-    void blendWith(const PixelBuffer& buffer, float amount) { } // later add methods like overlay, darken etc
-    // void blendUsingEnvelope(uint8_t* data, BlendEnvelope& e, float progress = 1.0); // should go here eventually
-    // ^^ so since will keep buffers last, target, and current (interpolated, to output)
-    // sep, this shouldn't mod in-place but return a new PixelBuffer.
-    // but if targetData already in here, no need pass data at least. Just set core data, targetData,
-    // call this getting new buffers...
-    // PixelBuffer& getInterpolated(BlendEnvelope& e, float progress = 1.0); // should go here eventually
-    void blendUsingEnvelope(PixelBuffer& origin, PixelBuffer& target, BlendEnvelope& e, float progress) { // XXX also pass fraction in case interpolating >2 frames
-      int pixel = 0;
-      // Buffer* result = new Buffer("current", _fieldSize, fieldCount);
-      // float brightnessFraction = 255 / (brightness? brightness: 1); // ahah can't believe divide by zero got me
-
-      for(int t=0; t<length(); t+=_fieldSize, pixel++) {
-        // if(_fieldSize == 3) { // when this is moved to input->pixelbuffer stage there will be multiple configs: format of input (RGB, RGBW, HSL etc) and output (WS/SK). So all sources can be used with all endpoints.
-        //   RgbColor targetColor = RgbColor(target[t+0], target[t+1], target[t+2]);
-        //   RgbColor originColor = RgbColor(origin[t+0], origin[t+1], origin[t+2]);
-        //   bool brighter = targetColor.CalculateBrightness() >
-        //                   originColor.CalculateBrightness(); // handle any offset from lowering dimmer
-        //   color = RgbColor::LinearBlend(originColor, targetColor,
-        //           (brighter? e.A(progress): e.R(progress)));
-        // } else
-        if(_fieldSize == 4) {
-          RgbwColor originColor = RgbwColor(*origin.get(t+0), *origin.get(t+1), *origin.get(t+2), *origin.get(t+3));
-          RgbwColor targetColor = RgbwColor(*target.get(t+0), *target.get(t+1), *target.get(t+2), *target.get(t+3));
-          bool brighter = targetColor.CalculateBrightness() > originColor.CalculateBrightness(); // handle any offset from lowering dimmer
-          RgbwColor color = RgbwColor::LinearBlend(originColor, targetColor,
-                  (brighter? e.A(progress): e.R(progress)));
-          data[t+0] = color.G; // grbw? since writing dir to buf...
-          data[t+1] = color.R;
-          data[t+2] = color.B;
-          data[t+3] = color.W;
-          // result->set(&color.R, 1, 0, 0);
-          // result->set(&color.G, 1, 0, 1);
-          // result->set(&color.B, 1, 0, 2);
-          // result->set(&color.W, 1, 0, 3);
-        }
-      }
-    }
+    /* Color setPixelColor(uint16_t pixel, const Color& color); */
+    /* Color getPixelColor(uint16_t pixel); */
 
     PixelBuffer& getScaled(uint16_t numPixels); // scale up or down... later xy etc
+    //Color averageColor(int startPixel = -1, int endPixel = -1) {} // -1 = no subset
 
-    Color averageColor(int startPixel = -1, int endPixel = -1) {} // -1 = no subset
-
-
-  //based on adafruit, interpolate between two input buffers, gamma- and color-correcting the interpolated result with 16-bit dithering
   //XXX how make this work with overshooting? compute delta for average timeBetweenFrames?
-  void interpolate(uint8_t *was, uint8_t *target, uint8_t progress);
-  void tickInterpolation(uint32_t elapsed); // scheduler should keep track of timing, just tell how long since last tick...
+  GammaCorrection* gamma = nullptr;
+  void interpolate(PixelBuffer* origin, PixelBuffer* target, float progress, GammaCorrection* gamma);
 };

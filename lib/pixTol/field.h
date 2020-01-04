@@ -160,16 +160,22 @@ class Field {
   uint8_t size() const { return _size; }
 
 
-  enum AlphaMode { MIX = 0, WEIGHT };
-  void blend(const Field& target, float progress = 0.5, uint8_t alphaMode = MIX) {
-    progress = constrain(progress, 0.0, 1.0); //tho past-1.0 should also work eventually
-    if(alphaMode == MIX) {
-      alpha = (alpha * progress) + target.alpha * (1.0 - progress);
-    } else if(alphaMode == WEIGHT) {
-    } // XXX a blend weighting by (not merely mixing) alpha
-    // ^^ wtf does mean??
+  void blend(const Field& target, uint8_t progress) {
+    uint16_t targetWeight = progress + 1,
+             ourWeight = 257 - targetWeight;
     for(uint8_t p = 0; p < _size; p++) {
-      data[p] = data[p] + ((*target.get(p) - data[p]) * progress); // works because rolls over I guess
+      data[p] = ((data[p] * ourWeight) + (*target.get(p) * targetWeight)) >> 8; // works because rolls over I guess
+    }
+  }
+  enum AlphaMode { MIX = 0, WEIGHT };
+  /* void blend(const Field& target, float progress = 0.5, uint8_t alphaMode = MIX) { */
+    /* if(alphaMode == MIX) { // alpha = (alpha * progress) + target.alpha * (1.0 - progress); */
+    /* } else if(alphaMode == WEIGHT) { } // XXX a blend weighting by (not merely mixing) alpha */
+  void blend(const Field& target, float progress = 0.5) {
+    /* progress = constrain(progress, 0.0, 1.0); //tho past-1.0 should also work eventually */
+    for(uint8_t p = 0; p < _size; p++) {
+      /* data[p] = data[p] + ((*target.get(p) - (int)data[p]) * progress); // works because rolls over I guess */
+      data[p] = data[p] + (*target.get(p) - data[p]) * progress; // works because rolls over I guess
     }
   }
   void blend(const Field& x1, const Field& y0, const Field& y1, float x = 0.5, float y = 0.5) {

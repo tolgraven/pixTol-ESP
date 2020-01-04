@@ -245,3 +245,97 @@ void iBuffer<T>::applyGain() {
 //     for(auto i=0; i<fieldSize(); i++) *--end = *--srcEnd;
 //   }
 // }
+
+template<class T>
+void iBuffer<T>::blendUsingEnvelopeB(const iBuffer<T>& origin, const iBuffer<T>& target, float progress, BlendEnvelope* e) {
+  // later fix so eg pre scale buffers if different size and whatnot
+  float  attack = e? e->A(progress): progress,
+        release = e? e->R(progress): progress;
+  uint8_t aScale = attack * 255L,
+          rScale = release * 255L;
+  for(uint16_t f=0; f < fieldCount(); f++) {
+    for(uint8_t sub=0; sub < fieldSize(); sub++) {
+    }
+  }
+  for(uint16_t i=0; i < fieldCount(); i++) { // XXX this needs tighening up. Skip fields lol put directly...
+
+    Field fOrigin = origin.getField(i);
+    Field fTarget = target.getField(i);
+    Field fCurrent = this->getField(i); // oh wait now there turns constructor -> assignment copy constructor?
+    fCurrent = fOrigin;
+    fCurrent.blend(fTarget, (fTarget > fOrigin? aScale: rScale)); // get Field for our buffer, put origin in it, blend with target...
+  }
+}
+
+  //fade:
+  // int iR = (pixelPrev[0] * icPrev + pixelNext[0] * icNext) >> 16;
+  // off 32bit (but small) weights
+  //  iR += pResidual[0];
+  //  int r8 = __USAT(iR + 0x80, 16) >> 8;  //arm instruction clamping fucker...
+  //  pResidual[0] = iR - (r8 * 257);
+  //  so residual fully gets added back and then retrieved every frame
+  //  anf ofc aspect to more in 16 and rounding not clipping
+  //  much more natural! but necessites signed ints
+  //
+  // dont get why she's using 0xFFFF+1 as scale off millis timing though??
+  // -> because why not, use spare bitslol
+  //
+  // blabla doubling up strips for added resolution -> hell yeah
+  // but also, stay on 32 bits further.
+  // use all the space. now  8 i/o, 8 weight, 8 scale.
+  // go like 10 weight, 10 scale?
+  // also carry over scale error same way we do pixels? tho then when higher applied
+  // next time existing residual is all wrong.
+
+template<class uint8_t>
+void iBuffer<uint8_t>::interpolate(const iBuffer<uint8_t>& origin, const iBuffer<uint8_t>& target,
+                                   float progress, BlendEnvelope* e) { // input buffers being interpolated, weighting (0-255) of second buffer in interpolation
+  if(_residuals == nullptr) { // no error correction buffers
+    blendUsingEnvelopeB(origin, target, progress, e);
+    return;
+  }
+
+  uint32_t scale = constrain(getGain(), 0.0, 1.0) * 255L; // or 256, or 257 or whatever tf it is lol
+  if(scale == 0) {
+    memset(get(), 0x00, lengthBytes());
+    memset(_residuals, 0x00, lengthBytes());
+    return;
+  } /* lg.fEvery(300, 3, __func__, Log::DEBUG, "gain: %.3f, scale: %u\n", gain, scale); */
+
+  uint16_t mix16, error;          // should we add a bit of resolution? since gets compounded... wait no cause cancels hah
+  uint8_t mix8;                   // but if 0xFFFF * 0xFF we shift down 16 for mix16
+
+  uint16_t targetWeight = (uint16_t)(progress * 255L) + 1, // 1-256
+           originWeight = 257 - targetWeight;              // same. max tot 255*256 + 255*1 = 256x256. men tappar kunna gå på framen hmm
+
+  uint8_t *originPtr = origin.get(), *targetPtr = target.get(),
+          *dataPtr = this->get(), *residualsPtr = _residuals;
+
+  for(uint16_t f=0; f < fieldCount(); f++) {
+    for(uint8_t sub=0; sub < fieldSize(); sub++) {
+      uint8_t destSub = subFieldForIndex(sub); // returns sub if no mapping. Best if done earlier stage but...
+                                               // same with scale tbh - speed is all and dumb redoing same shit. So have multiple versions.
+      mix16 = (scale * (*originPtr++ * originWeight + *targetPtr++ * targetWeight)) >> 8;
+      mix8 = mix16 >> 8; //shift down 0xFFFF -> 0xFF
+      error = *residualsPtr + mix16 - ((uint16_t)mix8 << 8);  // if err+16 overflows then 8 would restore yeah? the scales back upped one clipped..
+      *(dataPtr + destSub) = (error < 256)? mix8: mix8 + 1;
+      *residualsPtr++ = error; // anything over 8bit capacity gets rolled over. but that only makes sense if looking <256...
+    }
+    dataPtr += fieldSize(); //, residualsPtr += fieldSize();
+  }
+  /* if(blackPoint != 0) { // tho guess (apart from going 0/twice) other thing might be like, 4-7 bump to 8, 3 be 0. */
+  /*   dataPtr = this->get(); // Even more jarring cutoff then tho. also shift in some white.. */
+  /*   uint8_t* dataEnd = dataPtr + lengthBytes(); //also this'll fuck up residuals. anyways */
+  /*   while(dataPtr != dataEnd) { */
+  /*     if(*dataPtr++ < blackPoint) *(dataPtr - 1) = 0; */
+  /*   } */
+  /* } */
+}
+
+
+template class iBuffer<uint8_t>;
+/* template class iBuffer<int>; */
+/* template class iBuffer<uint16_t>; */
+/* template class iBuffer<float>; */
+
+
