@@ -1,73 +1,49 @@
 #pragma once
 
+#include <lib8tion.h>
+
 #include "renderstage.h"
 #include "buffer.h"
-#include "io/strip.h"
 #include "functions.h"
 #include "log.h"
 #include "watchdog.h"
 
+/* class Timed { */
+/*   uint32_t start = 0, now = 0; */
+/*   uint32_t updates = 0, runs = 0; */
+/* }; */
+
 class Renderer {
   private:
-    // std::map<String, PixelBuffer*> buffer; // out now pointed to strip, but/so why not just use s->buffer->interpolate like
-    // Outputter* output = nullptr;
-    uint32_t _keyFrameInterval, _lastKeyframe;
+    String _id;
+    uint32_t _keyFrameInterval, _lastKeyframe = 0, _lastFrame = 0;
+    const uint32_t keyFrameAdjustmentInterval = 1000000;
+
+    static void mixBuffers(Buffer& lhs, Buffer& rhs, uint8_t blendType = 0);
   public:
-    PixelBuffer *current, *origin, *target; // *delta = nullptr;
+    uint32_t _numKeyFrames = 0, _numFrames = 0;
+    float _lastProgress = 0;
     Buffer* controls = nullptr;
     Functions* f = nullptr;
-    Strip* s = nullptr;
+    Buffer *origin, *target, *current;
 
-    Renderer(uint32_t keyFrameInterval, Outputter& o):
-      _keyFrameInterval(keyFrameInterval), s(static_cast<Strip*>(&o)) {
-      lg.dbg("Creating renderer");
-      current = new PixelBuffer(o.fieldSize(), o.fieldCount());
-      origin = new PixelBuffer(o.fieldSize(), o.fieldCount());
-      target = new PixelBuffer(o.fieldSize(), o.fieldCount());
-      // for(auto* pb: {current, origin, target}) {
-      //   pb = new PixelBuffer(o.fieldSize(), o.fieldCount());
-      // } // XXX why the fuck doesnt this work, fuck auto
-      f = new Functions(keyFrameInterval, o);
-      controls = new Buffer("Controls", 1, f->numChannels);
+    Renderer(const String& id, uint32_t keyFrameInterval, Buffer& model):
+      _id(id), _keyFrameInterval(keyFrameInterval) {
+
+      lg.dbg("Create renderer for " + model.id() + ", size " + model.fieldSize() + "/" + model.fieldCount());
+      current = new Buffer(_id + " current", model.fieldSize(), model.fieldCount());
+      origin = new Buffer(_id + " origin", model.fieldSize(), model.fieldCount());
+      target = new Buffer(_id + " target", model.fieldSize(), model.fieldCount());
+      lg.f(__func__, Log::DEBUG, "curr at %p ptr %p\n", current, current->get());
+      f = new Functions(*current); // current (w pixelbuf shared with Output) is target
+      // reason stands that here (or rather when creating here) is when we patch in fns so create a Functions, specify which, mapping, passing current as buffer target
+      controls = new Buffer("Controls", 1, f->numChannels); // for merging fn sources
     }
+  void setKeyFrameInterval(uint32_t newInterval) { _keyFrameInterval = newInterval; }
+  uint32_t getKeyFrameInterval() { return _keyFrameInterval; }
 
-  void updateTarget(PixelBuffer& mergeIn, uint8_t blendType = 0, bool mix = false) {
-    lwd.stamp(PIXTOL_RENDERER_UPDATE_TARGET);
-    origin->set(current->get()); //always start from current state...
-    _lastKeyframe = micros();
-    if(mix) mixBuffers(*target, mergeIn, blendType); //shouldnt actually be here - blending has been done, now chase new target...
-    else target->set(mergeIn.get());
-  }
+  void updateTarget(Buffer& mergeIn, uint8_t blendType = 0, bool mix = false);
+  void frame(float timeMultiplier = 0);
 
-  static void mixBuffers(PixelBuffer& lhs, PixelBuffer& rhs, uint8_t blendType = 0) {
-    switch(blendType) { //control via mqtt as first step tho
-      case 0: lhs.avg(rhs, true); break; //this needs split sources to really work, or off-pixels never get set
-      case 1: lhs.avg(rhs, false); break;
-      case 2: lhs.add(rhs); break;
-      case 3: lhs.sub(rhs); break;
-      case 4: lhs.htp(rhs); break;
-      case 5: lhs.lotp(rhs, true); break; //heheh oh yeah it'll never leave zero w/ current LoTP, duh. So gotta be "lowest non-0 takes precedence"
-      case 6: lhs.lotp(rhs, false); break; //heheh oh yeah it'll never leave zero w/ current LoTP, duh. So gotta be "lowest non-0 takes precedence"
-      case 7: lhs.htp(rhs); break; //heheh oh yeah it'll never leave zero w/ current LoTP, duh. So gotta be "lowest non-0 takes precedence"
-    }
-  }
-
-  void frame() {
-    lwd.stamp(PIXTOL_RENDERER_FRAME);
-    float progress = (micros() - _lastKeyframe) / (float)_keyFrameInterval; //remember to adjust stuff to interpolation can overshoot...
-    if(progress > 1.0) progress = (int)progress + 1.0f - progress; //make go back and forth instead! so 2.5 = 0.5...
-    //should do further ultra slomo sorta, explore mini interpo more...
-
-    current->blendUsingEnvelope(*origin, *target, f->e, progress);
-    // current->interpolate(origin, target, progress, gammaPtr);
-
-    // s->setBuffer(*current); //test setting per-pixel in buffer for now
-    for(auto pixel=0; pixel < s->fieldCount(); pixel++) { //guess this needed for rotate, brightness etc to work. why tho??
-      uint8_t* data = current->get(pixel * s->fieldSize());
-      RgbwColor color = RgbwColor(data[0], data[1], data[2], data[3]);
-      s->setPixelColor(pixel, color);
-    }
-    f->update(progress);
-    s->show(); // s->run();
-  }
+  Buffer& getDestination() { return *current; }
 };
