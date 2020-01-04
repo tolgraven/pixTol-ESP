@@ -1,37 +1,53 @@
 #pragma once
 
 #include <map>
-// #include <execinfo.h> // would be cool for stacktraces but not available :<
-#include <Homie.h>
-#include "config.h"
-#include "io/strip.h"
-#include "functions.h"
+#include <Arduino.h>
+#include "log.h"
+#include "watchdog.h"
+#include "buffer.h"
 
+#ifdef ESP8266
+#define STACK_END 0x3fffeb30
+#else
+#define STACK_END 0x00000000
+#endif
 
 class Debug {
-  public:
-  HomieNode* status;
-  Strip* s;
-  Functions* f;
-  ConfigNode* cfg;
-  int first = 0;
-  uint16_t dmxFrameCounter = 0;
+  uint32_t startTime = 0, lastFlush = 0;
+  uint16_t flushEverySeconds = 5;
+  uint32_t dmxFrameCounter = 0;
+  uint8_t* stackStart; //for a generalized approach...
 
-  Debug(HomieNode* status, Strip* s, Functions* f, ConfigNode* cfg):
-    status(status), s(s), f(f), cfg(cfg) {}
+  std::map<Buffer*, uint16_t> buffers;
+
+  public:
+  Debug(uint8_t* stackStartDummy):
+    stackStart(stackStartDummy) {}
 
   bool sendIfChanged(const String& property, int value);
-  void logFunctionChannels(uint8_t* dataStart, const String& id, uint8_t num = 12);
-  void logDMXStatus(uint8_t* data); // for logging and stuff... makes sense?
+  void logFunctionChannels(uint8_t* dataStart, const String& id, uint8_t expectedHz = 40, uint8_t num = 12);
+  void registerToLogEvery(Buffer& buffer, uint16_t seconds);
+  void logDMXStatus(uint8_t* data, const String& id = "SRC"); // for logging and stuff... makes sense?
   void logAndSave(const String& msg); //possible approach...  log to serial + save message, then post by LN once MQTT up
+
+  void run();
+
+  void stackAvailableLog() {
+    uint8_t stackNow = 0;
+    lg.f("Stack", Log::INFO, "From: %x, start: %x, now: %p, used: %d\n",
+        STACK_END, 0x3fffffb0, &stackNow, stackUsed());
+  }
+  uint16_t stackUsed() {
+    uint8_t stackNow = 0;
+    uint16_t stackUsed = (uint8_t*)0x3fffffb0 - &stackNow;
+    return stackUsed;
+  }
 
   enum BootStage: uint8_t { doneBOOT = 0, doneHOMIE, doneMAIN, doneONLINE };
   static int ms[doneONLINE + 1];
   static int heap[doneONLINE + 1];
 
-  static int getBootDevice(void);
-  static void resetInfoLog();
   static void bootLog(BootStage bs);
   static void bootInfoPerMqtt();
 }; // possible to get entire stacktrace in memory? if so mqtt -> decoder -> auto proper trace?
-  // or keep dev one connected to another esp forwarding...
+   // dont need if just keep connected to Pi, but...

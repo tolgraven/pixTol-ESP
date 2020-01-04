@@ -1,11 +1,5 @@
 #include "debuglog.h"
 
-// according to someone on the internet:
-// If you use std libs like std::vector, make sure to call its ::reserve() method
-// before filling it. This allows allocating only once, which reduces mem
-// fragmentation, and makes sure that there are no empty unused slots left over in
-// the container at the end.
-
 
 bool Debug::sendIfChanged(const String& property, int value) {
   static std::map<String, int> propertyValues;
@@ -14,25 +8,58 @@ bool Debug::sendIfChanged(const String& property, int value) {
     if(value == last || (value > 0.90*last && value < 1.10*last)) //XXX settable tolerance...
       return false;
   }
-  status->setProperty(property).send(String(value)); //new property or new value...
+  lg.f(property, Log::INFO, "%s:  %i \n", value);
+  /* lg.flushProperty(property, String(value)); */
   propertyValues[property] = value;
   return true; //set and sent
 }
 
-void Debug::logFunctionChannels(uint8_t* dataStart, const String& id, uint8_t num) {
-  if(dmxFrameCounter % (cfg->dmxHz.get()*10)) return;
-  lg.logf(id, Log::DEBUG, "%u %u %u %u %u %d %u %u %u %u %u %d",
+void Debug::logFunctionChannels(uint8_t* dataStart, const String& id, uint8_t expectedHz, uint8_t num) {
+  /* if(dmxFrameCounter % (expectedHz * flushEverySeconds)) return; */
+
+  /* Serial.println(""); */
+  /* for(uint16_t b = 0; b < num; b++) { */
+  /*   Serial.printf("%u ", data[b]); */
+  /* } Serial.println(""); */
+  lg.f(id, Log::DEBUG, "%u %u %u %u %u %d %u %u %u %u %u %d\n",
       dataStart[0], dataStart[1], dataStart[2], dataStart[3], dataStart[4], dataStart[5], dataStart[6],
       dataStart[7], dataStart[8], dataStart[9], dataStart[10], dataStart[11]);
 }
 
-void Debug::logDMXStatus(uint8_t* data) { // for logging and stuff... makes sense?
-  if(!first) first = millis();
-  dmxFrameCounter++;
-  if(dmxFrameCounter % (cfg->dmxHz.get()*10)) return;  // every 10s (if input correct and stable)
+void Debug::registerToLogEvery(Buffer& buffer, uint16_t seconds) {
+  if(buffers.find(&buffer) != buffers.end()) buffers[&buffer] = seconds;
 
-  uint16_t totalTime = millis() - first;
-  first = millis();
+}
+
+void Debug::run() {
+  for(auto buf: buffers) {
+    if(!((startTime / 1000000) % buf.second)) {
+      Serial.println(buf.first->id() + ":");
+      for(uint16_t b = 0; b < buf.first->lengthBytes(); b++) {
+        Serial.printf("%u ", buf.first->get()[b]);
+      } Serial.println("");
+    }
+  }
+}
+
+void Debug::logDMXStatus(uint8_t* data, const String& id) { // for logging and stuff... makes sense?
+  dmxFrameCounter++;
+  uint32_t now = millis(), passed = now - lastFlush;
+  if(passed / 1000 < flushEverySeconds) return;
+  if(!startTime) startTime = now;
+
+  /* if(dmxFrameCounter % (cfg->dmxHz.get()*10)) return;  // every 10s (if input correct and stable) */
+  uint32_t totalTime = now - startTime;
+  lg.f("Shit", Log::DEBUG, "fps: %u, now: %u, lastFlush: %u, heap: %u, stack: %u \n",
+      dmxFrameCounter / (passed / 1000), now, lastFlush, ESP.getFreeHeap(), stackUsed());
+  lastFlush = now;
+  logFunctionChannels(data, id);
+
+  Serial.println(id + ":");
+  for(uint16_t b = 12; b < 64; b++) {
+    Serial.printf("%u ", data[b]);
+  } Serial.println("");
+
   // static const String keys[] = { "freeHeap", "heapFragmentation", "maxFreeBlockSize", "fps", "droppedFrames",
   //   "dimmer.base", "dimmer.force", "dimmer.out"};
   // static const std::function<int()> getters[] =
@@ -42,46 +69,24 @@ void Debug::logDMXStatus(uint8_t* data) { // for logging and stuff... makes sens
   // [f]() {return f->outBrightness}};
   // static map<String, string> table(make_map(keys, getters));
 
-  sendIfChanged("freeHeap", ESP.getFreeHeap());
-  sendIfChanged("heapFragmentation", ESP.getHeapFragmentation());
-  sendIfChanged("maxFreeBlockSize", ESP.getMaxFreeBlockSize());
-  sendIfChanged("fps", dmxFrameCounter / (totalTime / 1000));
-  sendIfChanged("droppedFrames", s->droppedFrames);
+  /* sendIfChanged("freeHeap", ESP.getFreeHeap()); */
+  /* sendIfChanged("heapFragmentation", ESP.getHeapFragmentation()); */
+  /* sendIfChanged("maxFreeBlockSize", ESP.getMaxFreeBlockSize()); */
+  /* sendIfChanged("fps", dmxFrameCounter / (totalTime / 1000)); */
 
-  sendIfChanged("dimmer.base", f->chan[chDimmer]->getByte());
-  sendIfChanged("dimmer.force", f->chOverride[chDimmer]); //whyyy this gets spammed when no change?
-  sendIfChanged("dimmer.out", f->outBrightness);
-  sendIfChanged("dimmer.strip", s->brightness);
-  dmxFrameCounter = 0;
+  /* sendIfChanged("droppedFrames", s->droppedFrames); */
+
+  /* sendIfChanged("dimmer.base", f->chan[chDimmer]->getByte()); */
+  /* sendIfChanged("dimmer.force", f->chOverride[chDimmer]); //whyyy this gets spammed when no change? */
+  /* sendIfChanged("dimmer.out", f->outBrightness); */
+  /* sendIfChanged("dimmer.strip", s->brightness); */
+  dmxFrameCounter = 0; //illegal instruction this lol what
 }
 
 void Debug::logAndSave(const String& msg) { //possible approach...  log to serial + save message, then post by LN once MQTT up
   // cause now lose info if never connects...
 }
 
-int Debug::getBootDevice(void) {
-  int bootmode;
-  asm ("movi %0, 0x60000200\n\t"
-      "l32i %0, %0, 0x118\n\t"
-      : "+r" (bootmode) /* Output */
-      : /* Inputs (none) */
-      : "memory" /* Clobbered */);
-  return ((bootmode >> 0x10) & 0x7);
-}
-void Debug::resetInfoLog() {
-  switch (ESP.getResetInfoPtr()->reason) {
-    // USUALLY OK ONES:
-    case REASON_DEFAULT_RST:      lg.logf("Reset", Log::DEBUG, "Power on"); break; // normal power on
-    case REASON_SOFT_RESTART:     lg.logf("Reset", Log::DEBUG, "Software/System restart"); break;
-    case REASON_DEEP_SLEEP_AWAKE: lg.logf("Reset", Log::DEBUG, "Deep-Sleep Wake"); break;
-    case REASON_EXT_SYS_RST:      lg.logf("Reset", Log::DEBUG, "External System (Reset Pin)"); break;
-    // NOT GOOD AND VERY BAD:
-    case REASON_WDT_RST:          lg.logf("Reset", Log::DEBUG, "Hardware Watchdog"); break;
-    case REASON_SOFT_WDT_RST:     lg.logf("Reset", Log::DEBUG, "Software Watchdog"); break;
-    case REASON_EXCEPTION_RST:    lg.logf("Reset", Log::DEBUG, "Exception"); break;
-    default:                      lg.logf("Reset", Log::DEBUG, "Unknown"); break;
-  }
-}
 
 void Debug::bootLog(BootStage bs) {
   Debug::ms[bs] = millis();
@@ -90,18 +95,21 @@ void Debug::bootLog(BootStage bs) {
     case doneBOOT: break;
     case doneHOMIE: break;
     case doneMAIN: break;
+    case doneONLINE: break;
   }
 }
 
 // possible to get entire stacktrace in memory? if so mqtt -> decoder -> auto proper trace?
 // or keep dev one connected to another esp forwarding...
 void Debug::bootInfoPerMqtt() {
-  if(getBootDevice() == 1) lg.logf("SERIAL-FLASH-BUG", Log::WARNING, "%s\n%s", "First boot post serial flash. OTA won't work and first WDT will brick device until manually reset", "Best do that now, rather than later");
-  resetInfoLog();
-  lg.logf("Reset", Log::DEBUG, "%s", ESP.getResetInfo().c_str());
-  lg.logf("Boot", Log::DEBUG, "Free heap post boot/homie/main/wifi: %d / %d / %d / %d",
+  if(!lwd.softResettable())
+    lg.f("SERIAL-FLASH-BUG", Log::WARNING, "%s\n%s", "First boot post serial flash. OTA won't work and first WDT will brick device until manually reset", "Best do that now, rather than later");
+
+  lg.f("Reset", Log::DEBUG, "%s\n", lwd.getResetReason().c_str());
+  lg.f("Reset", Log::DEBUG, "%s\n", ESP.getResetInfo().c_str());
+  lg.f("Boot", Log::DEBUG, "Free heap post boot/homie/main/wifi: %d / %d / %d / %d\n",
                     heap[doneBOOT], heap[doneHOMIE], heap[doneMAIN], heap[doneONLINE]);
-  lg.logf("Boot", Log::DEBUG, "ms for homie/main, elapsed til setup()/wifi: %d / %d,  %d / %d",
+  lg.f("Boot", Log::DEBUG, "ms for homie/main, elapsed til setup()/wifi: %d / %d,  %d / %d\n",
       Debug::ms[doneHOMIE] - Debug::ms[doneBOOT], Debug::ms[doneMAIN] - Debug::ms[doneHOMIE], Debug::ms[doneMAIN] - Debug::ms[doneBOOT], Debug::ms[doneONLINE] - Debug::ms[doneBOOT]);
 }
 

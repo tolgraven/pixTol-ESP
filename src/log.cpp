@@ -10,33 +10,25 @@
 // terminal.set_cursor_position(5,4);
 // terminal.printf("ANSI Terminal");
 
-// void Log::log(const String& location, const Level level, const String& text) const {
-//   if(!shouldLog(level)) return;
-//   String mqtt_path(convert(leve l));
-//   mqtt_path.concat('/');
-//   mqtt_path.concat(location);
-//   if(mqtt   && Homie.isConnected())  setProperty(mqtt_path).setRetained(false).send(text);
-//   if(serial || !Homie.isConnected()) Serial.printf("%d: %s:%s\n", millis(), mqtt_path.c_str(), text.c_str());
-// }
-// should be bool i think
-
 // iLog::lvlStr[CRITICAL+1] = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"};
 
 void iLog::log(const String& text, const Level level, const String& location) const {
   if(!shouldLog(level)) return;
-  String path = convert(level) + ' ' + location;
+  String path = convert(level) + " / " + location;
   // then ideally like for(auto& out: outputs) out.print(); and if disabled well, wont
-  if(outputs.at("Serial"))  //|| !Homie.isConnected()) //bad idea having connect check, if we've turned off we dont want yo
-    Serial.printf("%d  %s  %s", millis(), path.c_str(), text.c_str());
+  auto it = outputs.find("Serial");
+  if(it != outputs.end() && it->second) {
+    Serial.printf("%lu  [%s] \t  %s", millis(), path.c_str(), text.c_str());
+  }
 }
 void iLog::ln(const String& text, const Level level, const String& location) const {
   log(text + "\n", level, location);
 }
 void iLog::dbg(const String& text, const String& location) const {
-  log(text, DEBUG, location);
+  ln(text, DEBUG, location);
 }
 void iLog::err(const String& text, const String& location) const {
-  log(text, ERROR, location);
+  ln(text, ERROR, location);
 }
 
 void iLog::f(const String& location, const Level level, const char *format, ...) const {
@@ -57,10 +49,11 @@ void iLog::logf(const String& location, const Level level, const char *format, .
   log(b, level, location);
 }
 
-void iLog::fEvery(uint16_t numCalls, const String& id, const String& location, const Level level, const char *format, ...) const {
+void iLog::fEvery(uint16_t numCalls, uint8_t id, const String& location, const Level level, const char *format, ...) const {
   if(!shouldLog(level)) return;
 
-  static std::map<String, uint16_t> callTracker;
+  /* static std::map<String, uint16_t> callTracker; */
+  static std::map<uint8_t, uint16_t> callTracker;
   callTracker[id] = (callTracker.find(id) == callTracker.end())? 1: ++callTracker[id]; //init or inc
   if(callTracker[id] < numCalls) return;
   else callTracker.erase(id); //dunno when will be needed next so might as well remove, rather than zero
@@ -74,29 +67,30 @@ void iLog::fEvery(uint16_t numCalls, const String& id, const String& location, c
 }
 
 
-bool Log::handleInput(const String& property, const HomieRange& range, const String& value) {
-  f("Log settings", DEBUG, "requested setting property %s to %s", property.c_str(), value.c_str());
-  if(property == "Level") {
-    Level newLevel = convert(value);
-    if(newLevel == INVALID) {
-      f("Log settings", ERROR, "Received invalid level %s.", value.c_str());
-      return false;
-    }
-    _level = newLevel;
-    f("Log settings", INFO, "Level now %s", value.c_str()); //this needed tho when setproperty does something right?
-    setProperty("Level").send(value);
-    return true;
-  } else if(property == "Serial" || property == "MQTT") { //check keys rather, ugh
-    bool state = (value.equalsIgnoreCase("on") || value == "1"); //or some lib fn for checken positive hapy words or signals heh
-    f("Log settings", INFO, "%s output %s", property.c_str(), state? "ON": "OFF");
-    setProperty(property).send(state? "On": "Off");
-    outputs[property] = state;
-    // if(property == "Serial") serial = state;
-    // if(property == "MQTT") mqtt = state;
-    return true;
-  }
-  f("Log settings", ERROR, "Invalid: %s / %s", property.c_str(), value.c_str());
-  return false;
-}
+/* bool Log::handleInput(const String& property, const HomieRange& range, const String& value) { */
+/*   f("Log settings", DEBUG, "requested setting property %s to %s", property.c_str(), value.c_str()); */
+/*   if(property == "Level") { */
+/*     Level newLevel = convert(value); */
+/*     if(newLevel == INVALID) { */
+/*       f("Log settings", ERROR, "Received invalid level %s.", value.c_str()); */
+/*       return false; */
+/*     } */
+/*     _level = newLevel; */
+/*     f("Log settings", INFO, "Level now %s", value.c_str()); //this needed tho when setproperty does something right? */
+/*     homieLogger->setProperty("Level").send(value); */
+/*     return true; */
+/*   } else if(property == "Serial" || property == "MQTT") { //check keys rather, ugh */
+/*     bool state = (value.equalsIgnoreCase("on") || value == "1"); //or some lib fn for checken positive hapy words or signals heh */
+/*     f("Log settings", INFO, "%s output %s", property.c_str(), state? "ON": "OFF"); */
+/*     homieLogger->setProperty(property).send(state? "On": "Off"); */
+/*     outputs[property] = state; */
+/*     // if(property == "Serial") serial = state; */
+/*     // if(property == "MQTT") mqtt = state; */
+/*     return true; */
+/*   } */
+/*   f("Log settings", ERROR, "Invalid: %s / %s", property.c_str(), value.c_str()); */
+/*   return false; */
+/* } */
 
 Log lg;
+/* iLog lg; */
