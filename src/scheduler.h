@@ -28,8 +28,9 @@ class Scheduler {
   bool everInput = false, newInput = false;
   String controlsSource = "artnet"; // "" // should just pick up whichever is actively sending (XXX set up "dont ignore 0 if prev pos input from src in session") */
   Device* _device = nullptr;
+  bool _active = true;
 
-  uint32_t start, keyFrameInterval, lastKeyFrame; // target interval between keyframes, abs time (micros) last frame read
+  uint32_t start, keyFrameInterval = MILLION / 40, lastKeyFrame; // target interval between keyframes, abs time (micros) last frame read
 
   public:
   Scheduler(const String& id, Device& device):
@@ -63,18 +64,18 @@ class Scheduler {
   Renderer& renderer() { return *_renderer; }
 
   Inputter& input(uint8_t index) { return *_input[index].get(); } //XXX bounds
-  /* Inputter& input(const String& type) { */
-  /*   // something something copy operator. */
-  /*   for(auto in: _input) if(type == in.get()->type()) return *in.get(); */
-  /* } //watch for if got multiple obj of same type tho... but only likely on outputter end? or physical ports maybe hmm... */
-  /* ^^ eh danger. either type or id, choose... */
+  Inputter& input(const String& id) { // something something copy operator.
+    for(auto&& in: _input) if(id == in.get()->id()) return *in.get();
+  }
   Outputter& output(uint8_t index) { return *_output[index].get(); }
-  /* Outputter& output(const String& id) { */
-  /*   for(auto out: _output) if(id == out.get()->id()) return *out.get(); */
-  /* } */
-  // guess below but taking shader_ptr or eh dunno
+  Outputter& output(const String& id) { // eh danger. either type or id, choose...
+    for(auto&& out: _output) if(id == out.get()->id()) return *out.get();
+  }
   void addIn(Inputter* in) { _input.emplace_back(in); }
   void addOut(Outputter* out) { _output.emplace_back(out); }
+
+  void setActive(bool state = true) { _active = state; }
+  bool active() const { return _active; }
 
   void handleInput() {
     lwd.stamp(PIXTOL_SCHEDULER_INPUT_DMX);
@@ -146,7 +147,11 @@ class Scheduler {
     //also, more effectively done as just request to fill color black with progressively higher alpha
   }
 
-  void loop() {
+  void loop() { // should be properly broken down into check for / merge in new input,
+                // and handling rendering and flushing. Profile so know when is reasonable to actually
+                // attempt something, likely hit some things more often.
+    if(!active()) return;
+
     lwd.stamp(PIXTOL_SCHEDULER_ENTRY);
     handleInput();
     static bool inFallbackMode = false;
@@ -171,8 +176,10 @@ class Scheduler {
     }
     renderer().frame(progressMultiplier);
     lwd.stamp(PIXTOL_RENDERER_FRAME);
-    /* lg.f("Scheduler", Log::DEBUG, "dimmer strip/buf: %.2f %.2f\n", output(0).getGain(), renderer().current->getGain()); */
-    output(0).run(); //output has been pointed to use Renderer->current. Guess this way we get unecessary flushes but
-    lg.fEvery(1000, 1, __func__, Log::DEBUG, "%u\n", renderer()._numFrames);
+
+    // now = micros();
+    for(auto&& out: _output) {
+      if(out->active() && out->ready()) out->run();
+    }
   }
 };
