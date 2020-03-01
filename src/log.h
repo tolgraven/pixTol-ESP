@@ -1,120 +1,228 @@
 #pragma once
 
+// #include <Arduino.h>
+#undef max
+#undef min
+#include <stdio.h>
 #include <map>
-#include <Arduino.h>
-// #include <ANSITerm.h> //not an arduino lib. But def wanna extend shit with ansi oi
+#include <iostream>
+#include <memory>
 
-#define __pfunc__ __PRETTY_FUNCTION__
-//there's also:
-// __builtin_FUNCTION()
-// __func__   obviously
-#define _DEBUG_ __func__, Log::DEBUG
-/* #define LOG_DBG(...) */
+// #include <Print.h> // how design to implement Print stuff yet include log shit w/o knowing bout it..
+
+#include <PrintStream.h>
+
+#include "base.h"
+
+class Print;
+
+extern Print* printer; // gets used by _write, so stay dynamic.
+
+extern "C" {
+int _write(int file, char *ptr, int len); // redefine for GCC to autoredirect buncha stuff. why not case by default btw??
+}
+// available:
+// int _read(int file, char *data, int len)
+// int _close(int file)
+// int _lseek(int file, int ptr, int dir)
+// int _fstat(int file, struct stat *st)
+// int _isatty(int file)
+
+// template<class T>
+// inline Print& operator <<(Print&& pr, T&& arg) { pr.print(arg); return pr; }
+// inline Print& operator <<(Print&& pr, _EndLineCode arg) { pr.println(); return pr; }
+// typedef decltype(endl) endl_t;
+// inline Print& operator <<(Print&& pr, endl_t arg) { pr.println(); return pr; }
+
+// doesnt actually make sense since just does same thing as +. just to test...
+// template<class T>
+// inline String operator <<(String&& s, T&& arg) { return s + arg; }
+// // inline String& operator <<(String& s, T&& arg) { s += arg; return s; } // like dis?
+// // typedef decltype(endl) endl_t; // why does this work here but not for Print?
+// enum _EndLineCode { endl };
+// inline String operator <<(String&& s, _EndLineCode arg) { return s + '\n'; }
 
 
-/* class LogOutput { */
-/*    // best if can maybe use Outputter somehow. But bit different. */
-/*    // I guess actual physical interface (Serial, MQTT, wrapped in a class used by both RenderStage::Outputter and here..) */
-/* }; */
+// enum class AnsiColor: int {
+enum AnsiColor: int {
+    Black=30, Red=31, Green=32, Yellow=33, Blue=34, Magenta=35, Cyan=36, White=37,
+    brBlack=90, brRed=91, brGreen=92, brYellow=93, brBlue=94, brMagenta=95, brCyan=96, brWhite=97,
+};
 
-// #ifndef UNIT_TESTING //something like that, redefine logger to simple cout for native testing
-class iLog { //prob have basic log then a sub from that with HomieNode, to decouple...
-public:
-  iLog() { }
-	enum Level: int8_t { INVALID = -1, TRACE = 0, DEBUG, INFO, WARNING, ERROR, CRITICAL }; //add an "NONE" at end to disable output fully?
-  struct LogOutput {
-    String id;
-    using logFn = std::function<void*(const String&, const String&, const String&)>;
-    logFn fn;
-    bool enabled; //or should outside control that instead maybe
-    LogOutput(const String& id, logFn fn, bool enabled = true):
-      id(id), fn(fn), enabled(enabled) {}
-  }; //issue with this cleaner approach is lose the automagic settability of lvl etc but fuckit. Fix asap...
-  void initOutput(const String& output) {
-    if(output == "Serial") {
-      outputs["Serial"] = true;
-      /* Serial.begin(SERIAL_BAUD); */ // check whether .begin has already been called etc tho... or can fuck eg Strip
-    } else if(output == "Serial1") {
-      outputs["Serial1"] = true;
-      Serial1.begin(SERIAL_BAUD);
-    /* } else if(output == "Homie") { */
-    /*   using namespace std::placeholders; */
-    /*   homieLogger = new HomieNode("Log", "Logger", std::bind(&Log::handleInput, this, _1, _2, _3)); */
-    /*   outputs["MQTT"] = true; */
-    /*   for(auto& o: outputs) { */
-    /*     homieLogger->advertise(o.first.c_str()).settable(); //ugly lol useless fix */
-    /*   } */
-    /*   homieLogger->advertise("Level").settable(); */
-    }
+template<typename T>
+// std::string print_as_color(T const& value, AnsiColor color){
+    // std::stringstream sstr;
+    // return sstr.str();
+String Ansi(T& value, AnsiColor color) {
+    return (String)"\033[1;" + static_cast<int>(color) + "m" + value + "\033[0m";
+}
+template<AnsiColor color, typename T>
+String Ansi(T& value) {
+    return (String)"\033[1;" + static_cast<int>(color) + "m" + value + "\033[0m";
+}
+
+namespace ansi {
+  // template <class CharT, class Traits>
+  // using ansistream = std::basic_ostream<CharT, Traits>; // can do that if using dummy struct not ns
+
+  template<class CharT, class Traits> constexpr
+  std::basic_ostream<CharT, Traits>& reset(std::basic_ostream<CharT, Traits>& os) {
+     return os << "\033[0m";
+  }
+  template<class CharT> constexpr
+  std::basic_ostream<CharT>& fgRed(std::basic_ostream<CharT>& os) {
+     return os << "\033[1m\033[31m";
+  }
+  template<AnsiColor code, class CharT> constexpr
+  std::basic_ostream<CharT>& color(std::basic_ostream<CharT>& os) {
+     return os << "\033[1;" << static_cast<int>(code) << "m";
   }
 
-  //XXX ffs cant have different orders like this. fuck that.
-	// void log(const String& text, const Level level = INFO, const String& location = __PRETTY_FUNCTION__) const;
-	virtual void log(const String& text, const Level level = INFO, const String& location = "fixmacros") const;
+  // template <class CharT> // or build a builder? no I wuz silly ha
+  // std::function<std::basic_ostream<CharT>& (std::basic_ostream<CharT>&)>
+  // // create_ansi(const std::string& ansiCode) {
+  // create_ansi(const String& ansiCode) {
+  //   return [ansiCode](std::basic_ostream<CharT>& os) { return os << ansiCode; };
+  // }
+  // auto red = create_ansi<char>(aRED);
+}
+
+#define __LOC__ (String)__func__ + " " + __FILE__ + ":" + __LINE__
+#define TRACE(s) lg.ln(s, ::Log::TRACE, __LOC__)
+// #define DEBUG(s) lg.log<Log::DEBUG>(s, __func__)
+#define DEBUG(s) lg.ln(s, ::Log::DEBUG, __func__)
+// #define DEBUG(s...) lg.dbg(String(s), __PRETTY_FUNCTION__)
+#define ERROR(s) lg.ln(s, ::Log::ERROR, __LOC__)
+#define LOG(s) lg.ln(s, ::Log::INFO, __func__)
+
+
+template<class T>   // Dummy parameter-pack expander
+void expand(std::initializer_list<T>) {}
+
+// Call a function and log its arguments and return value, fancy version.
+// BUT needs bind for member fns uhhh. so either macro or wrap lambdas?
+// or become templating ninja and figure out an easier way...
+template<class Fun, class... Args>
+typename std::result_of<Fun&&(Args&&...)>::type
+_logging(Fun&& f, String&& name, Args&&... args) {
+    // std::cout << ": ";
+    // expand({(std::cout << args << ' ', 0)...});
+    // std::cout << endl;
+    if(printer) { // print out all args.
+      printer->print("calling fn " + name + "(");
+      printer->print((String)args + ", " ...);
+      printer->print(")");
+    } // if the _write thing actually works won't need the check or pointer right? straight printf or cout will work?
+    // soo does this work? nope already checked just realized. bc template + dynamic binding...
+    // print("calling fn " + name + "("); print((String)args + ", " ...); print(")");
+
+    // forward the call, and log the result.
+    auto&& result = std::forward<Fun>(f)(std::forward<Args>(args)...);
+    if(printer) printer->println((result != nullptr)? (" -> " + (String)result): "");
+    return result;
+}
+#define logging(f, ...) _logging(f, (String)#f, __VA_ARGS__)
+// makes a str out of fn name, then hopefully rest of args also Stringifyable.
+
+
+class LogOutput: public Named { // guess concept of both being and containing (and/or either way? a printer seems snazzy)
+  using FmtFn = std::function<String(const String&, const String&, const String&)>;
+  FmtFn fmt = [](const String& loc, const String& lvl, const String& txt) {
+                  return String((String)millis() + "\t[" + lvl + "]\t" + loc + "\t" + txt); };
+  public:
+  Print* pr = nullptr; // Stream* s  // not atm but thinking pr not required. Couldl bind that to self and use other fn.
+
+  void log(const String& location, const String& level, const String& text) const {
+    if(enabled) log(fmt(location, level, text));
+  }
+  void log(const String& text) const {
+    if(enabled) pr->print(text);
+  }
+  // size_t printTo(const Print& p) const override {
+  //   return Named::printTo(p) + p.println((String)"put fmtString here n shit"); // uh guess print FmtFn text cause should be printf style anyways :| and ze kinda Print.
+  // }
+
+  bool enabled; //or should outside control that instead maybe
+
+  LogOutput(const String& id, Print& printer, bool enabled = true):
+    //  fmt(std::move(f)) // not sure if inline-default declated lambda w ::move was issue? anyways no biggie
+    Named(id, "LogOutput"), pr(&printer), enabled(enabled) {} // id(id), pr(reinterpret_cast<Print*>(&printer)), enabled(enabled) {}
+
+  void setFmt(const FmtFn& fmtFn) { fmt = std::move(fmtFn); }
+};
+
+
+// enum Level: int8_t { INVALID = -1, TRACE = 0, DEBUG, INFO, WARNING, ERROR, CRITICAL }; //add an "NONE" at end to disable output fully?
+class Log: public Print { // gives same functionality as Serial etc, but routing to multiple/different destinations...
+public:
+  Log() {
+    printer = this; // bind as global default for _write (see definition in cpp)
+  } // sexiest use of globals since ya
+	enum Level: int8_t { INVALID = -1, TRACE = 0, DEBUG, INFO, WARNING, ERROR, CRITICAL }; //add an "NONE" at end to disable output fully?
+
+  bool initOutput(const String& output); // init a predefined
+  void addOutput(const LogOutput& lo);   // add new
+
+
+	void log(const String& text, const Level level = INFO, const String& location = "") const;
+  template<Level level>
+	void log(const String& text, const String& location = "") const {
+    log(text, level, location);
+  }
+
   void ln(const String& text, const Level level, const String& location) const;
-  void dbg(const String& text, const String& location = "fixmacros") const;
-  void err(const String& text, const String& location = "fixmacros") const;
+  void dbg(const String& text, const String& location = "") const;
+  void err(const String& text, const String& location = "") const;
 
 	void f(const String& location, const Level level, const char *format, ...) const;
-	void logf(const String& location, const Level level, const char *format, ...) const;
+	void logf(const String& location, const Level level, const char *format, ...) const  __attribute__((deprecated));
+
 	void fEvery(uint16_t numCalls, uint8_t id, const String& location, const Level level, const char *format, ...) const;
 
-	bool shouldLog(Level lvl) const { return ((int8_t)lvl >= (int8_t)_level); }
 	void setLevel(Level lvl) { if(lvl >= DEBUG && lvl <= CRITICAL) _level = lvl; }
-  void setOption(const String& option, const String& value); //use in future
+  // void setOption(const String& option, const String& value); //use in future
 
+  virtual size_t write(uint8_t character) {
+    for(auto&& d: destinations)
+      d.pr->write(character);
+    return 1;
+  }
+  virtual size_t write(const uint8_t* buffer, size_t size) {
+    size_t written = 0;
+    for(auto&& d: destinations)
+      written += d.pr->write(buffer, size);
+    return written;
+  }
 
-protected:
+  bool enableColor = true;
+
+private:
 	Level _level = DEBUG;
   std::vector<LogOutput> destinations;
-  std::map<String, bool> outputs; // = {{"Serial", true}};
-  // or maybe logger only registers and further ups keep track on where to send text...
+
   String lvlStr[CRITICAL+1] = {"TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"};
-  std::vector<String> whiteList, blackList; // control which locations
+  std::vector<String> whiteList, blackList; // control which locations. bound to be idiotically slow
 
 	Level convert(const String& lvl) const {
-    for(uint8_t ilvl = DEBUG; ilvl <= CRITICAL; ilvl++)
-      if(lvl.equalsIgnoreCase(lvlStr[ilvl])) return static_cast<Level>(ilvl);
+    for(int8_t ilvl = TRACE; ilvl <= CRITICAL; ilvl++)
+      if(lvl.equalsIgnoreCase(lvlStr[ilvl]))
+        return (Level)ilvl;
     return INVALID;
   }
 	String convert(const Level lvl) const {
-    auto index = constrain(lvl, INVALID, CRITICAL+1);
+    auto index = constrain(lvl, INVALID, CRITICAL);
     if(index >= 0) return lvlStr[index];
     else return "INVALID";
   }
+	bool shouldLog(Level lvl) const { return ((int8_t)lvl >= (int8_t)_level); }
 };
 
-//yeah this is dumb. use the attach Outputters idea instead and just reg HomieNode, dont be one...
-/* class Log: public iLog, public HomieNode { */
-/* class Log: public iLog { */
-/*   HomieNode* homieLogger = nullptr; */
-/*   HomieNode* status = nullptr; */
-
-/*   public: */
-/*   Log(): iLog() { } */
-
-/* 	bool handleInput(const String& property, const HomieRange& range, const String& value); */
-
-/*   /1* void loop() override { *1/ */
-/*   /1*   /2* any way we can get it to work before homie init? like so doesnt bring down system... *2/ *1/ */
-/*   /1* } *1/ */
-/* 	void log(const String& text, const Level level = INFO, const String& location = "fixmacros") const override { */
-/*     if(!shouldLog(level)) return; */
-/*     iLog::log(text, level, location); */
-
-/*     auto it = outputs.find("MQTT"); */
-/*     if(it != outputs.end() && it->second && Homie.isConnected()) { */
-/*       String mqttPath = convert(level) + ' ' + location; */
-/*       homieLogger->setProperty(mqttPath).setRetained(false).send(text); */
-/*     } */
-/*   } */
-/*   void setStatusNode(HomieNode* statusNode) { status = statusNode; } */
-/*   void flushProperty(const String& property, const String& value) { */
-/*     if(status) status->setProperty(property).send(value); //new property or new value... */
-/*   // temp. Attempt to untangle Homie slightly more. Should be an Outputter or something I guess... */
-/*   } */
-/* }; */
-using Log = iLog;
 extern Log lg;
-/* extern iLog lg; */
+
+template<class... Args>
+void DEBUG2(const Args&&... args) {
+    // expand({(String << args << ' ', 0)...});
+  lg.dbg(String((String)args + ", " ...));
+  // lg.dbg(expand({(String << args << ' ', 0)...}));
+}
 

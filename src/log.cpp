@@ -1,55 +1,109 @@
 #include "log.h"
 
-// terminal.clear_screen();
-// terminal.hide_cursor();
-// terminal.set_display_style(ANSITerm::SGR_NONE);
-// terminal.set_text_colour(ANSITerm::SGR_RED);
-// // terminal.draw_box(3,3,19,5,ANSITerm::simple,false);
-// terminal.set_text_colour(ANSITerm::SGR_WHITE);
-// terminal.set_display_style(ANSITerm::SGR_BOLD);
-// terminal.set_cursor_position(5,4);
-// terminal.printf("ANSI Terminal");
+Print* printer; // gets set to Log. which appropriately forwards to the Print objs within.
 
-// iLog::lvlStr[CRITICAL+1] = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"};
+extern "C" {
+int _write(int file, char *ptr, int len) {
+  (void) file; // guess it's 0-1-2 but uh do we do anything with it?
+  if(printer) {
+    return printer->write(ptr, len);
+  } else
+    return 0;
+}
+}
 
-void iLog::log(const String& text, const Level level, const String& location) const {
+
+bool Log::initOutput(const String& output) {
+  Print* pr = nullptr;
+  if(output == "Serial") { // tho, obviously, entire point is being able to define elsewhere.
+    // auto fmtFn = [](const String& text, const String& level, const String& location) {
+    //   Serial.printf("%lu\t[%s]\t%s\t%s",
+    //       millis(), level.c_str(), location.c_str(), text.c_str()); };
+    // destinations.emplace_back(output, Serial, fmtFn);
+    pr = &Serial;
+
+  } else if(output == "Serial2") {
+    Serial1.begin(SERIAL_BAUD);
+    // serialObject = &Serial1;
+  /* } else if(output == "Homie") { */
+  /*   using namespace std::placeholders; */
+  /*   homieLogger = new HomieNode("Log", "Logger", std::bind(&Log::handleInput, this, _1, _2, _3)); */
+  /*   for(auto& o: outputs) { */
+  /*     homieLogger->advertise(o.first.c_str()).settable(); //ugly lol useless fix */
+  /*   } */
+  /*   homieLogger->advertise("Level").settable(); */
+  }
+  if(pr) {
+    // destinations.emplace_back(output, *pr);
+    auto dest = LogOutput(output, *pr);
+    if(enableColor) {
+      auto fmt = [](const String& loc, const String& lvl, const String& txt) {
+                  return String((String)millis() +
+                      "\t[" + Ansi<Yellow>(lvl) + "]\t" +
+                      Ansi<Blue>(loc) + "\t" + txt); };
+      dest.setFmt(fmt);
+    }
+    destinations.push_back(dest);
+    ln("Logging started", INFO, output);
+  } else {
+    ln("Failed to add output", ERROR, output);
+  }
+  return pr;
+}
+
+void Log::log(const String& text, const Level level, const String& location) const {
   if(!shouldLog(level)) return;
-  String path = convert(level) + " / " + location;
-  // then ideally like for(auto& out: outputs) out.print(); and if disabled well, wont
-  auto it = outputs.find("Serial");
-  if(it != outputs.end() && it->second) {
-    Serial.printf("%lu  [%s] \t  %s", millis(), path.c_str(), text.c_str());
+  if(whiteList.size() > 0) { // filter-in active
+    bool found = false;
+    for(auto& s: whiteList) {
+      if(s == location) {
+        found = true;
+        break;
+      }
+    }
+    if(!found) return;
+  } else if(blackList.size() > 0) {// filter out
+    for(auto& s: blackList) {
+      if(location == s) return;
+    }
+  }
+
+  String lvl = convert(level);
+  // String lvl = std::move(convert(level));
+  // String loc = Ansi<Blue>(location);
+  for(auto&& dest: destinations) {
+    dest.log(location, lvl, text);
   }
 }
-void iLog::ln(const String& text, const Level level, const String& location) const {
+
+void Log::ln(const String& text, const Level level, const String& location) const {
   log(text + "\n", level, location);
 }
-void iLog::dbg(const String& text, const String& location) const {
+void Log::dbg(const String& text, const String& location) const {
   ln(text, DEBUG, location);
 }
-void iLog::err(const String& text, const String& location) const {
+void Log::err(const String& text, const String& location) const {
   ln(text, ERROR, location);
 }
 
-void iLog::f(const String& location, const Level level, const char *format, ...) const {
+void Log::f(const String& location, const Level level, const char *format, ...) const {
   if(!shouldLog(level)) return;
   va_list arg; va_start(arg, format);
-  char b[100]; //so, if too long, then what?
+  char b[180]; //so, if too long, then what? fooled me once!
   size_t len = vsnprintf(b, sizeof(b), format, arg); // just gets trunc presumably?
   va_end(arg);
   log(b, level, location);
 }
-//deprecated - use f()
-void iLog::logf(const String& location, const Level level, const char *format, ...) const {
+void Log::logf(const String& location, const Level level, const char *format, ...) const {
   if(!shouldLog(level)) return;
   va_list arg; va_start(arg, format);
-  char b[100];
+  char b[180];
   size_t len = vsnprintf(b, sizeof(b), format, arg);
   va_end(arg);
   log(b, level, location);
 }
 
-void iLog::fEvery(uint16_t numCalls, uint8_t id, const String& location, const Level level, const char *format, ...) const {
+void Log::fEvery(uint16_t numCalls, uint8_t id, const String& location, const Level level, const char *format, ...) const {
   if(!shouldLog(level)) return;
 
   /* static std::map<String, uint16_t> callTracker; */
@@ -60,10 +114,10 @@ void iLog::fEvery(uint16_t numCalls, uint8_t id, const String& location, const L
 
   // f(location, level, format, arg); //no work right? :(
   va_list arg; va_start(arg, format);
-  char b[100];
+  char b[180];
   size_t len = vsnprintf(b, sizeof(b), format, arg);
   va_end(arg);
-  log(location, level, b);
+  log(b, level, location);
 }
 
 
@@ -93,4 +147,3 @@ void iLog::fEvery(uint16_t numCalls, uint8_t id, const String& location, const L
 /* } */
 
 Log lg;
-/* iLog lg; */
