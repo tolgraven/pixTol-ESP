@@ -1,118 +1,76 @@
 #pragma once
 
 #include <functional>
-#include <ArtnetnodeWifi.h>
-#include <LoggerNode.h>
+#include <ArtNetE131Lib.h>
+#include "log.h"
 #include "renderstage.h"
 
-// #include "espArtNetRDM.h"
-#define ART_FIRM_VERSION 0x0A00   // 2-byte Artnet FW ver
-#define ARTNET_OEM 0x00ff    // Artnet OEM code - "unknown"
-#define ESTA_MAN 0x7fff      // ESTA Manufacturer code - prototyping reserved
-#define ESTA_DEV 0xEE000000  // RDM Device ID (used with Man Code to make 48bit UID)
+class Artnet: public NetworkIn, public Outputter {
+  std::unique_ptr<espArtNetRDM> artnet;
 
-class ArtnetInput: public Inputter {
   public:
-  ArtnetInput(const String& id, uint16_t startUni, uint8_t numPorts):
-    Inputter(id, 1, 512, numPorts), startUni(startUni), artnet(new ArtnetnodeWifi()) {
+  Artnet(const String& id, uint16_t startUni, uint8_t numPorts,
+         bool enableIn = true, bool enableOut = false):
+    NetworkIn(id, startUni, numPorts),
+    Outputter(id, 1, 512, numPorts),
+    artnet(new espArtNetRDM()) {
+      Inputter::setType("artnet"); Inputter::setEnabled(enableIn);
+      Inputter::setRunFn(std::bind(&Artnet::_runIn, this));
+      Outputter::setType("artnet"); Outputter::setEnabled(enableOut);
+      Outputter::setRunFn(std::bind(&Artnet::_runOut, this));
+
       using namespace std::placeholders;
-      auto cb = std::bind(&ArtnetInput::callback, this, _1, _2, _3, _4);
-      artnet->setProperCallback(cb); // artnet->setArtDmxCallback(cb);
-      artnet->setName(id.c_str()); // artnet.setShortName(); artnet.setLongName();
-      artnet->setStartingUniverse(startUni);
-      artnet->setNumPorts(numPorts);
-      for(int i = 0; i < numPorts; i++)
-        artnet->enableDMXOutput(i);
+      artnet->init(id.c_str());
+
+      // all this goes out in own fns. Now time wrapping RDM and that...
+      // and reimpl config parse/save.
+      if(enableIn) {
+        uint8_t groupID = artnet->addGroup(0, 0); // net, subnet
+        for(int port=0; port < numPorts; port++) {
+          artnet->addPort(groupID, port, startUni + port, (uint8_t)port_type::RECEIVE_DMX);
+        }
+      }
+
+      if(enableOut) {
+        uint8_t groupID = artnet->addGroup(0, 1); // net, subnet
+        for(int port=0; port < numPorts; port++) {
+          artnet->addPort(groupID, port, startUni + port, (uint8_t)port_type::SEND_DMX);
+        }
+      }
+      auto cb = [this](uint8_t group, uint8_t port, uint16_t length, bool sync) {
+        uint8_t* data = this->artnet->getDMX(group, port);
+        if(data) this->onData(port, length, data);
+      };
+      artnet->setArtDMXCallback(cb);
       artnet->begin();
-    }
+  }
 
-    bool ready() { return true; } //XXX how hmm
-    bool run() {
-      if(!ready()) return false;
-      switch(artnet->read()) { // calls handleDMX which calls callback...
-        case OpDmx: return Inputter::run(); //return true if new frame has arrived XXX if multiple ports must wait til all arrived, OR ArtSync...
-        case OpPoll: //LN.logf("artnet", LoggerNode::DEBUG, "Art Poll Packet");
-          break;
-        case OpNzs: LN.logf("artnet", LoggerNode::DEBUG, "NZs kiwi??"); break;
-        // case OpInput OpRdm etc zillion other things not impl...
+  bool _runIn() { // might this result in dupl calls or does the multiple _runFn negate virtual dispatch as hoped?
+    // OLA now complaining about "got unknown packet", "mismatched version" 3584 and stuff
+    // investigate!!
+    switch(artnet->handler()) { // calls handleDMX which calls callback...
+      case ARTNET_ARTDMX: return true; // case OpDmx: return true;
+    }
+    // but so for example if ArtSync enabled should return false until sync arrives -> transparent from outside
+    return false;
+  }
+  bool _runOut() {
+      for(uint8_t port=0; port < Outputter::buffers().size(); port++) {
+        uint8_t group = 1; //send-group, made-up for now...
+        auto& buf = Outputter::buffer(port);
+        // it's weird tho how buf1/controls somehow throttles even w/o dirty check? not actually impl like...
+        // turns out setting maxHz makes it start pushing data even when no changes.
+        // WEIRD! bc should only affect microsTilReady() right?
+
+        if(buf.dirty()) { // well not gonna happen because got mult buffer objs using same resource, not us getting set...
+        // if(buf.dirty() || port.hasnt_sent_in_4s_yada()) { // well not gonna happen because got mult buffer objs using same resource, not us getting set...
+          artnet->sendDMX(group, port, buf.get(), buf.lengthBytes()); // so it's required it properly set up. wont overflow at least
+          buf.setDirty(false); // our view anyways. Many Buf same addr both good and tricky
+        }
       }
-      return false;
-    }
+    return true;
+  }
 
-    void callback(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
-      uint8_t index = universe - startUni; //XXX check proper
-      if(index < _bufferCount) {
-        buffers[index]->set(data, length);
-        newData = true;
-      }
-    }
-
-  private:
-    // int lastArtnetCode;
-    uint16_t startUni;
-    uint8_t lastSeq;
-    ArtnetnodeWifi* artnet;
+  void cbRDM() {} // get on so can start using
 };
 
-// class ArtnetOutput: public Outputter {
-//   public:
-//     ArtnetOutput(const String& id, uint8_t numPorts, ArtnetnodeWifi* artnet)
-//     : Outputter(id, 1, 512, numPorts)
-//     , artnet(artnet) {
-//     // below would go in dmxserial class tho
-//     // artnet->setDMXOutput(uint8_t outputID, uint8_t uartNum, uint16_t attachedUniverse)<|0|>
-//   }
-//     virtual bool canEmit() { return true; }
-//     virtual void emit(uint8_t* data, uint16_t length) { // runrun
-//     }
-//   private:
-//     ArtnetnodeWifi* artnet;
-// };
-//
-// class IO {
-//   public:
-//     IO() {}
-//     IO(Inputter* in, Outputter* out) {
-//       if(in != nullptr) input = in;
-//       if(out != nullptr) output = out;
-//     }
-//     virtual void enableInput(bool state, int8_t bufferIndex = -1) = 0; // idx -1 = all
-//     virtual void enableOutput(bool state, int8_t bufferIndex = -1) = 0;
-//
-//   protected:
-//     Inputter* input = nullptr;
-//     Outputter* output = nullptr;
-// };
-
-// class Artnet: public IO {
-//   private:
-//     ArtnetnodeWifi artnet;
-//     esp8266ArtNetRDM artRDM;
-//
-//   public:
-//     Artnet(const String& deviceName, uint8_t numPorts, uint8_t startingUniverse, uint8_t sourceHz)
-//    {
-//       artnet.setName(deviceName.c_str()); // artnet.setShortName(); artnet.setLongName();
-//       artnet.setNumPorts(numPorts);
-//       artnet.setStartingUniverse(startingUniverse);
-//       input = new ArtnetInput("artnet - in", numPorts, &artnet);
-//       input->index = startingUniverse;
-//       input->bufferCount = numPorts;
-//
-//       output = new ArtnetOutput("artnet - out", numPorts, &artnet);
-//       for(uint8_t i=0; i < numPorts; i++) {
-//           artnet.enableDMXOutput(i);
-//       }
-//       artnet.begin();
-//     }
-//
-//     // virtual bool addDestination(uint8_t* data, uint16_t length, uint16_t offset = 0) {
-//     // }
-//
-//     virtual void setActive(bool state = true, int8_t bufferIndex = -1) {
-//       if(state) artnet.enableDMX();
-//       else artnet.disableDMX();
-//     }
-//     virtual void enable() { artnet.enableDMX(); }
-//     virtual void disable() { artnet.disableDMX(); }
-// };
