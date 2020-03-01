@@ -5,181 +5,163 @@
 
 #include "renderer.h"
 #include "buffer.h"
-#include "io/strip.h"
+#include "io/strip-multi.h"
 #include "io/sacn.h"
 #include "io/artnet.h"
 #include "io/opc.h"
-#include "io/unit.h"
 #include "functions.h"
-#include "device.h"
 #include "watchdog.h"
+#include "base.h"
+#include "task.h"
 
-// freeze buffer / background thing, run constant at lowest prio whether static or
-// last frame from w/e source, could also interpolate between a few frames or have basic wave animation etc
-// as higher layers of input can be nuking stuff from this (overwriting, or non-HTP taking away)
-class Scheduler {
-  String _id;
-  Renderer* _renderer;
-  std::vector<std::unique_ptr<Renderer>> _render;
-  std::vector<std::unique_ptr<Inputter>> _input;
-  std::vector<std::unique_ptr<Outputter>> _output;
-  // also reg all components I guess
-  // std::vector<Patch*> _patch;
-  bool everInput = false, newInput = false;
+
+// make some of these actual tasks I guess, tho mainly seems workflow w eventbus and
+// callbacks most reasonable.
+class Scheduler: public Runnable, public core::Task  {
+  TaskGroup<Inputter>  ins    = {"input", 8, 0};
+  TaskGroup<Renderer>  render = {"render"};
+  TaskGroup<Outputter> outs   = {"output", 25, 1};
+  TaskGroup<Runnable> general = {"general", 1};
+  std::vector<std::unique_ptr<TaskedRunnable>> scheduled; // no run() on these, OS handles. just keep so can kill...
+  std::vector<std::unique_ptr<InterruptTask>> crap;
+
   String controlsSource = "artnet"; // "" // should just pick up whichever is actively sending (XXX set up "dont ignore 0 if prev pos input from src in session") */
-  Device* _device = nullptr;
-  bool _active = true;
 
-  uint32_t start, keyFrameInterval = MILLION / 40, lastKeyFrame; // target interval between keyframes, abs time (micros) last frame read
+  uint32_t now;
+  uint32_t timeInputs = 0;
+  float progressMultiplier = 0;
 
   public:
-  Scheduler(const String& id, Device& device):
-    _id(id), _device(&device) {
+  Scheduler(const String& id):
+    Runnable(id, "scheduler"),
+    core::Task(id.c_str(), 9000, core::APPLICATION_BASE_PRIO, std::chrono::milliseconds{3}) {
+    DEBUG("Enter");
+    // Three "phases": Collect settings, use to create objects for and patches between IN / OUT / RENDER (tho in the end a sys with a Pi recompiling and reflashing units on fly yet more adaptable)
+    }
 
-    int startUni = 2;
-    addIn(new ArtnetInput(id + " ArtNet", startUni, 1));
-    addIn(new sAcnInput(id + " sACN", startUni, 1));
-    /* _input.emplace_back(new OPC()); */
-    lg.dbg("Done add inputs");
+  void init() override {
+    const int startUni = 2;
+    const int numPorts = 1;
+    auto artnet = new ArtnetDriver(id() + " ArtNet");
+    scheduled.emplace_back(new TaskedRunnable(artnet)); // ugly thing here is driver doesnt auto-delete on clearing stuff that uses it...
 
-    addOut(new Strip("Strip 1", 4, 120));
-    // static_cast<Strip&>(output(0)).mirror(cfg.mirror.get()).fold(cfg.fold.get()); // s->flip(false); //no need for now as no setting for it //cfg.setFlipped.get();
+
+    auto artnetIn = new ArtnetIn(id(), startUni, numPorts, artnet);
+    ins.add(artnetIn); // if nothings coming its because the multiple buffers overwrite first one.
+    ins.add(new sAcnInput(id() + " sACN", 1, 1));
+    ins.add(new OPC(id() + " OPC", 1, 1, 120));
+    lg.dbg("Done add inputs"); //lg << "Done add inputs!" << endl;
+
+
+    const int startPin = 15; // had at 25 but apparently some bad pins above that...
+    auto strip = new Strip("Strip 1", 4, 120, startPin, numPorts);
+    uint8_t order[] = {1, 0, 2, 3}; // should be set for then/retrieved from Strip tho...
+    strip->setSubFieldOrder(order);
+    outs.add(strip);
+
+    auto artnetOut = new ArtnetOut(id(), startUni, numPorts, artnet);
+    artnetOut->setTargetFreq(40);
+    outs.add(artnetOut);
     lg.dbg("Done add outputs");
 
-    keyFrameInterval = MILLION / 40; //assumption. should be adaptive tho... if actual continously different
-
-    _renderer = new Renderer("Renderer", keyFrameInterval, output(0).buffer()); //doesnt use the buffer, it becomes model. tho current might as well be it meh dunno
-    renderer().getDestination().setPtr(output(0).buffer()); // in turn directly pointed to Strip buffer (for DMA anyways, handled internally anyways)
-    uint8_t order[] = {1, 0, 2, 3}; // should be set/retrieved from Strip tho...
-    renderer().getDestination().setDestinationSubFieldOrder(order); //tho last one is a bit, heh.
-    renderer().getDestination().setDithering(true);
+    render.add(new Renderer("Renderer", MILLION / 40, *strip));
+    artnetOut->setBuffer(render.get().getDestination(), 0); //fwd calculated packets...
+    // artnet->Outputter::setBuffer(*render.get(0).controls, 1); //fwd ctrls
     lg.dbg("Done create renderer");
 
-    lg.f(__func__, Log::DEBUG, "Buffer ptrs: input0 %p,  output0 %p,  renderer c buf/ptr: %p %p\n",
-        input(0).buffer().get(), output(0).buffer().get(), &renderer().getDestination(), renderer().getDestination().get());
-    start = micros();
-    lastKeyFrame = start; //idunno whether this or 0 hmm
-  }
+    crap.emplace_back(new InterruptTask(20000, [artnetIn, artnetOut] {
+          artnetIn->printTo(lg); artnetOut->printTo(lg); return true; }));
+    crap.emplace_back(new InterruptTask(20000, [this] {
+        lg.f("Runs", ::Log::INFO, "in / render / out %u %u %u \n",
+              this->ins.getCounts().run, this->render.getCounts().run, this->outs.getCounts().run);
+        return true; }));
 
-  Renderer& renderer() { return *_renderer; }
+    crap.emplace_back(new InterruptTask(10000, [this] {
+          float tot = std::max((uint32_t)1, this->getCounts().totalTime); //haha well v dumb to still run all math every time lol
+          lg.f("Timings", ::Log::INFO, "in / merge / render / out %.4f %.4f %.4f %.4f \n",
+              this->ins.getCounts().totalTime / tot, this->timeInputs / tot, this->render.getCounts().totalTime / tot, this->outs.getCounts().totalTime / tot);
+          return true; }));
 
-  Inputter& input(uint8_t index) { return *_input[index].get(); } //XXX bounds
-  Inputter& input(const String& id) { // something something copy operator.
-    for(auto&& in: _input) if(id == in.get()->id()) return *in.get();
-  }
-  Outputter& output(uint8_t index) { return *_output[index].get(); }
-  Outputter& output(const String& id) { // eh danger. either type or id, choose...
-    for(auto&& out: _output) if(id == out.get()->id()) return *out.get();
-  }
-  void addIn(Inputter* in) { _input.emplace_back(in); }
-  void addOut(Outputter* out) { _output.emplace_back(out); }
+    ins.start();
+    render.start();
+    outs.start();
+    // general.start();
 
-  void setActive(bool state = true) { _active = state; }
-  bool active() const { return _active; }
+    DEBUG("DONE");
+  }
 
   void handleInput() {
     lwd.stamp(PIXTOL_SCHEDULER_INPUT_DMX);
-
-    for(auto&& source: _input) {
-      if(!source->run() && !source->newData) {  // for artnet run -< handler -> callback if opdmx so newdata check redundant for single or disconnected universes. but anyways.
-        continue;                               // tho curr those return true by default so this fixes run success but no data
-        /* if(source->timeLastRun > yada) source->setActive(false); // this what source needs to calc in run */
-      }
-
-      if(controlsSource == source->type()) { //pref matches
-        renderer().f->update(source->buffer().get()); //inputter buffer() currently resets newData which seems dangerous... but makes above thing not double up, for now
-        /* lg.f(__func__, Log::DEBUG, "update controls"); */
-      } else if(!controlsSource.length()) { //no preference on what to use
-        renderer().controls->avg(source->buffer(), false); //false
-        renderer().f->update(renderer().controls->get());
-      }
-
-      newInput = true;
-      logDMX(*source);
-    }
-    /* keyFrameInterval = ...read from sources... */
-  }
-
-  void logDMX(Inputter& source) { //XXX make sure to set up sep per source on count end tho?
-    //could also take an average instead of just exact at 10s...
-    //+ sort able to request device dump its buffers and details to log, per mqtt...
-    _device->debug->logDMXStatus(renderer().f->b->get(), "SOURCE");
-    /* _device->debug->logDMXStatus(output(0).buffer().get(), "OUTPUT"); */
-  }
-
-  void mergeInput() { // this is sep from handleInput orig for when multiple sources (no diff tho how it's curr used)
     bool blank = true;
-    for(auto&& source: _input) {
-      if(!source->receiving()) continue; //XXX doesnt do anything active yet heh
-      if(!everInput) everInput = true; //flag that any of our inputters have ever gotten shiet
-      Buffer offsetBuffer = Buffer(source->buffer(), output(0).fieldCount(), renderer().f->numChannels, false);
-      offsetBuffer.setFieldSize(output(0).fieldSize());
+    now = micros();
 
-      if(blank) { //mixed buffer needs to be reset for new frame
-        renderer().updateTarget(offsetBuffer);
-        blank = false;
-      } else {
-        int blendMode = 0; //used to come from iot but decoupled
-        renderer().updateTarget(offsetBuffer, blendMode, true);
+    for(auto&& src: ins.tasks()) {
+
+      auto source = static_cast<Inputter*>(src.get());
+      if(!source->dirty()) continue; // source's responsibility not set newData until all frames in (esp if sync used)
+
+      for(size_t i = 0; i < source->buffers().size(); i++) {
+        // heh this turned into a copy again watta! deleted cpy constructor now...
+        // auto&& b = source->buffer(i); // be careful. was creating a copy when just auto no &...
+        auto* b = &source->buffer(i); // be careful. was creating a copy when just auto no &...
+        if(!b->dirty()) continue;
+        // lg.f("merge", Log::DEBUG, "buffer %u, %x at %x, dirty: %u\n", i, b, b->get(), b->dirty());
+
+        bool blendAll = !controlsSource.length(); //still bit confusing
+        if((controlsSource == source->type() || blendAll)
+            && (i == 0)) { //pref matches, only first chan used.
+          // _device->debug->logDMXStatus(b->get(), "SOURCE");
+          render.get(0).updateControls(*b, blendAll);
+        }
+
+        auto& strip = outs.get(i);
+        auto offsetBuffer = Buffer(*b, strip.fieldCount(), render.get(0).f->numChannels, false);
+        offsetBuffer.setFieldSize(strip.fieldSize()); // ^ clone target-buffer and then just adjust its offset instead. fugly.
+
+        if(blank) { // so, need more stuff to splice which seems reasonable?  or rather, need Patch.  Tho given mult outs in this case dunno whether eg 2 renderers x 240px or all in one makes more sense?
+          render.get(0).updateTarget(offsetBuffer, i);
+          blank = false; // doesn't hold up with multiple buffers.
+        } else {
+          int blendMode = 4; //used to come from iot but decoupled
+          render.get(0).updateTarget(offsetBuffer, i, blendMode, true);
+        }
+
+        b->setDirty(false); // consumed
       }
     }
-    newInput = false;
+
+    if(false) { // } else if(all sources timed out) {
+      lg.dbg("No input for 5 seconds, running fallback...");
+      ins.add(new Generator("Fallback animation", outs.get(0))); // what will be
+      progressMultiplier = 0.001f;
+    }
+    timeInputs += micros() - now;
   }
 
-  void keepItMoving(uint32_t passed) { // start easing backup anim to avoid stutter... easiest/basic fade in a bg color while starting to dim
-    Buffer* fBuffer = new Buffer("FunctionFill", 1, 12);
-    fBuffer->get()[0] = 155;
-    fBuffer->get()[3] = 100; //no longer doing env in frame() so just keeps from having correct target...
-    fBuffer->get()[4] = 127;
-    renderer().f->update(fBuffer->get()); //this should work unless something is super broken. Although the a proper patching source -> f-buffer / pixelbuffer and similar still has to be done...
-    delete fBuffer;
+  void tick() override { _run(); }
 
-    Color fillColor = Color(255, 140, 120, 75); /* soon move this out to keyframe gen */
-    Buffer* fillBuffer = new Buffer("ColorFill", output(0).fieldSize(), output(0).fieldCount());
-    fillBuffer->fill(fillColor);
-    renderer().updateTarget(*fillBuffer);
-    delete fillBuffer;
-    // ev make configurable with multiple ways or dealing. and as time
-    //first try just put black buffer as a (sub)target (with high attack)?
-    //like, "target for source is now black", so with reg htp or no-0-avg wont actually head that way if other sources still active...
-    //just avoid being stuck with a static image.
-    //but how do that per source tho atm...
-    //also, more effectively done as just request to fill color black with progressively higher alpha
-  }
-
-  void loop() { // should be properly broken down into check for / merge in new input,
-                // and handling rendering and flushing. Profile so know when is reasonable to actually
-                // attempt something, likely hit some things more often.
-    if(!active()) return;
-
+  bool _run() override {
     lwd.stamp(PIXTOL_SCHEDULER_ENTRY);
     handleInput();
-    static bool inFallbackMode = false;
-    uint32_t now = micros(), passed = now - lastKeyFrame;
-    float progressMultiplier = 0;
-    if(newInput) { //XXX temp, still moving towards latest keyframe so just spit out interpol
-    /* if(newInput && passed > keyFrameInterval) { //XXX temp, still moving towards latest keyframe so just spit out interpol */
-      // before also had check on how long since last frame. some kinda throttling makes sense
-      // or we get no time for dithering. but needs to be less fuckoff than "one (1) expected keyframe interval"
-      lastKeyFrame = now;
-      inFallbackMode = false;
-      mergeInput();
-    }
-    // prob makes sense going straight for a new frame no? esp since handle + merge wouldve taken extra long with data coming in!
-    if(passed > 5 * 40 * keyFrameInterval) { //or when makes sense. maybe configurable...
-      if(!inFallbackMode) {
-        lg.dbg("No input for 5 seconds, running fallback...");
-        inFallbackMode = true;
-        keepItMoving(passed); //XXX only once so doesnt takee over like dmx...
-      }
-      progressMultiplier = 0.001;
-    }
-    renderer().frame(progressMultiplier);
-    lwd.stamp(PIXTOL_RENDERER_FRAME);
+    return true;
 
-    // now = micros();
-    for(auto&& out: _output) {
-      if(out->active() && out->ready()) out->run();
-    }
+    // lwd.stamp(PIXTOL_RENDERER_FRAME);
+    // ins.run(); render.run(); outs.run(); general.run();
+    // all good. just bit pointless unless much more infra.
+    // std::vector<std::function<void(Scheduler&)>> vec =
+    //  { [] (Scheduler& s) { s.handleInput(); }, [] (Scheduler& s) { s.handleFallback(); }, [] (Scheduler& s) { s.render.get(0).frame(s.progressMultiplier); }, [] (Scheduler& s) { s.handleOutput(); }};
+
+    // remember to be careful with auto and initializer lists :P
+    // std::vector<std::pair<std::function<void(Scheduler*)>, uint32_t&>> vec =
+    // {{[this] { this->handleInput(); }, timeInputs}, {[this] { this->handleFallback(); }}, // should not be here but trigger putting a Generator in Inputter vec, by lapsing timer maybe dunno {[this] { this->render.get(0).frame(this->progressMultiplier); }, timeRenders }, {[this] { this->handleOutput(); }}, timeOutputs }
+
+    // for(auto&& f: vec) { // well and w renderer oopsien
+    //   wrapper()
+    //   // now = micros(); //, log before/after for each cat, much easier than now.
+    //   // f(*this);
+    //   // timeThing += micros() - now; // group their things so use right var for each.
+    //   // lwd.stamp(EnumsForThese...);
+    //   // update time, stamp di stamp, yada. common inbetween crap.
+    // }
   }
 };
