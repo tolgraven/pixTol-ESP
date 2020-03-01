@@ -1,0 +1,8 @@
+#
+# CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE >= 3000ish (smooth)
+# -Wno-error (how can some submodule take over and break framework deps lol?)
+#
+# CONFIG_COMPILER_CXX_RTTI (cause I wanna!)
+#
+# CONFIG_COMPILER_STACK_CHECK_MODE=STRONG
+# CONFIG_COMPILER_DISABLE_GCC8_WARNINGS   (prob? lots of lib noise no)
