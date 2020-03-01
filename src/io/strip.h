@@ -2,9 +2,10 @@
 
 #include <map>
 #include <algorithm>
-/* #include <functional> */
+#include <functional>
 #include <NeoPixelBrightnessBus.h>
 #include <NeoPixelAnimator.h>
+
 #include "renderstage.h"
 #include "envelope.h"
 #include "log.h"
@@ -21,39 +22,50 @@
 // extern "C" void ICACHE_RAM_ATTR bitbang_send_pixels_400(uint8_t* pixels, uint8_t* end, uint8_t pin);
 
 #ifdef ESP8266
-using DmaGRB      = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266Dma800KbpsMethod>;
-using DmaGRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>;
+using GRB      = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266Dma800KbpsMethod>;
+using GRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266Dma800KbpsMethod>;
 using DmaRGBW     = NeoPixelBrightnessBus<NeoRgbwFeature, NeoEsp8266Dma800KbpsMethod>;
 /* "If Async is used, then neither serial nor serial1 can be used due to ISR conflict" */
 /* "maybe next release after required changes in esp8266 board support core is supported" */
 /* serial dooes work tho so guess that was changed, but might still be fucking w debug? */
 /* if not then it's def the shared interrupt handler, so change that code. */
-/* using Uart0  = NeoEsp8266AsyncUart0800KbpsMethod; */
-/* using Uart1  = NeoEsp8266AsyncUart1800KbpsMethod; */
-using Uart0  = NeoEsp8266Uart0800KbpsMethod;
-using Uart1  = NeoEsp8266Uart1800KbpsMethod;
+using Uart0       = NeoEsp8266Uart0800KbpsMethod;
+using Uart1       = NeoEsp8266Uart1800KbpsMethod;
+using AUart0      = NeoEsp8266AsyncUart0800KbpsMethod;
+using AUart1      = NeoEsp8266AsyncUart1800KbpsMethod;
 using UartGRB     = NeoPixelBrightnessBus<NeoGrbFeature,  Uart1>;
 using UartGRBW    = NeoPixelBrightnessBus<NeoGrbwFeature, Uart1>;
-using UartRGBW    = NeoPixelBrightnessBus<NeoRgbwFeature, Uart1>;
+// using AUart       = NeoPixelBrightnessBus<NeoGrbFeature, T>;
+
+using Uart0_GRB     = NeoPixelBrightnessBus<NeoGrbFeature,  Uart0>;
+using Uart0_GRBW    = NeoPixelBrightnessBus<NeoGrbwFeature, Uart0>;
+// using UartRGBW    = NeoPixelBrightnessBus<NeoRgbwFeature, Uart1>;
 /* using UartGRB     = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266AsyncUart0800KbpsMethod>; */
 /* using UartGRBW    = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266AsyncUart0800KbpsMethod>; */
-// using BitBangGRB  = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266BitBang800KbpsMethod>;
-// using BitBangGRBW = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266BitBang800KbpsMethod>;
-using BitBangGRB  = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEspBitBangSpeed800Kbps>;
-using BitBangGRBW = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEspBitBangSpeed800Kbps>;
 #endif
 #ifdef ESP32
-using DmaGRB      = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp32I2s1800KbpsMethod>;
-using DmaGRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp32I2s1800KbpsMethod>;
-using Dma0GRB      = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp32I2s0800KbpsMethod>;
-using Dma0GRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp32I2s0800KbpsMethod>;
+using GRB      = NeoPixelBrightnessBus<NeoGrbFeature, Neo800KbpsMethod>;
+using GRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, Neo800KbpsMethod>;
+// using Dma0GRB      = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp32I2s0800KbpsMethod>;
+// using Dma0GRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp32I2s0800KbpsMethod>;
 // using UartGRB     = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266AsyncUart800KbpsMethod>;
 // using UartGRBW    = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266AsyncUart800KbpsMethod>;
 // using Uart0_RGBW  = NeoEsp8266AsyncUart0_800KbpsMethod;
 // using Uart1_RGBW  = NeoEsp8266AsyncUart1_800KbpsMethod;
-using BitBangGRB  = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEspBitBangSpeed800Kbps>;
-using BitBangGRBW = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEspBitBangSpeed800Kbps>;
 #endif
+
+template<class T>
+using Bus4        = NeoPixelBrightnessBus<NeoGrbwFeature, T>;
+// union UartBus4 {
+//   Bus4<AUart0> bus0;
+//   Bus4<AUart1> bus1;
+//   UartBus4(Bus4<AUart0> b): bus(b) {}
+//   UartBus4(Bus4<AUart1> b): bus2(b) {}
+// };
+
+// union UartBus4 { // tho no real diff when bypassing all their color mechanisms welp
+//   UartGRBW
+// };
 
 class iStripDriver {
   public:
@@ -91,99 +103,132 @@ class iStripDriver {
     virtual void ShiftRight(uint16_t shiftCount, uint16_t first, uint16_t last)     = 0;
 };
 
-class StripRGB: public iStripDriver {
-  public:
-    explicit StripRGB(uint16_t ledCount):
-      bus(ledCount) {
-      lg.log("Strip", Log::DEBUG, "Created new: RGB");
-    }
-    virtual ~StripRGB() {}
-    virtual void Begin()  {
-      lg.log("Strip", Log::DEBUG, "Starting bus: RGB");
-      bus.Begin();
-    }
-    virtual void Show()   { bus.Show(); }
-    virtual void SetBrightness(uint16_t brightness)                { bus.SetBrightness(brightness); }
-    virtual void SetPixelColor(uint16_t pixel, RgbColor color)     { bus.SetPixelColor(pixel, color); }
-    virtual void SetPixelColor(uint16_t pixel, RgbwColor color)    { bus.SetPixelColor(pixel, RgbColor(color.R, color.G, color.B)); }
-    virtual void GetPixelColor(uint16_t pixel, RgbColor& result)   { result = bus.GetPixelColor(pixel); }
-    virtual void GetPixelColor(uint16_t pixel, RgbwColor& result)  { result = RgbwColor(bus.GetPixelColor(pixel)); }
+// class StripRGB: public iStripDriver {
+//   public:
+//     explicit StripRGB(uint16_t ledCount):
+//       bus(ledCount) {
+//       DEBUG("Created new: RGBW");
+//     }
+//     virtual ~StripRGB() {}
+//     virtual void Begin()  {
+//       DEBUG("Starting bus: RGBW");
+//       bus.Begin();
+//     }
+//     virtual void Show()   { bus.Show(); }
+//     virtual void SetBrightness(uint16_t brightness)                { bus.SetBrightness(brightness); }
+//     virtual void SetPixelColor(uint16_t pixel, RgbColor color)     { bus.SetPixelColor(pixel, color); }
+//     virtual void SetPixelColor(uint16_t pixel, RgbwColor color)    { bus.SetPixelColor(pixel, RgbColor(color.R, color.G, color.B)); }
+//     virtual void GetPixelColor(uint16_t pixel, RgbColor& result)   { result = bus.GetPixelColor(pixel); }
+//     virtual void GetPixelColor(uint16_t pixel, RgbwColor& result)  { result = RgbwColor(bus.GetPixelColor(pixel)); }
 
-    virtual iStripDriver& ClearTo(RgbColor color)                                   { bus.ClearTo(color); return *this; }
-    virtual iStripDriver& ClearTo(RgbwColor color)                                  { ClearTo(RgbColor(color.R, color.G, color.B)); return *this; }
-    virtual iStripDriver& ClearTo(RgbColor color, uint16_t first, uint16_t last)    { bus.ClearTo(color, first, last); return *this; }
-    virtual iStripDriver& ClearTo(RgbwColor color, uint16_t first, uint16_t last)   { ClearTo(RgbColor(color.R, color.G, color.B), first, last); return *this; }
-    virtual bool CanShow() const        { return bus.CanShow(); }
-    virtual bool IsDirty() const        { return bus.IsDirty(); }
-    virtual void Dirty()                { bus.Dirty(); }
-    virtual void ResetDirty()           { bus.ResetDirty(); }
-    virtual uint8_t* Pixels()           { return bus.Pixels(); }
-    virtual size_t PixelsSize() const   { return bus.PixelsSize(); }
-    virtual size_t PixelSize() const    { return bus.PixelSize(); }
-    virtual uint16_t PixelCount() const { return bus.PixelCount(); }
+//     virtual iStripDriver& ClearTo(RgbColor color)                                   { bus.ClearTo(color); return *this; }
+//     virtual iStripDriver& ClearTo(RgbwColor color)                                  { ClearTo(RgbColor(color.R, color.G, color.B)); return *this; }
+//     virtual iStripDriver& ClearTo(RgbColor color, uint16_t first, uint16_t last)    { bus.ClearTo(color, first, last); return *this; }
+//     virtual iStripDriver& ClearTo(RgbwColor color, uint16_t first, uint16_t last)   { ClearTo(RgbColor(color.R, color.G, color.B), first, last); return *this; }
+//     virtual bool CanShow() const        { return bus.CanShow(); }
+//     virtual bool IsDirty() const        { return bus.IsDirty(); }
+//     virtual void Dirty()                { bus.Dirty(); }
+//     virtual void ResetDirty()           { bus.ResetDirty(); }
+//     virtual uint8_t* Pixels()           { return bus.Pixels(); }
+//     virtual size_t PixelsSize() const   { return bus.PixelsSize(); }
+//     virtual size_t PixelSize() const    { return bus.PixelSize(); }
+//     virtual uint16_t PixelCount() const { return bus.PixelCount(); }
 
-    virtual void RotateLeft(uint16_t rotationCount)                                 { bus.RotateLeft(rotationCount); }
-    virtual void RotateLeft(uint16_t rotationCount, uint16_t first, uint16_t last)  { bus.RotateLeft(rotationCount, first, last); }
-    virtual void ShiftLeft(uint16_t shiftCount)                                     { bus.ShiftLeft(shiftCount); }
-    virtual void ShiftLeft(uint16_t shiftCount, uint16_t first, uint16_t last)      { bus.ShiftLeft(shiftCount, first, last); }
-    virtual void RotateRight(uint16_t rotationCount)                                { bus.RotateRight(rotationCount); }
-    virtual void RotateRight(uint16_t rotationCount, uint16_t first, uint16_t last) { bus.RotateRight(rotationCount, first, last); }
-    virtual void ShiftRight(uint16_t shiftCount)                                    { bus.ShiftRight(shiftCount); }
-    virtual void ShiftRight(uint16_t shiftCount, uint16_t first, uint16_t last)     { bus.ShiftRight(shiftCount, first, last); }
-  private:
-    DmaGRB bus;
-};
+//     virtual void RotateLeft(uint16_t rotationCount)                                 { bus.RotateLeft(rotationCount); }
+//     virtual void RotateLeft(uint16_t rotationCount, uint16_t first, uint16_t last)  { bus.RotateLeft(rotationCount, first, last); }
+//     virtual void ShiftLeft(uint16_t shiftCount)                                     { bus.ShiftLeft(shiftCount); }
+//     virtual void ShiftLeft(uint16_t shiftCount, uint16_t first, uint16_t last)      { bus.ShiftLeft(shiftCount, first, last); }
+//     virtual void RotateRight(uint16_t rotationCount)                                { bus.RotateRight(rotationCount); }
+//     virtual void RotateRight(uint16_t rotationCount, uint16_t first, uint16_t last) { bus.RotateRight(rotationCount, first, last); }
+//     virtual void ShiftRight(uint16_t shiftCount)                                    { bus.ShiftRight(shiftCount); }
+//     virtual void ShiftRight(uint16_t shiftCount, uint16_t first, uint16_t last)     { bus.ShiftRight(shiftCount, first, last); }
+//   private:
+//     GRB bus;
+// };
 
 class StripRGBW: public iStripDriver {
   public:
-    explicit StripRGBW(uint16_t ledCount):
-      bus(ledCount) {
-      lg.log("Strip", Log::DEBUG, "Created new: RGBW");
+    // explicit StripRGBW(uint16_t ledCount):
+    //   bus(ledCount) {
+    //   lg.log("Strip", Log::DEBUG, "Created new: RGBW");
+    // }
+    explicit StripRGBW(uint16_t ledCount, uint8_t port) //:
+      // bus(port == 0? UartBus4(AUart0<AUart0>): )
+      // bus( UartBus4(port == 0? AUart0<AUart0>: AUart<AUart1>) )
+      // bus( UartBus4((port == 0)? AUart0<AUart0>: AUart<AUart1>) )
+      // bus( UartBus4(AUart<(port == 0)? AUart0: AUart1>(ledCount)) )
+      // bus( UartBus4((port == 0)? Bus4<AUart0>(ledCount): Bus4<AUart1>(ledCount)) )
+    {
+      // if(port == 0) bus0 = new Bus4<AUart0>(ledCount);
+
+      // if(port == 0) bus0 = new GRBW(ledCount);
+#ifdef ESP8266
+      if(port == 0) bus0 = new GRBW(ledCount);
+#endif
+#ifdef ESP32
+      if(port == 0) bus0 = new GRBW(ledCount, 25);
+#endif
+
+      // else if(port == 1) bus1 = new Bus4<AUart1>(ledCount);
+      // bus(j)
+      // bus(ledCount) {
+      DEBUG("Created new: RGBW");
     }
     virtual ~StripRGBW() {}
     virtual void Begin()  {
-      lg.log("Strip", Log::DEBUG, "Starting bus: RGBW");
-      bus.Begin();
+      // DEBUG("Starting bus: RGBW");
+      if(bus0) bus0->Begin(); else bus1->Begin();
+      // DEBUG("Started bus: RGBW");
     }
-    virtual void Show()   { bus.Show(); }
-    virtual void SetBrightness(uint16_t brightness)               { bus.SetBrightness(brightness); }
+    virtual void Show()   { if(bus0) bus0->Show(); else bus1->Show(); }
+    virtual void SetBrightness(uint16_t brightness)               { if(bus0) bus0->SetBrightness(brightness); else bus1->SetBrightness(brightness); }
     virtual void SetPixelColor(uint16_t pixel, RgbColor color) {
       // XXX this is the big one. Good conversion that doesn't just compensate with white
       // zero-sum but adds and desaturates nicely so everything immune from allout ugly.
       // And receive HSL with onboard saturation ADSR compressor like 90% limit 30ms response yada yad
-      bus.SetPixelColor(pixel, RgbwColor(color));
+      if(bus0) bus0->SetPixelColor(pixel, RgbwColor(color)); else bus1->SetPixelColor(pixel, RgbwColor(color));
     }
-    virtual void SetPixelColor(uint16_t pixel, RgbwColor color)   { bus.SetPixelColor(pixel, color); }
+    virtual void SetPixelColor(uint16_t pixel, RgbwColor color)   { if(bus0) bus0->SetPixelColor(pixel, color); else bus1->SetPixelColor(pixel, color); }
     virtual void GetPixelColor(uint16_t pixel, RgbColor& result) {
-      RgbwColor rgbw = bus.GetPixelColor(pixel);
+      RgbwColor rgbw;
+      if(bus0) rgbw = bus0->GetPixelColor(pixel); else rgbw = bus1->GetPixelColor(pixel);
       result = RgbColor(rgbw.R, rgbw.G, rgbw.B);
     }
-    virtual void GetPixelColor(uint16_t pixel, RgbwColor& result) { result = bus.GetPixelColor(pixel); }
+    virtual void GetPixelColor(uint16_t pixel, RgbwColor& result) {
+      if(bus0) result = bus0->GetPixelColor(pixel); else result = bus1->GetPixelColor(pixel); }
 
     virtual iStripDriver& ClearTo(RgbColor color)                                   { ClearTo(RgbwColor(color)); return *this; }
-    virtual iStripDriver& ClearTo(RgbwColor color)                                  { bus.ClearTo(color);        return *this; }
+    virtual iStripDriver& ClearTo(RgbwColor color)                                  { if(bus0) bus0->ClearTo(color); else bus1->ClearTo(color);        return *this; }
     virtual iStripDriver& ClearTo(RgbColor color, uint16_t first, uint16_t last)    { ClearTo(RgbwColor(color), first, last); return *this; }
-    virtual iStripDriver& ClearTo(RgbwColor color, uint16_t first, uint16_t last)   { bus.ClearTo(color, first, last); return *this; }
+    virtual iStripDriver& ClearTo(RgbwColor color, uint16_t first, uint16_t last)   { if(bus0) bus0->ClearTo(color, first, last); else bus1->ClearTo(color, first, last); return *this; }
 
-    virtual bool CanShow() const        { return bus.CanShow(); }
-    virtual bool IsDirty() const        { return bus.IsDirty(); }
-    virtual void Dirty()                { bus.Dirty(); }
-    virtual void ResetDirty()           { bus.ResetDirty(); }
-    virtual uint8_t* Pixels()           { return bus.Pixels(); }
-    virtual size_t PixelsSize() const   { return bus.PixelsSize(); }
-    virtual size_t PixelSize()  const   { return bus.PixelSize(); }
-    virtual uint16_t PixelCount() const { return bus.PixelCount(); }
+    virtual bool CanShow() const        { if(bus0) return bus0->CanShow(); else return bus1->CanShow(); }
+    virtual bool IsDirty() const        { if(bus0) return bus0->IsDirty(); else return bus1->IsDirty(); }
+    virtual void Dirty()                { if(bus0) bus0->Dirty(); else return bus1->Dirty(); }
+    virtual void ResetDirty()           { if(bus0) bus0->ResetDirty(); else return bus1->ResetDirty(); }
+    virtual uint8_t* Pixels()           { if(bus0) return bus0->Pixels(); else return bus1->Pixels(); }
+    virtual size_t PixelsSize() const   { if(bus0) return bus0->PixelsSize(); else return bus1->PixelsSize(); }
+    virtual size_t PixelSize()  const   { if(bus0) return bus0->PixelSize(); else return bus1->PixelSize(); }
+    virtual uint16_t PixelCount() const { if(bus0) return bus0->PixelCount(); else return bus1->PixelCount(); }
 
-    virtual void RotateLeft(uint16_t rotationCount)                                 { bus.RotateLeft(rotationCount); }
-    virtual void RotateLeft(uint16_t rotationCount, uint16_t first, uint16_t last)  { bus.RotateLeft(rotationCount, first, last); }
-    virtual void ShiftLeft(uint16_t shiftCount)                                     { bus.ShiftLeft(shiftCount); }
-    virtual void ShiftLeft(uint16_t shiftCount, uint16_t first, uint16_t last)      { bus.ShiftLeft(shiftCount, first, last); }
-    virtual void RotateRight(uint16_t rotationCount)                                { bus.RotateRight(rotationCount); }
-    virtual void RotateRight(uint16_t rotationCount, uint16_t first, uint16_t last) { bus.RotateRight(rotationCount, first, last); }
-    virtual void ShiftRight(uint16_t shiftCount)                                    { bus.ShiftRight(shiftCount); }
-    virtual void ShiftRight(uint16_t shiftCount, uint16_t first, uint16_t last)     { bus.ShiftRight(shiftCount, first, last); }
+    virtual void RotateLeft(uint16_t rotationCount)                                 { if(bus0) bus0->RotateLeft(rotationCount); else bus1->RotateLeft(rotationCount); }
+    virtual void RotateLeft(uint16_t rotationCount, uint16_t first, uint16_t last)  { if(bus0) bus0->RotateLeft(rotationCount, first, last); else bus1->RotateLeft(rotationCount, first, last); }
+    virtual void ShiftLeft(uint16_t shiftCount)                                     { if(bus0) bus0->ShiftLeft(shiftCount); else bus1->ShiftLeft(shiftCount); }
+    virtual void ShiftLeft(uint16_t shiftCount, uint16_t first, uint16_t last)      { if(bus0) bus0->ShiftLeft(shiftCount, first, last); else bus1->ShiftLeft(shiftCount, first, last); }
+    virtual void RotateRight(uint16_t rotationCount)                                { if(bus0) bus0->RotateRight(rotationCount); else bus1->RotateRight(rotationCount); }
+    virtual void RotateRight(uint16_t rotationCount, uint16_t first, uint16_t last) { if(bus0) bus0->RotateRight(rotationCount, first, last); else bus1->RotateRight(rotationCount, first, last); }
+    virtual void ShiftRight(uint16_t shiftCount)                                    { if(bus0) bus0->ShiftRight(shiftCount); else bus1->ShiftRight(shiftCount); }
+    virtual void ShiftRight(uint16_t shiftCount, uint16_t first, uint16_t last)     { if(bus0) bus0->ShiftRight(shiftCount, first, last); else bus1->ShiftRight(shiftCount, first, last); }
   private:
-    DmaGRBW bus;
+    // std::vector<UartBus4> bus;
+    // UartBus4 bus;
+    // Bus4<AUart0>* bus0;
+    // Bus4<AUart1>* bus1;
+    GRBW* bus1; // temp...
+    // GRBW*  bus2;
+    GRBW* bus0;
+
+    // UartBus4 bus;
     /* UartGRBW bus; */
     /* DmaRGBW bus; */
 };
@@ -193,28 +238,32 @@ class Strip: public Outputter {
   public:
   Strip(): Strip("Strip RGBW 125", (uint8_t)RGBW, 125) {}
 
-  Strip(iStripDriver* d):
-    Outputter("Strip, ext driver", d->PixelSize(), d->PixelCount()),
-    _driver(d), externalDriver(true) {
+  // Strip(iStripDriver* d):
+  //   Outputter("Strip, ext driver", d->PixelSize(), d->PixelCount()),
+  //   _driver(d), externalDriver(true) {
+  //     initDriver();
+  // }
+  Strip(const String& id, uint8_t fieldSize, uint16_t ledCount, uint8_t bufferCount = 1):
+    Outputter(id, fieldSize, ledCount, bufferCount) {
       initDriver();
+      for(int i=0; i < bufferCount; i++) {
+        buffer(i).setPtr(_driver[i]->Pixels()); //dependent on output type... and doesnt seem to work for DMA either heh
+      }
+      // buffer().setPtr(_driver->Pixels()); //dependent on output type... and doesnt seem to work for DMA either heh
   }
-  Strip(const String& id, uint8_t fieldSize, uint16_t ledCount):
-    Outputter(id, fieldSize, ledCount) {
-      initDriver();
-      buffer().setPtr(_driver->Pixels()); //dependent on output type... and doesnt seem to work for DMA either heh
-  }
-  virtual ~Strip() { if(!externalDriver) delete _driver; }
+  // virtual ~Strip() { if(!externalDriver) delete _driver; }
+  virtual ~Strip() { if(!externalDriver) _driver.clear(); }
 
   virtual void setFieldCount(uint16_t newFieldCount) {
-    if(newFieldCount != _fieldCount) {
-      _fieldCount = newFieldCount;
+    if(newFieldCount != fieldCount()) {
+      ChunkedContainer::setFieldCount(newFieldCount);
       initDriver();
     }
   }
 
-  void setColor(RgbColor color)  { _driver->ClearTo(color);           show(); }
-  void setColor(RgbwColor color) { _driver->ClearTo(color);           show(); }
-  void setColor(HslColor color)  { _driver->ClearTo(RgbColor(color)); show(); }
+  // void setColor(RgbColor color)  { for(auto d: _driver) d->ClearTo(color);           show(); }
+  // void setColor(RgbwColor color) { for(auto d: _driver) d->ClearTo(color);           show(); }
+  // void setColor(HslColor color)  { for(auto d: _driver) d->ClearTo(RgbColor(color)); show(); }
   void setGradient(RgbwColor* from, RgbwColor* to);
 
   void setPixelColor(uint16_t pixel, RgbwColor color);
@@ -227,16 +276,16 @@ class Strip: public Outputter {
   }
   void getPixelColor(uint16_t pixel, RgbwColor& color) {
     pixel = getIndexOfField(pixel);
-    _driver->GetPixelColor(pixel, color); // and back it goes
+    _driver[0]->GetPixelColor(pixel, color); // and back it goes
   }
   void getPixelColor(uint16_t pixel, RgbColor& color) {
     pixel = getIndexOfField(pixel);
-    _driver->GetPixelColor(pixel, color);
+    _driver[0]->GetPixelColor(pixel, color);
   }
   Color getPixelColor(uint16_t pixel) {
     pixel = getIndexOfField(pixel);
     RgbwColor color;
-    _driver->GetPixelColor(pixel, color);
+    _driver[0]->GetPixelColor(pixel, color);
     return Color(color, 4);
   }
 
@@ -244,32 +293,30 @@ class Strip: public Outputter {
 
   /* void rotateBack(uint16_t pixels) { _driver->RotateLeft(pixels); } */
   /* void rotateFwd(uint16_t pixels) {  _driver->RotateRight(pixels); } */
-  /* void rotateBack(float fraction) {  _driver->RotateLeft(_fieldCount * fraction); } */
-  /* void rotateFwd(float fraction) {   _driver->RotateRight(_fieldCount * fraction); } */
-  void rotateBack(float fraction) {  rotateBackPixels = _fieldCount * fraction; }
-  void rotateFwd(float fraction) {   rotateFwdPixels = _fieldCount * fraction; } //XXX TEMP
+  /* void rotateBack(float fraction) {  _driver->RotateLeft(fieldCount() * fraction); } */
+  /* void rotateFwd(float fraction) {   _driver->RotateRight(fieldCount() * fraction); } */
+  void rotateBack(float fraction) {  rotateBackPixels = fieldCount() * fraction; }
+  void rotateFwd(float fraction) {   rotateFwdPixels = fieldCount() * fraction; } //XXX TEMP
   void rotate(float fraction) {
     fraction = fraction - (int)fraction; //so can go on forever
-    if(fraction > 0) _driver->RotateRight(_fieldCount * fraction);
-    else _driver->RotateLeft(_fieldCount * -fraction);
+    if(fraction > 0) _driver[0]->RotateRight(fieldCount() * fraction);
+    else _driver[0]->RotateLeft(fieldCount() * -fraction);
   }
   void shift(float fraction) {
     fraction = fraction - (int)fraction; //so can go on forever
-    if(fraction > 0) _driver->ShiftRight(_fieldCount * fraction);
-    else _driver->ShiftLeft(_fieldCount * -fraction);
+    if(fraction > 0) _driver[0]->ShiftRight(fieldCount() * fraction);
+    else _driver[0]->ShiftLeft(fieldCount() * -fraction);
   }
   void rotateHue(float amount);
 
-  bool ready() { return _driver->CanShow(); }
 
-  uint16_t microsTilReady() {
-    if(ready()) return 0;
-    else return (throughput * sizeInBytes() + cooldown) - (micros() - timeLastRun);
-  }
-  bool run();
+  // uint32_t microsTilReady() override {
+  //   if(_ready()) return 0; /// not actually for us to call tho... the below stuff should be done in Runnable when stuff's set.
+  //   else return (throughput * sizeInBytes() + cooldown) - passed();
+  // }
 
-  iStripDriver& getDriver() { return *_driver; }
-  uint8_t* destBuffer()      { return _driver->Pixels(); }
+  iStripDriver& getDriver(int i = 0) { return *_driver[i]; }
+  uint8_t* destBuffer(int i = 0)      { return _driver[i]->Pixels(); }
 
   void mirror(bool state = true);
   void fold(bool state = true) { _fold = state; }
@@ -282,7 +329,10 @@ class Strip: public Outputter {
 
   private:
   uint16_t rotateFwdPixels = 0, rotateBackPixels = 0;
-  iStripDriver* _driver = nullptr;
+  bool _mirror = false, _fold = false, _flip = false, _gammaCorrect = false; //these will go in Transform
+  NeoGamma<NeoGammaTableMethod>* colorGamma;
+
+  std::vector<iStripDriver*> _driver; // somehow forgot about why we put ptrs in vectors. ABCs. fun detour not
   bool externalDriver = false;
   uint16_t cooldown = 50; //micros
   bool swapRedGreen = false; //true;
@@ -291,10 +341,18 @@ class Strip: public Outputter {
 
   void applyGain();
   void initDriver();
-  bool show();
 
   uint16_t getIndexOfField(uint16_t position);
   uint16_t getFieldOfIndex(uint16_t field) { return field; } // wasnt defined = vtable breaks
+
+  bool _run();
+  bool _ready() override {
+    for(auto d: _driver) {
+      if(_driver[0]->CanShow())
+        return true;
+    }
+    return false;
+  }
 };
 
 
