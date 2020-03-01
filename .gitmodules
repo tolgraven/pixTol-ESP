@@ -1,0 +1,12 @@
+[submodule "components/smooth"]
+	path = components/smooth
+	url = https://github.com/PerMalmberg/Smooth.git
+[submodule "externals/smooth"]
+	path = externals/smooth
+	url = https://github.com/PerMalmberg/Smooth.git
+[submodule "artnet-lib"]
+	path = lib/artnet
+	url = file:///Users/tol/CODE/pixTol/lib-submodule/ArtNetE131Lib_esp8266
+[submodule "arduino-printstream"]
+	path = lib/Arduino-PrintStream
+	url = file:///Users/tol/CODE/pixTol/lib-submodule/Arduino-PrintStream
