@@ -1,64 +1,39 @@
 #include "pixtol.h"
+#include "smooth-playground.h"
 
-Device* device;
-Scheduler* scheduler;
-/* IOT* iot; */
+std::unique_ptr<Device>    device;
+std::unique_ptr<Scheduler> scheduler;
 
-void initDevice() { // init Serial, random seed, some first boot animation? anything else pre-homie/state?
-  device = new Device(); //XXX refactor back Device and IOT together, Homie or w/e further away.
-  // components held there off cfg, register with scheduler. Then Renderer does everything.
-  // No one else touches outputs. No one sets Functions directly etc.
-  // about time this shit stops sucking balls
-  String deviceId = "pixTol"; //Homie.getConfiguration().deviceId
-  /* iot = new IOT(deviceId, device); //inits Homie. REMEMBER no cfg before that!!! */
-  scheduler = new Scheduler(deviceId, *device);
-  device->finalizeBoot();
-  device->debug->stackAvailableLog();
+extern "C" { // ESP-IDF goes app_main. unix mock main...
+#ifdef ESP_PLATFORM
+void app_main() {
+    setup();
+    // App app{}; app.start();
+}
+#else
+int main(int /*argc*/, char** /*argv*/) {
+    // App app{}; app.start();
+    return 0;
+}
+#endif
 }
 
+
 void setup() {
-  initDevice(); //Debug::bootLog(Debug::doneBOOT); //should have a first anim thing here...
-#ifdef TOL_DEBUG
+  String deviceId = "pixTol";
+  device    = std::make_unique<Device>(deviceId);
+  scheduler = std::make_unique<Scheduler>(deviceId);
+
+#ifdef TOL_DEBUG /* REMEMBER FORCE REMOTE FOR GDB!!! */
   gdbstub_init();
   lg.dbg("GDB enabled, UART0 strip wont work!");
 #endif
-  // Debug::bootLog((Debug::BootStage)2);
-  lg.dbg("Done setup");
-  device->debug->stackAvailableLog();
+
+  scheduler->start();
 }
 
-void loopStart() {
-  Serial.printf("Loop START\n");
-  device->debug->stackAvailableLog();
-}
-void loopEnd() {
-  Serial.printf("Loop END\n");
-  device->debug->stackAvailableLog();
-}
-
-void loop() { // as well as watchdog, hold off actual setup of all crashy-esque stuff until a few seconds into loop...
-  /* REMEMBER FORCE REMOTE FOR GDB!!! */
-  /* loopStart(); */
-  lwd.feed();
-  device->loop(); // also (not currently) opens watchdog loop
-  scheduler->loop();
-  /* iot->loop(); */
-  lwd.stamp(); //close watchdog loop
-
-  /* Serial.printf("Heap: %d\n", ESP.getFreeHeap()); */
-  /* while(1) { */
-  /*   /1* Serial.printf("."); delay(5); *1/ */
-  /*   /1* yield(); /2* esp_wdt_feed(); *2/ *1/ */
-  /*   device->loop(); // also (not currently) opens watchdog loop */
-  /*   scheduler->loop(); */
-  /*   iot->loop(); */
-  /*   ESP.wdtFeed(); */
-  /* } */
-  /* ESP.wdtFeed(); */
-  /* loopEnd(); */
-  /* loop(); */
-  // so. All the freezing, wdt timing out, also weirdo lengthy bizarro stacktrace...
-  // somehow Strip ISR shows up 17 times there despite no calls to run.
-  // back up and try figure this out like an adult.
-  // hence why decoupling process is so important gah. get rid of strip from iot and shit.
+void loop() { // ok I mean at some point just silly moving more stuff away from here...
+  // lwd.feed(); //if so device loop must go first in loop
+  device->loop();
+  // lwd.stamp(); //close watchdog loop - must start next with same
 }
