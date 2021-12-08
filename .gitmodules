@@ -10,3 +10,9 @@
 [submodule "arduino-printstream"]
 	path = lib/Arduino-PrintStream
 	url = file:///Users/tol/CODE/pixTol/lib-submodule/Arduino-PrintStream
+[submodule "externals/functional_plus"]
+	path = externals/functional_plus
+	url = https://github.com/Dobiasd/FunctionalPlus.git
+[submodule "externals/fmt"]
+	path = externals/fmt
+	url = https://github.com/fmtlib/fmt
