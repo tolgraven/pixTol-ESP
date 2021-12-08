@@ -3,34 +3,30 @@ set(COMPONENT_ADD_INCLUDEDIRS
     # AppleMIDI/src
     # AppleMIDI/src/utility
     Arduino-modded
+    # Arduino-PrintStream/src
+    ESPAsyncE131_ID1781
+    NeoPixelBus_ID547/src/internal # get git version ffs. apply rmt patch...
+    NeoPixelBus_ID547/src
     OpcServer/src
-    Arduino-PrintStream/src
-    artnet/src
-    lib8tion/src
     pixTol
-    FastLED
+    WifiManager
     )
 
-file(GLOB lib AppleMIDI/src/*.cpp Arduino-modded/*.cpp Arduino-PrintStream/src/*.cpp ArtNetE131Lib_esp8266/src/*.cpp lib8tion/src/*.cpp OpcServer/src/*.cpp pixtol/*.h)
-# set(COMPONENT_SRCS ${lib})
-set(COMPONENT_SRCS
-    # AppleMIDI/src/AppleMidi.cpp
+# needs to run idf.py reconfigure if adding files when doing this.
+set(COMPONENT_SRCDIRS
+  # RotaryEncoder_ID1569
+  )
+set(COMPONENT_SRCS # cant use both apparently...
+#     # AppleMIDI/src/AppleMidi.cpp
     Arduino-modded/Ticker.cpp
-    Arduino-PrintStream/src/PrintStream.cpp
-    artnet/src/ArtNetE131Lib.cpp
-    lib8tion/src/lib8tion.h
+    ESPAsyncE131_ID1781/RingBuf.c
+    ESPAsyncE131_ID1781/ESPAsyncE131.cpp
+    NeoPixelBus_ID547/src/internal/RgbwColor.cpp # test. dont think need any at all actually
+    NeoPixelBus_ID547/src/internal/Esp32_i2s.c # test. dont think need any at all actually
     OpcServer/src/OpcServer.cpp
-    pixtol/field.h
-    # FastLED/FastLED.cpp
-    # FastLED/bitswap.cpp
-    # FastLED/colorpalettes.cpp
-    # FastLED/colorutils.cpp
-    # FastLED/hsv2rgb.cpp
-    # FastLED/lib8tion.cpp
-    # FastLED/noise.cpp
-    # FastLED/platforms.cpp
-    # FastLED/power_mgt.cpp
-    # FastLED/wiring.cpp
+    WifiManager/WiFiManager.cpp
+#     Arduino-PrintStream/src/PrintStream.cpp
+#     OpcServer/src/OpcServer.cpp
     )
 
 set(COMPONENT_REQUIRES arduino)
@@ -38,11 +34,18 @@ set(COMPONENT_REQUIRES arduino)
 # idf_component_register()
 register_component()
 # idf_component_register(SRCS "${lib}"
-#     INCLUDE_DIRS AppleMIDI Arduino-modded Arduino-PrintStream ArtNetE131Lib_esp8266 lib8tion OpcServer pixTol
+#     INCLUDE_DIRS Arduino-modded Arduino-PrintStream OpcServer pixTol
 #                        REQUIRES arduino)
 target_compile_options(${COMPONENT_LIB} PRIVATE
     -DESP32
     -DARDUINO_ARCH_ESP32
     -DARDUINO
     -Wno-error=class-memaccess
+    -Wno-extra
+    -Wno-error
     )
+
+set_source_files_properties(NeoEspBitBangMethod.h
+    PROPERTIES COMPILE_FLAGS
+    -Wno-ignored-qualifiers
+)
