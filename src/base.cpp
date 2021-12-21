@@ -1,6 +1,8 @@
 #include "base.h"
 
-namespace { // XXX move to cpp
+namespace tol {
+
+namespace {
 UID generateUID() {
     static UID i = 0;
     return ++i;
@@ -74,4 +76,6 @@ void Runnable::checkAndHandleTimeOut() {
       setActive(false);
       _onTimeout();
   }
+}
+
 }

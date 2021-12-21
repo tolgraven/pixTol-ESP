@@ -1,37 +1,57 @@
 #pragma once
 
-class Action { //wrap fns or whatever in uniform (String args) way so can be acted upon ezy
-  public:
-    Action(const String& id, );
-  // std::pair<String, 
-  // each possible arg needs to declare its type for later conversion back
-  //
-  // std::function<void(const String&)>; //one way. but will need moar flex
-  // also want actions to return shit, presumably. ie for querying state of stuff, without
-  // having print logic until Outputter...
+#include <string>
+#include <unordered_map>
 
-  String _id, type;
-  bool execute() {
+#include "base.h"
+#include "log.h"
+#include "util.h"
+
+namespace tol {
+// Ultimately want to be able to store any fn/args cb dynamically,
+// and parse eg json -> tuple -> call or construct using template funkiness.
+// Sooo keep lurning til got that down, but for now maybe wrapping will do.
+// This will then be used by cmdline/mqtt/web/restore from settings to actually set up
+// system.
+// 
+// template<class... Args>
+// void DEBUG2(const Args&&... args) {
+// using command_t = std::function<void(const std::string& subcommand, const std::string& args)>;
+using command_t = std::function<void(const std::string& subcommand,
+                                     const std::vector<std::string>& args)>;
+
+//class Command: public Named {
+//  public:
+//    Command(const std::string& id, const std::string& type, command_t cmd):
+//      Named(id, type), cmd(cmd);
+//  // std::pair<std::string,
+//  // each possible arg needs to declare its type for later conversion back
+//  //
+//  // std::function<void(const std::string&)>; //one way. but will need moar flex
+//  // also want actions to return shit, presumably. ie for querying state of stuff, without
+//  // having print logic until Outputter...
+
+//  bool execute() {}
+//};
+class CommandRunner { // right so this incarnation = dumb = parse strings n shit
+  public:
+  CommandRunner() {}
+  ~CommandRunner() {}
+
+  void add(const std::string& id, command_t command) {
+    cmds.emplace(id, command);
   }
+  void execute(const std::string& id, const std::string& args) {
+    if(auto it = cmds.find(id); it != cmds.end()) {
+      
+      it->second(id, util::split(args, "\n"));
+    } else {
+      lg.err("Command not found " + (String)id.c_str(), "CommandRunner");
+    }
+  }
+
+  std::unordered_map<std::string, command_t> cmds;
+  // std::tuple
 };
-class ActionRunner {
-  public:
-  ActionRunner() {}
-  ~ActionRunner()
 
-  bool register()
-};
-//dunno if this shit could be fit into curr general design, so for now...
-//this is for text commands, replacing curr mqtt/homie only crap
-//homie should of course only pass on the input
-// so bindings can be reused for serial, web, ssh(?) haha
-// 
-
-//instead of manual binds, and considering not often triggers,
-//auto-wrap possible functions (bc arg crap) and
-//
-//let classes register all its eligeble fns?
-// loose ones and other classes then we have to
-
-// still, we gotta fit it. Make sure Buffer<String> actually works then?
-// 
+}

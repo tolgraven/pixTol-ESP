@@ -1,16 +1,17 @@
 #pragma once
 
-// #include <Arduino.h>
 #undef max
 #undef min
 #include <stdio.h>
 #include <map>
 #include <iostream>
+#include <string>
 #include <memory>
 
+#include <smooth/core/logging/log.h>
+// #include "fmt/format.h"
 // #include <Print.h> // how design to implement Print stuff yet include log shit w/o knowing bout it..
-
-#include <PrintStream.h>
+// #include <PrintStream.h>
 
 #include "base.h"
 
@@ -42,17 +43,14 @@ int _write(int file, char *ptr, int len); // redefine for GCC to autoredirect bu
 // enum _EndLineCode { endl };
 // inline String operator <<(String&& s, _EndLineCode arg) { return s + '\n'; }
 
+namespace tol {
 
-// enum class AnsiColor: int {
 enum AnsiColor: int {
-    Black=30, Red=31, Green=32, Yellow=33, Blue=34, Magenta=35, Cyan=36, White=37,
-    brBlack=90, brRed=91, brGreen=92, brYellow=93, brBlue=94, brMagenta=95, brCyan=96, brWhite=97,
+    Black=30, Red, Green, Yellow, Blue, Magenta, Cyan, White,
+    brBlack=90, brRed, brGreen, brYellow, brBlue, brMagenta, brCyan, brWhite
 };
 
 template<typename T>
-// std::string print_as_color(T const& value, AnsiColor color){
-    // std::stringstream sstr;
-    // return sstr.str();
 String Ansi(T& value, AnsiColor color) {
     return (String)"\033[1;" + static_cast<int>(color) + "m" + value + "\033[0m";
 }
@@ -88,12 +86,11 @@ namespace ansi {
 }
 
 #define __LOC__ (String)__func__ + " " + __FILE__ + ":" + __LINE__
-#define TRACE(s) lg.ln(s, ::Log::TRACE, __LOC__)
-// #define DEBUG(s) lg.log<Log::DEBUG>(s, __func__)
-#define DEBUG(s) lg.ln(s, ::Log::DEBUG, __func__)
-// #define DEBUG(s...) lg.dbg(String(s), __PRETTY_FUNCTION__)
-#define ERROR(s) lg.ln(s, ::Log::ERROR, __LOC__)
-#define LOG(s) lg.ln(s, ::Log::INFO, __func__)
+#define TRACE(s) tol::lg.ln(s, tol::Log::TRACE, __LOC__)
+// #define DEBUG(s) tol::lg.ln(s, tol::Log::DEBUG, __func__)
+#define DEBUG(s) tol::lg.ln(s, tol::Log::DEBUG, __PRETTY_FUNCTION__)
+#define ERROR(s) tol::lg.ln(s, tol::Log::ERROR, __LOC__)
+#define LOG(s) tol::lg.ln(s, tol::Log::INFO, __func__)
 
 
 template<class T>   // Dummy parameter-pack expander
@@ -124,6 +121,34 @@ _logging(Fun&& f, String&& name, Args&&... args) {
 #define logging(f, ...) _logging(f, (String)#f, __VA_ARGS__)
 // makes a str out of fn name, then hopefully rest of args also Stringifyable.
 
+class LogOutputClean: public Named { // guess concept of both being and containing (and/or either way? a printer seems snazzy)
+  using FmtFn = std::function<String(const String&, const String&, const String&)>;
+  using PrintFn = std::function<void(const String&)>;
+  public:
+  LogOutputClean(const String& id, PrintFn printFn, FmtFn fmt, bool enabled = true):
+    Named(id, "LogOutput"), printFn(printFn), enabled(enabled), fmt(fmt) {} // id(id), pr(reinterpret_cast<Print*>(&printer)), enabled(enabled) {}
+
+  PrintFn printFn;
+  bool enabled; //or should outside control that instead maybe
+
+  void log(const String& location, const String& level, const String& text) const {
+    if(enabled) log(fmt(location, level, text));
+  }
+  void log(const String& text) const {
+    if(enabled) printFn(text);
+  }
+  void setFmt(const FmtFn& fmtFn) { fmt = std::move(fmtFn); }
+
+  private:
+  FmtFn fmt = [](const String& loc, const String& lvl, const String& txt) {
+                  return String((String)millis() + "\t[" + lvl + "]\t" + loc + "\t" + txt); };
+}; // YADA YADA what think now:
+// - keep arduino logging output
+// + add idf output (by way of smooth? for thread-saef)
+//    CHALLENGE: keep implementations away ffs
+//               (irrelevant while using String but that will change too)
+//               (dont just fucking switch from String to std::string, templatize.)
+// - add back mqtt out already ffs - smooth has something too
 
 class LogOutput: public Named { // guess concept of both being and containing (and/or either way? a printer seems snazzy)
   using FmtFn = std::function<String(const String&, const String&, const String&)>;
@@ -135,9 +160,7 @@ class LogOutput: public Named { // guess concept of both being and containing (a
   void log(const String& location, const String& level, const String& text) const {
     if(enabled) log(fmt(location, level, text));
   }
-  void log(const String& text) const {
-    if(enabled) pr->print(text);
-  }
+  void log(const String& text) const { if(enabled) pr->print(text); }
   // size_t printTo(const Print& p) const override {
   //   return Named::printTo(p) + p.println((String)"put fmtString here n shit"); // uh guess print FmtFn text cause should be printf style anyways :| and ze kinda Print.
   // }
@@ -152,7 +175,6 @@ class LogOutput: public Named { // guess concept of both being and containing (a
 };
 
 
-// enum Level: int8_t { INVALID = -1, TRACE = 0, DEBUG, INFO, WARNING, ERROR, CRITICAL }; //add an "NONE" at end to disable output fully?
 class Log: public Print { // gives same functionality as Serial etc, but routing to multiple/different destinations...
 public:
   Log() {
@@ -163,13 +185,23 @@ public:
   bool initOutput(const String& output); // init a predefined
   void addOutput(const LogOutput& lo);   // add new
 
-
 	void log(const String& text, const Level level = INFO, const String& location = "") const;
   template<Level level>
 	void log(const String& text, const String& location = "") const {
     log(text, level, location);
   }
+  
+  // void ln(const std::string& text, const Level level, const std::string& location) const {
+  //   ln((String)text.c_str(), level, (String)location.c_str());
+  // }
+  // void dbg(const std::string& text, const std::string& location = "") const {
+  //   dbg((String)text.c_str(), (String)location.c_str());
+  // }
+  // void err(const std::string& text, const std::string& location = "") const {
+  //   err((String)text.c_str(), (String)location.c_str());
+  // }
 
+  
   void ln(const String& text, const Level level, const String& location) const;
   void dbg(const String& text, const String& location = "") const;
   void err(const String& text, const String& location = "") const;
@@ -182,7 +214,7 @@ public:
 	void setLevel(Level lvl) { if(lvl >= DEBUG && lvl <= CRITICAL) _level = lvl; }
   // void setOption(const String& option, const String& value); //use in future
 
-  virtual size_t write(uint8_t character) {
+  virtual size_t write(uint8_t character) { // oh yeah this is what complicates... only for arduino stuff otherswise get called in main printer
     for(auto&& d: destinations)
       d.pr->write(character);
     return 1;
@@ -196,6 +228,7 @@ public:
 
   bool enableColor = true;
 
+  std::vector<LogOutputClean> moreDest; // fix up. need flebility uh
 private:
 	Level _level = DEBUG;
   std::vector<LogOutput> destinations;
@@ -226,3 +259,4 @@ void DEBUG2(const Args&&... args) {
   // lg.dbg(expand({(String << args << ' ', 0)...}));
 }
 
+}

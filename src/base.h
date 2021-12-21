@@ -3,21 +3,20 @@
 #include <memory>
 #include <functional>
 #include <vector>
+
 #include <Arduino.h>
 #include <Ticker.h>
 
+namespace tol {
+
 // maybe reorganize as, urr, Object ;P
-// add uid, ptr to parent (well, creator, since can be multiple owners)
-// swap String to String* = can have slim/anon objs too, req still works...
+// add uid, ptr to parent (?) (well, creator, since can be multiple owners)
 using UID = uint32_t;
 
 class Named: public Printable { // has a name and a type.
   public:
     Named(): Named("") {}
-    //   _uid(generateUID()) {}
     Named(const String& id, const String& type = "");
-    // Named(const String& id, const String& type = ""):
-    // _id(id), _type(type), _uid(generateUID()) {}
     virtual ~Named() {}
     const String& id()   const { return _id; }
     const String& type() const { return _type; } // prob rename "kind"
@@ -25,12 +24,12 @@ class Named: public Printable { // has a name and a type.
     void          setId(const String& newId)     { _id = newId; }
     void          setType(const String& newType) { _type = newType; }
     virtual size_t printTo(Print& p) const override {
-      return p.print("Type " + type() + ", id " + id() + ", " + uid() + ". ");
+      return p.print("Type " + type() + ", id " + id() + ", uid" + uid() + ". ");
       // return p.print(String(typeid(this).name()) + ", type " + type() + ", id " + id() + ". ");
       // might as well just enable rtti and not have this fucking virtual?
     }
   private:
-    String _id, _type; //or name? want for eg artnet, sacn, strip, shorter stuff not full desc
+    String _id, _type;
     UID _uid;
 };
 
@@ -39,7 +38,7 @@ class Named: public Printable { // has a name and a type.
 // templatize for float buffers and that.
 class ChunkedContainer: public Printable {  // (Buffer, but also others containing multuple Buffers - RS)
   public:
-    ChunkedContainer(uint16_t fieldCount): ChunkedContainer(1, fieldCount) {}
+    ChunkedContainer(uint16_t fieldCount = 0): ChunkedContainer(1, fieldCount) {}
     ChunkedContainer(uint8_t fieldSize, uint16_t fieldCount):
       _fieldSize(fieldSize), _fieldCount(fieldCount) {}
     virtual ~ChunkedContainer() { delete subFieldOrder; }
@@ -63,6 +62,7 @@ class ChunkedContainer: public Printable {  // (Buffer, but also others containi
 };
 
 
+// setup w chrono
 struct Checkpoint {
   uint32_t time;
   uint32_t runs;
@@ -74,7 +74,7 @@ struct Checkpoint {
     time = newTime, runs = numRuns;
   }
   float hzSince(const Checkpoint& rhs = Checkpoint( 0, 0 )) {
-    return (time - rhs.time) / (runs - rhs.runs);
+    return (float)(time - rhs.time) / (runs - rhs.runs);
   }
 }; // so uh have like five of these one updates every 5-10 frames, 1s, 5s, 1m, ya?
 
@@ -86,41 +86,39 @@ class Runnable: public Named { // something expected to be run (usually continou
     Runnable(const String& id, const String& type):
       Named(id, type) {
       ts.start = micros(); // more like create I guess
-    } // some ctr for timeout, throughput, yada.
+    }
     virtual ~Runnable() {}
-    // basically quite different "poll everything as often as possible" vs...  DMX - fixed hz, as tight as possible.  Scheduler could check for periodics and prio them?
-    // generally keep count expected vs actual execution and adjust. But cant self-adjust lol.
-    // causse we can not really attempt proper run off interrupt. But then 32 is multithreaded so.
 
     bool run(); // here, maybe on throttled and def averaging basis, track actual hz
-    // bool operator()() { return run(); } // ???
+    bool operator()() { return run(); } // ???
 
     virtual bool ready(); // no const cause conditions actually get updated and shit
     virtual uint32_t microsTilReady() const; // so this version can only know high-level / enforced stuff
-    // enum TimeDiv { MICROS, MS, S }; // ok but either proper Time class (find lib) or templatize chrono not in arduino STL but can use w ulibc...
-    // virtual uint32_t tilReady(TimeDiv t) { return 0; };
     uint32_t passed() const { return micros() - ts.run; }
 
     struct TimeStamps { uint32_t start, run = 0, attempt = 0; } ts;
     struct Counts { uint32_t totalTime = 0, run = 0, attempt = 0; } count;
 
     const TimeStamps& getTimes() const { return ts; }
-    const Counts& getCounts() const { return count; }
+    Counts& getCounts() { return count; }
 
     void setEnabled(bool state = true) { _enabled = state; }
     bool enabled() const { return _enabled; }
     bool active() const { return _active; } // prob better as activity()
 
-    // float getAverageHz(uint32_t timePeriod = 5) { // s }
-    virtual size_t printTo(Print& p) const override {
-      return Named::printTo(p) + p.printf("Started %u, runs/drops %u / %u", ts.start, count.run, count.attempt - count.run); //osvosv fix bettr
+    float averageHz(uint32_t timePeriod = 0) const { return (float)count.run / (micros() - ts.start); }
+
+    size_t printTo(Print& p) const override {
+      return Named::printTo(p) +
+             p.printf("Runs/drops %u / %u (%2.f hz). ",
+                 count.run, count.attempt - count.run, averageHz()); //osvosv fix bettr
     }
 
     void setTargetFreq(uint16_t hz) { targetHz = hz; }
 
     using RunFn_t = std::function<bool()>;
-    void setRunFn(RunFn_t fn) { _runFn = fn; } // void setRunFn(RunFn_t&& fn) { _runFn = std::move(fn); }
-    RunFn_t runFn() const { return _runFn; }
+    void setRunFn(RunFn_t fn) { _runFn = std::move(fn); } // void setRunFn(RunFn_t fn) { _runFn = std::move(fn); }
+    const RunFn_t& runFn() const { return _runFn; }
 
   private:
     bool _active = true, _enabled = true;
@@ -130,7 +128,8 @@ class Runnable: public Named { // something expected to be run (usually continou
     void checkAndHandleTimeOut();
     void setActive(bool state = true) { _active = state; } // private simple setter makes no sense hah
 
-    virtual bool _run() { return (runFn() && runFn()()); } // dunno why lol but means no more pure virtual and task can be a closure etc.
+    virtual bool _run() { return (runFn() && runFn()()); } // nothing set should mean failure no
+    // virtual bool _run() { if(runFn()) return runFn()(); else return true; }
     virtual bool _ready() { return true; }
     virtual void _onTimeout() {}; // eg artnet send would impl setting targetHz to 0.25.
     virtual void _onRestored() {};
@@ -142,42 +141,43 @@ class Runnable: public Named { // something expected to be run (usually continou
 };
 
 // just a Runnable with a stack of Runnables...
-class RunnableContainer: public Runnable {
+class RunnableGroup: public Runnable {
   public:
-  RunnableContainer(const String& id):
+  RunnableGroup(const String& id):
     Runnable(id, "Runnables") {}
 
-  using Tasks = std::vector<std::shared_ptr<Runnable>>;
-  Tasks& tasks() { return _tasks; }
+  using Tasks = std::vector<std::shared_ptr<Runnable>>; // well yeah i guess if want this "ze same" just put a vector in reg with one elem pointing to this. but eh
+  Tasks& tasks() { return _tasks; } // beware lunatic spec Tasks ...() in Runnabel...
 
   void add(Runnable* task) { _tasks.emplace_back(task); }
-  Runnable& get(uint8_t index) { return *(_tasks[index].get()); }
-  Runnable& operator[](uint8_t index) { return get(index); }
+  Runnable& get(int index) const { return *(_tasks[index].get()); }
+  Runnable& operator[](int index) const { return get(index); }
+
   Runnable& get(const String& id) { // something something copy operator.
-    // return tasks().at(
-    //     std::find_if(tasks().begin(), tasks().end(),
-    //                  [id](auto&& task) { return task->id() == id; }));
     for(auto&& t: _tasks) {
       if(id == t->id()) return *t;
     }
     throw std::invalid_argument("No such Runnable");
   }
-  bool _run() override {
+  bool _run() final override { //this might make sense
     bool outcome = false;
     for(auto&& task: tasks()) {
       outcome |= task->run(); // ok this actually breaks diamond again unless go templatizing or pass what to cast to.
     }
     return outcome;
   }
-  bool ready() override {
+  bool ready() final override {
     for(auto&& task: tasks()) {
       if(task->ready()) return true; // ok this actually breaks diamond again unless go templatizing or pass what to cast to.
     }
     return false;
   }
 
+  private:
+  void setRunFn(const RunFn_t& fn);  // can we hide existing shit like this?
   Tasks _tasks;
 };
+
 
 class LimitedRunnable: public Runnable { // took this out since is pretty useless + base ready() ought to lack side effects...
   public:
@@ -352,3 +352,5 @@ class Timed { // eh overkill dynamic bs
   // which speaks to having Functions as precisely how current RenderStage works
   // probably treated as a virtual outputter?
   // ie we have pre-set where data is and just continously run()
+
+}

@@ -25,7 +25,7 @@ public:
     /* advertise("level"); */
     /* advertise("cutoff").settable(); */
     /* advertise("safe"); */
-    lg.logf("Battery", Log::INFO, "BatteryNode initialized.");
+    lg.logf("Battery", tol::Log::INFO, "BatteryNode initialized.");
   }
 
   void loop() {
@@ -55,11 +55,11 @@ private:
 
     if(lastCharge < cutoff-100 || rollingAverageCharge < cutoff) {
       if(lastStatus == Safe)
-        lg.logf("Battery", Log::ERROR, "Charge CRITICAL, %d, prepare to shutdown...", rollingAverageCharge);
+        lg.logf("Battery", tol::Log::ERROR, "Charge CRITICAL, %d, prepare to shutdown...", rollingAverageCharge);
       status = Danger; // then if remains there for a few minutes, shut off stuff using battery.
     } else {           // But guess that'd be done elsewhere after polling this object? Rather than passing callback or some shite.
       if(lastStatus == Danger)
-        lg.logf("Battery", Log::INFO, "Charge back above cutoff! %d", rollingAverageCharge);
+        lg.logf("Battery", tol::Log::INFO, "Charge back above cutoff! %d", rollingAverageCharge);
       status = Safe;
     }
     /* setProperty("level").send(String(rollingAverageCharge)); */

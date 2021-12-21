@@ -1,99 +1,170 @@
 #pragma once
 
-/* #include <Homie.h> */
+#ifdef HOMIE_SHIT_EH
+// #include <Homie.h>
+#endif
+
+// #include <ConfigManager.h> //tho at least parts of layout should be standalone from this
 #include "log.h"
 
-/* #define FW_BRAND "tolgrAVen" */
-/* #define FW_NAME "pixTol" */
-/* #define FW_VERSION "1.0.70" */
 
-// #define LED_PIN             5  // D1=5, D2=4, D3=0, D4=2  D0=16, D55=14, D6=12, D7=13, D8=15
-// #define LED_STATUS_PIN      2
-// #define RX_PIN              3
-// #define TX_PIN              1
 #define MILLION       1000000
 
+struct ConfigSkeletor {
+  char hostName[20];
+    char name[20];
+    bool enabled;
+    int8_t hour;
+    char password[20];
+} config;
+
+struct Metadata {
+    int8_t version;
+} meta;
+
+// homie structore decent beginning
+// struct Confu {
+//   name = "pixtol-proto",
+//   device_id = "pixtol-proto",
+//   device_stats_interval = 300,
+//   "wifi" = {
+//     ssid = "sawa",
+//     password = "lappisdudes"
+//   },
+//   "mqtt" = {
+//     host = "192.168.1.32",
+//     base_topic = "pixtol/",
+//     auth = true,
+//     username = "paj",
+//     password = "razziamutan"
+//   },
+//   "ota" = {
+//     host = "nu",
+//     enabled = true,
+// 		port = 9080,
+//     path = "/ota"
+//   },
+//   "settings" = {
+//     log_artnet = 0,
+//     dmx_hz = 40,
+// 		mirror_second_half = true,
+//     folded_alternating = false,
+// 		led_count = 120,
+// 		bytes_per_pixel = 4,
+// 		starting_universe = 2
+//   }
+// }
+
+// class Config {
+//   ConfigManager* cfgMan;
+
+//   Config() {
+//     cfgMan = new ConfigManager();
+//     // dunno these
+//     // cfgMan.setAPName("Demo");
+//     // cfgMan.setAPFilename("/index.html");
+
+//     // it recs using a common struct but could also
+//     // link to data straight in place where needed...
+//     // so could be a nice sorta flip of consumer not fetching
+//     // but pointing what they need populated.
+//     // tho scattered data ffa obvs sucks for anything with several consumers
+//     // also exposes REST.
+//     cfgMan->addParameter("name", config.name, 20);
+//     cfgMan->addParameter("enabled", &config.enabled);
+//     cfgMan->addParameter("hour", &config.hour);
+//     cfgMan->addParameter("password", config.password, 20, set);
+//     cfgMan->addParameter("version", &meta.version, get);
+//     cfgMan->begin(config);
+//   }
+
+// };
+
+
+
+#ifdef HOMIE_SHIT_EH
 // FIX somehow: dont drop into config mode off invalid settings, or at least reads rest of config and
 // preselect that + default for wrong one. Also event blink angry etc
-
 // OI! store at least dimmer val, in spiffs, and restore on reboot if actively set
-/* using optBool   = HomieSetting<bool>; */
-/* using optInt    = HomieSetting<long>; */
-/* using optFloat  = HomieSetting<double>; */
-/* using optString = HomieSetting<const char*>; */
+using optBool   = HomieSetting<bool>;
+using optInt    = HomieSetting<long>;
+using optFloat  = HomieSetting<double>;
+using optString = HomieSetting<const char*>;
 
-/* // XXX sort own spiffs-writer/reader (or take theirs), allow persistent settings over RDM, mqtt... */
-/* /1* class ConfigNode: public HomieNode { // seems homie (now?) has a 10 settings limit. scale down settings, or patch homie? *1/ */
-/* class ConfigNode { // seems homie (now?) has a 10 settings limit. scale down settings, or patch homie? */
-/*   public: */
-/*   /1* ConfigNode(): HomieNode("pixTol", "config"), *1/ */
-/*   ConfigNode(): */
-/*     stripBytesPerPixel("bytes_per_pixel", "3/4"), */
-/*     stripLedCount("led_count",      "nr LEDs"), // rework for multiple strips */
-/*     // sourceBytesPerPixel("source_bytes_per_pixel", "3 for RGB, 4 for RGBW"), */
+// XXX sort own spiffs-writer/reader (or take theirs), allow persistent settings over RDM, mqtt...
+class ConfigNode: public HomieNode { // seems homie (now?) has a 10 settings limit. scale down settings, or patch homie? *1/
+// class ConfigNode { // seems homie (now?) has a 10 settings limit. scale down settings, or patch homie?
+  public:
+  ConfigNode(): HomieNode("pixTol", "config"),
+  // ConfigNode():
+    stripBytesPerPixel("bytes_per_pixel", "3/4"),
+    stripLedCount("led_count",      "nr LEDs"), // rework for multiple strips
+    // sourceBytesPerPixel("source_bytes_per_pixel", "3 for RGB, 4 for RGBW"),
 
-/*     // universes("universes",       "number of DMX universes"), */
-/*     startUni("starting_universe",   "first uni"), */
-/*     // startAddr("starting_address", "index of beginning of strip, within starting_universe."), // individual pixel control starts after x function channels offset (for strobing etc) */
-/*     dmxHz("dmx_hz",                 "dmx frame rate"),      // use to calculate strobe and interpolation stuff */
+    // universes("universes",       "number of DMX universes"),
+    startUni("starting_universe",   "first uni"),
+    // startAddr("starting_address", "index of beginning of strip, within starting_universe."), // individual pixel control starts after x function channels offset (for strobing etc)
+    dmxHz("dmx_hz",                 "dmx frame rate"),      // use to calculate strobe and interpolation stuff
 
-/*     mirror("mirror_second_half",    "mirror strip back on itself"), */
-/*     fold("folded_alternating",      "alternating pixels") */
-/*     // flip("flip", "flip strip direction") */
-/*   { */
+    mirror("mirror_second_half",    "mirror strip back on itself"),
+    // flip("flip", "flip strip direction")
+    fold("folded_alternating",      "alternating pixels")
+    {
 
-/*     stripBytesPerPixel.setDefaultValue(4).setValidator([] (long val) { */
-/*         return (val > 0 && val < 7);}); */
-/*     stripLedCount.setDefaultValue(125).setValidator([] (long val) { */
-/*         return (val > 0 && val <= 288);}); */
-/*     // sourceBytesPerPixel.setDefaultValue(4).setValidator([] (long val) { */
-/*     // 		return (val > 0 && val < 7);}); */
-/*     // sourceLedCount.setDefaultValue(125).setValidator([] (long val) { */
-/*     // 		return (val > 0);}); */
+    stripBytesPerPixel.setDefaultValue(4).setValidator([] (long val) {
+        return (val > 0 && val < 7);});
+    stripLedCount.setDefaultValue(125).setValidator([] (long val) {
+        return (val > 0 && val <= 288);});
+    // sourceBytesPerPixel.setDefaultValue(4).setValidator([] (long val) {
+    // 		return (val > 0 && val < 7);});
+    // sourceLedCount.setDefaultValue(125).setValidator([] (long val) {
+    // 		return (val > 0);});
 
-/*     // universes.setDefaultValue(1).setValidator([] (long val) { */
-/*     // 		return (val > 0 && val <= 4);}); */
-/*     startUni.setDefaultValue(1).setValidator([] (long val) { */
-/*         return (val > 0 && val <= 16);}); // for now, one artnet subnet... */
-/*     // startAddr.setDefaultValue(1).setValidator([] (long val) { */
-/*     // 		return (val > 0 && val <= 512);}); */
-/*     dmxHz.setDefaultValue(40).setValidator([] (long val) { */
-/*         return (val > 0 && val < 176);}); // 4 x dmx max */
+    // universes.setDefaultValue(1).setValidator([] (long val) {
+    // 		return (val > 0 && val <= 4);});
+    startUni.setDefaultValue(1).setValidator([] (long val) {
+        return (val > 0 && val <= 16);}); // for now, one artnet subnet...
+    // startAddr.setDefaultValue(1).setValidator([] (long val) {
+    // 		return (val > 0 && val <= 512);});
+    dmxHz.setDefaultValue(40).setValidator([] (long val) {
+        return (val > 0 && val < 176);}); // 4 x dmx max
 
-/*     mirror.setDefaultValue(false); */
-/*     fold.setDefaultValue(false); */
-/*     // flip.setDefaultValue(false); */
-/*   } */
-/*     // optInt sourceBytesPerPixel; */
-/*     // optInt sourceLedCount; */
-/*     optInt stripBytesPerPixel; */
-/*     optInt stripLedCount; */
+    mirror.setDefaultValue(false);
+    fold.setDefaultValue(false);
+    // flip.setDefaultValue(false);
+  }
+    // optInt sourceBytesPerPixel;
+    // optInt sourceLedCount;
+    optInt stripBytesPerPixel;
+    optInt stripLedCount;
 
-/*     // optInt universes; */
-/*     optInt startUni; */
-/*     // optInt startAddr; */
-/*     optInt dmxHz; */
+    // optInt universes;
+    optInt startUni;
+    // optInt startAddr;
+    optInt dmxHz;
 
-/*     optBool mirror; */
-/*     optBool fold; */
-/*     // optBool flip; */
+    optBool mirror;
+    optBool fold;
+    // optBool flip;
 
-/*   protected: */
-/*   // virtual bool handleInput(const String& property, const HomieRange& range, const String& value) { */
-/*   //   // Homie.getLogger() << "Property: " << property << ", " << "value: " << value; */
-/*   //   lg.logf(__func__, Log::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str()); */
-/*   //   // write to json or whatever, makes sense to can update straight mqtt no json-over-mqtt? */
-/*   //  return true; */
-/*   // } */
-/*   // virtual void setup() override { */
-/*   //   // advertise("debug").settable(); //don't need this cause can update settings ocer mqtt anyways */
-/*   // } */
-/* }; */
+  protected:
+  // virtual bool handleInput(const String& property, const HomieRange& range, const String& value) {
+  //   // Homie.getLogger() << "Property: " << property << ", " << "value: " << value;
+  //   lg.logf(__func__, tol::Log::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
+  //   // write to json or whatever, makes sense to can update straight mqtt no json-over-mqtt?
+  //  return true;
+  // }
+  // virtual void setup() override {
+  //   // advertise("debug").settable(); //don't need this cause can update settings ocer mqtt anyways
+  // }
+};
+
+#endif
 
 // struct PixtolConfig {
 //   PixtolConfig(const String& id): id(id) {}
 //   String type, id; //name of app/thing, id of individual unit
-//
+
 //   struct Port {
 //     Port(const String& id, uint16_t port): id(id), port(port) {}
 //     String id;
@@ -131,7 +202,7 @@
 //   };
 //   std::vector<InputConfig> inputs;
 //   std::vector<OutputConfig> outputs;
-//
+
 //   struct PatchConfig {
 //     // Something* from; //nah that's for the Patch, not its cfg
 //     Source from; //Source is Port or w/e, or an intermediate pool buffer config
@@ -140,6 +211,7 @@
 //   };
 //   std::vector<PatchConfig> patches;
 // };
+
 // PixtolConfig pixtolCfg("pixTol");
 // // PixtolConfig::InputConfig art = PixtolConfig::InputConfig("ArtNet", 1, 512);
 // PixtolConfig::InputConfig art("ArtNet", 1, 512);

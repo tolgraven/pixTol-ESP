@@ -1,5 +1,26 @@
 #include "renderstage.h"
 
+namespace tol {
+
+RenderStage::RenderStage(const String& id, uint8_t fieldSize, uint16_t fieldCount,
+                         uint8_t bufferCount, uint16_t portIndex):
+  ChunkedContainer(fieldSize, fieldCount),
+  Runnable(id, "Renderstage"), _portId(portIndex) {
+
+  for(auto i=0; i<bufferCount; i++)
+    _buffers.emplace_back(std::make_unique<Buffer>(id, fieldSize, fieldCount));
+
+  init();
+  printTo(tol::lg);
+}
+
+size_t RenderStage::printTo(Print& p) const {
+  size_t n = Runnable::printTo(p)
+            + p.print((String)buffers().size() + " ports:\n");
+  for(auto& b: buffers()) n += b->printTo(p);
+  return n;
+}
+
 uint32_t RenderStage::sizeInBytes() const {
   uint32_t size = 0;
   for(auto b: buffers()) size += b->length(); // * sizeof(T) remember extend templ evt
@@ -11,8 +32,7 @@ Buffer& RenderStage::buffer(uint8_t index) const {
     auto b = _buffers.at(index);
     return *b;
   } catch(const std::out_of_range& oor) {
-    DEBUG("FUCKED exception");
-    // lg.err((String)"Out of range: " + oor.what());
+    lg.err((String)"Out of range: " + oor.what());
     throw(oor);
   }
   return *(_buffers[index]); // that'll sho'em!!
@@ -37,8 +57,21 @@ bool Inputter::onData(uint16_t index, uint16_t length, uint8_t* data, bool flush
     if(flush) {
       // actual: dispatch Buffer as event, uids and patch-structures with stored fns will send along
       buffer(index).setDirty(true);
+
+      if(index == 0 && controlDataLength != 0) { // temp til real Patch structure, 0 ctrls, 1 data...
+        auto [controls, data] = buffer(index).slice(controlDataLength); // XXX wouldn't these be transient n shit?
+        ipc::Publisher<PatchControls>::publish(PatchControls(controls, index));
+        ipc::Publisher<PatchIn>::publish(PatchIn(data, index));
+        // auto bufs = buffer(index).slice(controlDataLength); // XXX wouldn't these be transient n shit?
+        // ipc::Publisher<PatchControls>::publish(PatchControls(bufs[0], index));
+        // ipc::Publisher<PatchIn>::publish(PatchIn(bufs[1], index));
+      } else {
+        ipc::Publisher<PatchIn>::publish(PatchIn(buffer(index), index));
+      }
       return true;
     }
   }
   return false;
+}
+
 }

@@ -1,18 +1,20 @@
 #pragma once
 
-// TODO
 #include "log.h"
-/* #include "watchdog.h" */
 
 #include <ArduinoOTA.h>
+#if defined(ESP8266)
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
+#elif defined(ESP32)
+// #include <HTTPClient.h>
+// #include <httpUpdate.h>
+#endif
 
-/* #define FW_VERSION "1.0.71" */
+namespace tol {
 
 class Updater { //holds various OTA update strategies and logic
   public:
-    //Updater(const String& id, Strip* s, Blinky* b): _id(id), s(s), b(b) { }
     Updater(const String& id): _id(id) { }
     virtual ~Updater() {}
 
@@ -32,9 +34,8 @@ class Updater { //holds various OTA update strategies and logic
     virtual void onEnd() {}
 
     virtual void loop() {
-      /* lwd.stamp(PIXTOL_UPDATER); */
     } //feed callback-based updater
-    virtual void run() { lg.logf(__func__, Log::WARNING, "From-device update not available for updater %s", _id.c_str()); } //actively attempt update, from our end
+    virtual void run() { lg.f(__func__, Log::WARNING, "From-device update not available for updater %s\n", _id.c_str()); } //actively attempt update, from our end
   protected:
   String _id;
   /* int prevPixel = -1; */
@@ -47,6 +48,7 @@ class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies 
   ArduinoOTAUpdater(const String& hostname):
     Updater("ArduinoOTA") {
 
+    lg.ln("ArduinoOTA", Log::DEBUG, "Create Updater ArduinoOTA");
     using namespace std::placeholders;
     ArduinoOTA.onStart(std::bind(&ArduinoOTAUpdater::onStart, this));
     ArduinoOTA.onProgress(std::bind(&ArduinoOTAUpdater::onTick, this, _1, _2));
@@ -55,12 +57,13 @@ class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies 
 
     ArduinoOTA.setHostname(hostname.c_str()); //Homie.getConfiguration().name);
     ArduinoOTA.begin();
+    lg.ln("ArduinoOTA", Log::DEBUG, "Done Create Updater ArduinoOTA");
   }
 
   void loop() { ArduinoOTA.handle(); }
 
   void onStart() { // someone says: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-    lg.logf("ArduinoOTA", Log::INFO, "\nOTA flash starting...");
+    lg.f("ArduinoOTA", Log::INFO, "\nOTA flash starting...\n");
     // b->blink("black");
     //otaColor = ArduinoOTA.getCommand() == U_FLASH?
               //&b->colors["blue"]:
@@ -68,9 +71,9 @@ class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies 
   }
 
   void onTick(uint16_t progress, uint16_t total) {
-    // lg.logf("OTA", Log::DEBUG, "%u\t %u", progress, total);
+    lg.f("OTA", Log::DEBUG, "%u\t %u\n", progress, total);
     /* uint16_t pixel   = progress / (total / s->fieldCount()); */
-    uint16_t percent = progress / (total / 100);
+    // uint16_t percent = progress / (total / 100);
     /* // ^ progress is fucked and overflowing.... */
 
     /* if(pixel == prevPixel) { // called multiple times each percent of upload... */
@@ -87,7 +90,7 @@ class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies 
     /* s->setPixelColor(pixel, *otaColor); */
     /* s->show(); */
     /* prevPixel = pixel; */
-    Serial.printf("OTA updating - %u%%\r", percent);
+    // Serial.printf("OTA updating - %u%%\r", percent);
   }
 
   void onError(ota_error_t err) {
@@ -98,7 +101,8 @@ class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies 
                   (err == OTA_RECEIVE_ERROR)? "Receive Failed":
                   (err == OTA_END_ERROR)?		  "End Failed":
                   "Unknown error";
-      // LN.log(__func__, Log::ERROR, es);
+      ERROR(es);
+      // lg.log(__func__, Log::ERROR, es);
       /* switch(err) { */
       /*   case OTA_AUTH_ERROR:		lg.log("ArduinoOTA", Log::ERROR, "Auth Failed"); 		break; */
       /*   case OTA_BEGIN_ERROR:		lg.log("ArduinoOTA", Log::ERROR, "Begin Failed");		break; */
@@ -122,7 +126,7 @@ class HomieUpdater: public Updater {
 
   void onStart() {
     Serial.println("\nOTA flash starting...");
-    lg.logf("OTA", Log::INFO, "Ota ON OTA ON!!!");
+    lg.f("OTA", Log::INFO, "Ota ON OTA ON!!!\n");
     //b->color("white");
   }
   void onTick(uint16_t progress, uint16_t total) { // can use event.sizeDone and event.sizeTotal
@@ -133,16 +137,17 @@ class HomieUpdater: public Updater {
     /* prevPixel = pixel; */
   }
   void onError(uint8_t error) {
-    lg.logf("OTA", Log::WARNING, "OTA FAILE");
+    lg.f("OTA", Log::WARNING, "OTA FAILE\n");
     //b->color("red");
   }
   void onEnd() {
-    lg.logf("OTA", Log::INFO, "OTA GOODE");
+    lg.f("OTA", Log::INFO, "OTA GOODE\n");
     /* b->blink("green", 5, true); */
   }
 };
 
 
+#ifdef ESP8266
 class HttpUpdater: public Updater {
 // class HttpUpdater: public Updater, public HomieNode {
   // http://esp8266.github.io/Arduino/versions/2.0.0/doc/ota_updates/ota_updates.html#http-server
@@ -166,7 +171,7 @@ class HttpUpdater: public Updater {
       case HTTP_UPDATE_OK:          onEnd(); break;
       case HTTP_UPDATE_FAILED:      onError(ESPhttpUpdate.getLastError()); break;
       case HTTP_UPDATE_NO_UPDATES:
-        lg.logf("httpOTA", Log::INFO, "HTTP OTA no update, ending checks...");
+        lg.f("httpOTA", Log::INFO, "HTTP OTA no update, ending checks...\n");
         flagForUpdate(false);
         break;
     }
@@ -185,14 +190,26 @@ class HttpUpdater: public Updater {
   }
 
   void onEnd() {
-    lg.logf("httpOTA", Log::INFO, "HTTP OTA ok.");
+    lg.f("httpOTA", Log::INFO, "HTTP OTA ok.\n");
     // delay(1000);
     ESP.restart();
     // schedule(Time::Seconds, 1, ESP.restart()); //something like this hey
   }
   void onError(uint8_t error) {
-    lg.logf("httpOTA", Log::ERROR, "HTTP OTA failed. Error %d: %s\n",
+    lg.f("httpOTA", Log::ERROR, "HTTP OTA failed. Error %d: %s\n",
        ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
     Updater::onError(ESPhttpUpdate.getLastErrorString().c_str());
   }
 };
+#endif
+
+
+#ifdef ESP8266
+class IdfUpdater: public Updater {
+  IdfUpdater(const String& host, uint16_t port):
+    Updater("IdfOTA"), _host(host), _port(post) {
+      // do whatever
+    }
+}
+#endif
+}

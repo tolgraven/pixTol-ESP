@@ -3,10 +3,37 @@
 #include <stdexcept>
 #include <Print.h>
 
+#include "smooth/core/ipc/TaskEventQueue.h"
+#include "smooth/core/ipc/IEventListener.h"
+
 #include "buffer.h"
 #include "base.h"
+#include "task.h"
 
-using std::shared_ptr;
+namespace tol {
+  
+enum class Patching { IN, OUT, INCopy, OUTCopy };
+enum class PatchType { Controls, Pixels };
+
+template<Patching dir, auto dest = PatchType::Pixels>
+struct BufferPatch {
+  BufferPatch() = default;
+  BufferPatch(const Buffer& buffer, int i): buffer(buffer), i(i) {}
+  // BufferPatch(Buffer& buffer, int i): buffer(&buffer), i(i) {}
+  // BufferPatch& operator=(BufferPatch& rhs) {
+  //   buffer = rhs.buffer; i = rhs.i; return *this;
+  // }
+  BufferPatch& operator=(const BufferPatch& rhs) = default;
+  // Buffer* buffer = nullptr;
+  Buffer buffer = Buffer(); // XXX copy needed since eg slicing in ArtnetIn, but for most stuff really inefficient yeah...
+  // Buffer& buffer;
+  int i = 0;
+};
+
+using PatchIn = BufferPatch<Patching::IN>;
+using PatchOut = BufferPatch<Patching::OUT>;
+using PatchControls = BufferPatch<Patching::IN, PatchType::Controls>;
+using namespace smooth::core;
 // Base class in render pipeline, providing common API for working with stages.
 // A stage contains one of more attached Buffers of fieldSize and fieldCount.
 // and is continously run(), trying to fetch input or send output.
@@ -14,26 +41,11 @@ class RenderStage: public ChunkedContainer, public Runnable { // should be calle
   public:
     RenderStage(const String& id, uint16_t numBytes): RenderStage(id, 1, numBytes) {}
     RenderStage(const String& id, uint8_t fieldSize, uint16_t fieldCount,
-                uint8_t bufferCount = 1, uint16_t portIndex = 0):
-      ChunkedContainer(fieldSize, fieldCount),
-      Runnable(id, "Renderstage"), _portId(portIndex) {
-
-      printTo(lg);
-      for(auto i=0; i<bufferCount; i++)
-        _buffers.emplace_back(new Buffer(id, fieldSize, fieldCount));
-
-      init();
-    }
+                uint8_t bufferCount = 1, uint16_t portIndex = 0);
     virtual ~RenderStage() { _buffers.clear(); }
-
     virtual void init() {}
 
-    size_t printTo(Print& p) const override {
-      size_t n = p.print("RenderStage, ") + Runnable::printTo(p)
-               + p.print((String)"Ports: " + buffers().size() + ".\n");
-      for(auto& b: buffers()) n += b->printTo(p);
-      return n;
-    }
+    size_t printTo(Print& p) const override;
     void sendDiagnostic(const String s) {} // impl as Stream? art has pollreply freestle text, or  opt for using whatever output...
 
     void setSubFieldOrder(const uint8_t subFields[]) override {
@@ -44,13 +56,16 @@ class RenderStage: public ChunkedContainer, public Runnable { // should be calle
 
     virtual Buffer& buffer(uint8_t index = 0) const;
     Buffer& operator[](uint16_t index) { return buffer(index); } //dunno but bit convinient
-    const std::vector<shared_ptr<Buffer>>& buffers() const { return _buffers; } // maybe add range or filter tho
+    const std::vector<std::shared_ptr<Buffer>>& buffers() const { return _buffers; } // maybe add range or filter tho
 
     void setBuffer(Buffer& pointTo, uint8_t index = 0) {
-      _buffers.at(index) = shared_ptr<Buffer>(&pointTo);
+      _buffers.at(index) = std::shared_ptr<Buffer>(&pointTo);
+      // XXX or rather repoint the ptr? again issue w this semi-managed shit is it's all-in or nothing...
+      // tho as Buffers themselves still have notion of raw data ptr ownership shouldnt result in anything hmm
+      // _buffers.at(index).assign(&pointTo);
     }
     void setGain(float gain) {  _gain = gain; }
-    float getGain() const { return _gain; } // counter for number of actual frames of data passed through stage
+    float getGain() const { return _gain; }
 
     void setPortId(uint16_t port) { _portId = port; }
     uint16_t portId() { return _portId; }
@@ -58,24 +73,33 @@ class RenderStage: public ChunkedContainer, public Runnable { // should be calle
     bool dirty() const;
 
   protected:
-    std::vector<shared_ptr<Buffer>> _buffers; // kow I've discoved multiple multiple times why use ptrs inside.
+    std::vector<std::shared_ptr<Buffer>> _buffers; // kow I've discoved multiple multiple times why use ptrs inside.
     float  _gain = 1.0; //applies to buffers within unless overridden.
     uint16_t _portId; // to start, only continous possible...   UDP port, pin, interface id, whatever...
     uint8_t _priority = 0; //might be useful for all stages no? just had in inputter earlier
   private:
 };
 
+class Router: public RenderStage {
+  // would need to support input buffers (likely those created by default...)
+  // and further buffers (for routing controls sep from data etc)
+  // and would be the one to actually publish...
+
+};
 
 class Inputter: public RenderStage {
+  // std::shared_ptr<TaskEventQueue<Buffer>> sendQueue; // POSTING. pass in ctor so can post specific and not to everyone
+  // std::shared_ptr<SubscribingTaskEventQueue<Buffer>> queue; // POSTING. pass in ctor so can post specific and not to everyone
   public:
-    Inputter(const String& id, uint16_t bufferSize = 512): // raw bytes = field is 1
-      Inputter(id, 1, bufferSize) {}
-    Inputter(const String& id, uint8_t fieldSize, uint16_t fieldCount, uint8_t bufferCount = 1, uint16_t portIndex = 0):
+    Inputter(const String& id, uint16_t bufferSize = 512): Inputter(id, 1, bufferSize) {} // raw bytes = field is 1
+    Inputter(const String& id, uint8_t fieldSize, uint16_t fieldCount,
+             uint8_t bufferCount = 1, uint16_t portIndex = 0):
       RenderStage(id, fieldSize, fieldCount, bufferCount, portIndex) {
-      setType("inputter");
+      setType("inputter"); // just use RTTI...
     }
 
     bool onData(uint16_t index, uint16_t length, uint8_t* data, bool flush = true);
+    int controlDataLength = 12;
 
     virtual void onCommand() {}
 };
@@ -88,29 +112,29 @@ class NetworkIn: public Inputter { // figure artnet/sacn/opc (more?) such common
     } //tho some not so DMX-aligned
 
   protected:
-  bool isFrameSynced = false; // dunno if others, but Artnet lots timecode + flush stuff.
+  // bool isFrameSynced = false; // dunno if others, but Artnet lots timecode + flush stuff.
   int lastStatusCode;
-  uint8_t lastSeq; //common enough?
-  // std::vector<std::pair<uint16_t, uint16_t>> portMapping;
-  // this one will actually be massive in the end since RDM etc will go through it
-  // but send those through DeviceEvents and yada bloba
+  // uint8_t lastSeq; //common enough?
 };
 
 
-class Outputter: public RenderStage {
+class Outputter: public RenderStage, public PureEvtTask, public Sub<PatchOut> {
   public:
   Outputter(const String& id, uint16_t bufferSize = 512):
-    RenderStage(id, bufferSize) {} // raw bytes = field is 1
+    Outputter(id, 1, bufferSize) {} // raw bytes = field is 1
   Outputter(const String& id, uint8_t fieldSize, uint16_t fieldCount,
             uint8_t bufferCount = 1, uint16_t portIndex = 0):
-    RenderStage(id, fieldSize, fieldCount, bufferCount, portIndex) {
+    RenderStage(id, fieldSize, fieldCount, bufferCount, portIndex),
+    PureEvtTask((id + " event runner").c_str(), 2),
+    Sub<PatchOut>(this, 4) {
       setType("outputter");
+      start();
     }
 
+  virtual bool flush(int b = -1) { return false; }
   private:
-  virtual uint16_t getIndexOfField(uint16_t position) { return position; }
-  virtual uint16_t getFieldOfIndex(uint16_t field) { return field; }
 };
+
 
 
 class Generator: public Inputter {
@@ -118,7 +142,7 @@ class Generator: public Inputter {
     Generator(const String& id, uint16_t bufferSize = 1): // raw bytes = field is 1
       Generator(id, 1, bufferSize, 1) {} // raw bytes = field is 1
     Generator(const String& id, const RenderStage& model):
-      Generator(id, model.fieldSize(), model.fieldCount(), model.buffers().size()) { }
+      Generator(id, model.fieldSize(), model.fieldCount(), model.buffers().size()) {}
     Generator(const String& id, uint8_t fieldSize, uint16_t fieldCount, uint8_t bufferCount = 1):
       Inputter(id, fieldSize, fieldCount, bufferCount) {
         setType("Generator");
@@ -133,6 +157,7 @@ class Generator: public Inputter {
     // }
   private:
 };
+
 
   //void keepItMoving(uint32_t passed) { // start easing backup anim to avoid stutter... easiest/basic fade in a bg color while starting to dim
   //  auto fBuffer = Buffer("FunctionFill", 1, 12);
@@ -165,3 +190,4 @@ class Driver { // shared container so I/O can yada
   T& get() { return *_driver; }
 };
 
+}

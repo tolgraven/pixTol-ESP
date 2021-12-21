@@ -6,6 +6,8 @@
 
 #define OPC_PORT_DEFAULT 7890
 
+namespace tol {
+
 class OPC: public NetworkIn {
   public:
   uint8_t maxClients = 1;  // can use multiple simultaneous clients/sources
@@ -42,3 +44,5 @@ class OPC: public NetworkIn {
     lg.f("OPC", Log::INFO, "Client Disconnected\n");
   }
 };
+
+}

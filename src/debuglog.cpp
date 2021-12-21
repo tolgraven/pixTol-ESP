@@ -1,6 +1,8 @@
 #include "debuglog.h"
 
 
+namespace tol {
+
 bool Debug::sendIfChanged(const String& property, int value) {
   static std::map<String, int> propertyValues;
   if(propertyValues.find(property) != propertyValues.end()) {
@@ -8,7 +10,7 @@ bool Debug::sendIfChanged(const String& property, int value) {
     if(value == last || (value > 0.90*last && value < 1.10*last)) //XXX settable tolerance...
       return false;
   }
-  lg.f(property, Log::INFO, "%s:  %i \n", value);
+  lg.f(property, tol::Log::INFO, " %i \n", value);
   /* lg.flushProperty(property, String(value)); */
   propertyValues[property] = value;
   return true; //set and sent
@@ -21,7 +23,7 @@ void Debug::logFunctionChannels(uint8_t* dataStart, const String& id, uint8_t ex
   /* for(uint16_t b = 0; b < num; b++) { */
   /*   Serial.printf("%u ", data[b]); */
   /* } Serial.println(""); */
-  lg.f(id, Log::DEBUG, "%u %u %u %u %u %d %u %u %u %u %u %d\n",
+  lg.f(id, tol::Log::DEBUG, "%u %u %u %u %u %d %u %u %u %u %u %d\n",
       dataStart[0], dataStart[1], dataStart[2], dataStart[3], dataStart[4], dataStart[5], dataStart[6],
       dataStart[7], dataStart[8], dataStart[9], dataStart[10], dataStart[11]);
 }
@@ -50,12 +52,12 @@ void Debug::logDMXStatus(uint8_t* data, const String& id) { // for logging and s
 
   /* if(dmxFrameCounter % (cfg->dmxHz.get()*10)) return;  // every 10s (if input correct and stable) */
   uint32_t totalTime = now - startTime;
-  lg.f("Shit", Log::DEBUG, "fps: %u, now: %u, lastFlush: %u, heap: %u, stack: %u \n",
+  lg.f("Shit", tol::Log::DEBUG, "fps: %u, now: %u, lastFlush: %u, heap: %u, stack: %u \n",
       dmxFrameCounter / (passed / 1000), now, lastFlush, ESP.getFreeHeap(), stackUsed());
   lastFlush = now;
   logFunctionChannels(data, id);
 
-  Serial.println(id + ":");
+  // Serial.println(id + ":");
   for(uint16_t b = 12; b < 64; b++) {
     Serial.printf("%u ", data[b]);
   } Serial.println("");
@@ -103,13 +105,13 @@ void Debug::bootLog(BootStage bs) {
 // or keep dev one connected to another esp forwarding...
 void Debug::bootInfoPerMqtt() {
   if(!lwd.softResettable())
-    lg.f("SERIAL-FLASH-BUG", Log::WARNING, "%s\n%s", "First boot post serial flash. OTA won't work and first WDT will brick device until manually reset", "Best do that now, rather than later");
+    lg.f("SERIAL-FLASH-BUG", tol::Log::WARNING, "%s\n%s", "First boot post serial flash. OTA won't work and first WDT will brick device until manually reset", "Best do that now, rather than later");
 
-  lg.f("Reset", Log::DEBUG, "%s\n", lwd.getResetReason().c_str());
-  lg.f("Reset", Log::DEBUG, "%s\n", ESP.getResetInfo().c_str());
-  lg.f("Boot", Log::DEBUG, "Free heap post boot/homie/main/wifi: %d / %d / %d / %d\n",
+  lg.f("Reset", tol::Log::DEBUG, "%s\n", lwd.getResetReason().c_str());
+  // lg.f("Reset", tol::Log::DEBUG, "%s\n", ESP.getResetInfo().c_str());
+  lg.f("Boot", tol::Log::DEBUG, "Free heap post boot/homie/main/wifi: %d / %d / %d / %d\n",
                     heap[doneBOOT], heap[doneHOMIE], heap[doneMAIN], heap[doneONLINE]);
-  lg.f("Boot", Log::DEBUG, "ms for homie/main, elapsed til setup()/wifi: %d / %d,  %d / %d\n",
+  lg.f("Boot", tol::Log::DEBUG, "ms for homie/main, elapsed til setup()/wifi: %d / %d,  %d / %d\n",
       Debug::ms[doneHOMIE] - Debug::ms[doneBOOT], Debug::ms[doneMAIN] - Debug::ms[doneHOMIE], Debug::ms[doneMAIN] - Debug::ms[doneBOOT], Debug::ms[doneONLINE] - Debug::ms[doneBOOT]);
 }
 
@@ -140,3 +142,5 @@ void Debug::bootInfoPerMqtt() {
 //     mapmaker<KeyType, ValueType, N>(table, keys, vals);
 //     return std::map<KeyType, ValueType>(table, table+N);
 // }
+
+}

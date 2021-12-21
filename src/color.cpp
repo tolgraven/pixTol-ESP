@@ -1,5 +1,7 @@
 #include "color.h"
 
+namespace tol {
+
 static float _CalcColor(float p, float q, float t) { //read up on exactly what this does and how mod to RGBW...
     if (t < 0.0f) t += 1.0f;
     if (t > 1.0f) t -= 1.0f;
@@ -58,3 +60,5 @@ static float _CalcColor(float p, float q, float t) { //read up on exactly what t
   // Ro = Ro < 0? 0: Ro > 255? 255: Ro;
   // color = RgbwColor(Ro, Go, Bo, Wo);
 // }
+
+}

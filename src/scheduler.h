@@ -3,165 +3,240 @@
 #include <vector>
 #include <memory>
 
+#include "WiFi.h"
+
+#include "smooth/core/network/Wifi.h"
+#include "smooth/core/network/NetworkStatus.h"
+// should group some of these used for all...
+
+#include "task.h"
 #include "renderer.h"
 #include "buffer.h"
 #include "io/strip-multi.h"
-#include "io/sacn.h"
+// #include "io/strip.h"
+// #include "io/sacn.h"
 #include "io/artnet.h"
-#include "io/opc.h"
+// #include "io/opc.h"
 #include "functions.h"
 #include "watchdog.h"
 #include "base.h"
-#include "task.h"
 
+// #include <AsyncUDP.h>
 
-// make some of these actual tasks I guess, tho mainly seems workflow w eventbus and
-// callbacks most reasonable.
+namespace tol {
+
+using namespace smooth;
+using namespace smooth::core;
+using namespace smooth::core::ipc;
+using namespace std::chrono;
+
+namespace event {
+// for I/O pipeline purposes basically (and adjusting for flexibility in inserting further
+// stages and back-n-forth crap so to a certain point keep a bit generic
+// - We deal in keyframes, being::
+//  IN.
+//    - A full (standalone/assembled/deferred by wait for sync event) input frame (pushed to us)
+//    - Data from periodic polling (pulled by us)
+//      * variant: animations created on device
+//
+//  PATCH.
+//    - Might result in a mix of or different view of what constitutes key.
+//    - Likely wants to shove available data forward afap anyways,
+//      meaning "syncing up" gets done later
+//
+//   RENDER:
+//    - The interesting part. Interpolation speed must be balanced vs "exceptional" events.
+//    - Example case 1: strobe animation.
+//        Generally very simple and hence its very different keyframe tempoo still easily handled.
+//        Will add hue-shift halogen emu bs etc but basically, little processing even at full speed.
+//      Case 2:
+//      Heavier processing. Load caused by effect will have to determine where it can run.
+//      Eg only each incoming keyframe.
+//      Other instances must run both on incoming, and at interpolation (smoothest spinnaz)
+//
+//      Of course if limit to 8 parallel (duh) it's all waiting for strips anyways...
+//
+// Conclusion:
+//    I am fucking retarded.  Back to event modeling.
+//
+//    KEYFRAME IN -> "patcher" grabs from driver to central storage/processing
+//    ("what is data for") and correct Buffers (not ex an issue if using OSC or relevant artnet facilities
+//    for control and not raw DMX but same diff for assembling and breaking down spannng packets)
+//
+//
+//  0    RAW DATA EVENT                     FRAME              has expected interval, will jitter
+//       DATA CLASSIFICATION
+//  1    AWAIT FURTHER OR POST DATA EVENT   KEY                real driver exit / IPC entry
+//
+//       (POSSIBLE PROCESSING)
+//
+//  2    RENDERING:                         KEY
+//         -MERGE STREAMS (not shit like in driver)
+//         -BLEND INCOMING (envelope/response etc)
+//         -APPLY EFFECTS
+//         rolling data, some stagnant / dupl
+//
+//  3    INTERPOLATION                      FRAME
+//         -
+//         -FINAL SAY EFFECTS
+//
+//  4    OUTPUT
+//
+//  Paths:
+//  Basic passthrough - 1 -> 4
+//  Basic strip - 1 -> 2 -> 3 -> 4
+//
+//  Ive done this same sketch way too many times goddamnit just think of what actual things to post
+//  and basically how to chuck out events to whoever needs.
+//  For example - Interpolation / non-data-hz animation is output dependent
+//  (but certainly must for all lights - fhsjdfhjsdfsh)
+}
+
+// TODO: whenever an out or in etc added or reconfigured, it gets reflected in DeviceState
+// which can also be used to recreate from a config file, which will get written to when stuff done
+class DeviceState: public Named {
+
+  struct StageConfig {
+    // enabled, name, type (in, out...), subtype (artnet, generator...), startport (aka uni, pin...), numports, fieldSize/count if not default for type, SubFieldOrder, targetFreq...
+    // ideally a binding to a factory fn which runs make_shared? dont see how possible haha
+    // but apart from switching on type/subtype and hardcoding that,
+    // most stuff is generic so can be done from pile of Outputters etc = not that much duplicate boilerplate
+
+    // actually have a constructor that (apart from anything specific) just takes this object, nom
+    //
+    // something vector of std::variant?
+  };
+
+  struct RendererConfig {
+    // enabled, name, target, targetfreq/fulltilt, white/blacklist sources? since get all PatchIn events. If really need multiple renderers hah
+
+  };
+
+  // how implement object-custom settings if needed?
+  struct ArtnetConfig {
+
+  };
+  
+  struct FunctionChannelsConfig {
+
+  };
+
+};
+
+// used to be somewhat a scheduler. now just a thing that holds all the io and stuff.
 class Scheduler: public Runnable, public core::Task  {
-  TaskGroup<Inputter>  ins    = {"input", 8, 0};
-  TaskGroup<Renderer>  render = {"render"};
-  TaskGroup<Outputter> outs   = {"output", 25, 1};
-  TaskGroup<Runnable> general = {"general", 1};
-  std::vector<std::unique_ptr<TaskedRunnable>> scheduled; // no run() on these, OS handles. just keep so can kill...
-  std::vector<std::unique_ptr<InterruptTask>> crap;
+  std::shared_ptr<ArtnetDriver> artnet;
+  std::shared_ptr<Renderer> renderer;
+  std::vector<std::shared_ptr<Inputter>> ins;
+  std::vector<std::shared_ptr<Outputter>> outs;
 
-  String controlsSource = "artnet"; // "" // should just pick up whichever is actively sending (XXX set up "dont ignore 0 if prev pos input from src in session") */
+  EventFnTask<IPAddress> ip{"IP", // really should be put in ArtnetDriver. Which might subclass a Driver which listens to a bunch of events. Generic "Connected"/"Disconnected" event (whether means wifi, bt, physical...) etc
+    [this](const IPAddress& ip) {
+        uint8_t mac[6]; WiFi.macAddress(mac);
+        this->artnet->init(ip, IPAddress(255,255,255,0), mac);
+        this->artnet->start(); //start task
+    }};
 
-  uint32_t now;
   uint32_t timeInputs = 0;
   float progressMultiplier = 0;
 
   public:
   Scheduler(const String& id):
     Runnable(id, "scheduler"),
-    core::Task(id.c_str(), 9000, core::APPLICATION_BASE_PRIO, std::chrono::milliseconds{3}) {
-    DEBUG("Enter");
+    core::Task("not-scheduler", 4096, core::APPLICATION_BASE_PRIO - 3, milliseconds{2500}), // try pin 1
+    artnet(std::make_shared<ArtnetDriver>(id)) { // try in main task tho..
+
+      DEBUG("Enter");
     // Three "phases": Collect settings, use to create objects for and patches between IN / OUT / RENDER (tho in the end a sys with a Pi recompiling and reflashing units on fly yet more adaptable)
-    }
+  }
+
 
   void init() override {
     const int startUni = 2;
-    const int numPorts = 1;
-    auto artnet = new ArtnetDriver(id() + " ArtNet");
-    scheduled.emplace_back(new TaskedRunnable(artnet)); // ugly thing here is driver doesnt auto-delete on clearing stuff that uses it...
+    const int numPorts = 2;
 
-
-    auto artnetIn = new ArtnetIn(id(), startUni, numPorts, artnet);
-    ins.add(artnetIn); // if nothings coming its because the multiple buffers overwrite first one.
-    ins.add(new sAcnInput(id() + " sACN", 1, 1));
-    ins.add(new OPC(id() + " OPC", 1, 1, 120));
+    auto artnetIn = std::make_shared<ArtnetIn>(startUni, numPorts, artnet);
+    ins.push_back(artnetIn); // so can free it up later if needed
+    // ins->add(new sAcnInput(id() + " sACN", 1, 1));
+    // ins->add(new OPC(id() + " OPC", 1, 1, 120));
     lg.dbg("Done add inputs"); //lg << "Done add inputs!" << endl;
 
-
     const int startPin = 15; // had at 25 but apparently some bad pins above that...
-    auto strip = new Strip("Strip 1", 4, 120, startPin, numPorts);
+    auto strip = std::make_shared<Strip>("Strip 1", 4, 120, startPin, numPorts);
     uint8_t order[] = {1, 0, 2, 3}; // should be set for then/retrieved from Strip tho...
     strip->setSubFieldOrder(order);
-    outs.add(strip);
+    outs.push_back(strip);
 
-    auto artnetOut = new ArtnetOut(id(), startUni, numPorts, artnet);
+    auto artnetOut = std::make_shared<ArtnetOut>(startUni + 10, numPorts, artnet);
     artnetOut->setTargetFreq(40);
-    outs.add(artnetOut);
+    outs.push_back(artnetOut);
     lg.dbg("Done add outputs");
 
-    render.add(new Renderer("Renderer", MILLION / 40, *strip));
-    artnetOut->setBuffer(render.get().getDestination(), 0); //fwd calculated packets...
-    // artnet->Outputter::setBuffer(*render.get(0).controls, 1); //fwd ctrls
+    renderer = std::make_shared<Renderer>("Renderer", MILLION / 40, *strip);
+
+    // connect artnetOut to renderer result...
+    // should have a cleaner way to multi-setup second output for something
+    // even if renderer always has its original target as "master"
+    artnetOut->setBuffer(renderer->getDestination(0), 0); //fwd calculated packets...
+    artnetOut->setBuffer(artnetIn->buffer(0), 1); //fwd incoming
     lg.dbg("Done create renderer");
 
-    crap.emplace_back(new InterruptTask(20000, [artnetIn, artnetOut] {
-          artnetIn->printTo(lg); artnetOut->printTo(lg); return true; }));
-    crap.emplace_back(new InterruptTask(20000, [this] {
-        lg.f("Runs", ::Log::INFO, "in / render / out %u %u %u \n",
-              this->ins.getCounts().run, this->render.getCounts().run, this->outs.getCounts().run);
-        return true; }));
-
-    crap.emplace_back(new InterruptTask(10000, [this] {
-          float tot = std::max((uint32_t)1, this->getCounts().totalTime); //haha well v dumb to still run all math every time lol
-          lg.f("Timings", ::Log::INFO, "in / merge / render / out %.4f %.4f %.4f %.4f \n",
-              this->ins.getCounts().totalTime / tot, this->timeInputs / tot, this->render.getCounts().totalTime / tot, this->outs.getCounts().totalTime / tot);
-          return true; }));
-
-    ins.start();
-    render.start();
-    outs.start();
-    // general.start();
-
+    renderer->start();
     DEBUG("DONE");
   }
 
-  void handleInput() {
-    lwd.stamp(PIXTOL_SCHEDULER_INPUT_DMX);
-    bool blank = true;
-    now = micros();
+  // only thing need from this style going ahead is the mult-srcs support
+  // (obviously essential for local generators)
+  // so flesh out Patch obj more better and yea.
+  // void handleInput() {
+  //   lwd.stamp(PIXTOL_SCHEDULER_INPUT_DMX);
+  //   bool blank = true;
+  //   auto begin = micros();
+  //   auto fChans = renderer->f->numChannels;
 
-    for(auto&& src: ins.tasks()) {
+  //   for(auto& src: ins->tasks()) {
 
-      auto source = static_cast<Inputter*>(src.get());
-      if(!source->dirty()) continue; // source's responsibility not set newData until all frames in (esp if sync used)
+  //     auto* source = static_cast<Inputter*>(src.get());
+  //     if(!source->dirty()) continue; // source's responsibility not set newData until all frames in (esp if sync used)
 
-      for(size_t i = 0; i < source->buffers().size(); i++) {
-        // heh this turned into a copy again watta! deleted cpy constructor now...
-        // auto&& b = source->buffer(i); // be careful. was creating a copy when just auto no &...
-        auto* b = &source->buffer(i); // be careful. was creating a copy when just auto no &...
-        if(!b->dirty()) continue;
-        // lg.f("merge", Log::DEBUG, "buffer %u, %x at %x, dirty: %u\n", i, b, b->get(), b->dirty());
+  //     for(size_t i = 0; i < source->buffers().size(); i++) {
+  //       auto& b = source->buffer(i); // be careful. was creating a copy when just auto no &... well no shit?
+  //       if(!b.dirty()) continue;
 
-        bool blendAll = !controlsSource.length(); //still bit confusing
-        if((controlsSource == source->type() || blendAll)
-            && (i == 0)) { //pref matches, only first chan used.
-          // _device->debug->logDMXStatus(b->get(), "SOURCE");
-          render.get(0).updateControls(*b, blendAll);
-        }
+  //       bool blendAll = !controlsSource.length(); //still bit confusing
+  //       if((controlsSource == source->id() || blendAll) && (i == 0)) { //pref matches, only first chan used.
+  //         renderer->updateControls(b, blendAll);
+  //       }
+  //       // auto& strip = static_cast<Strip&>((*outs)[i]);
+  //       // auto offsetBuffer = Buffer(*b, strip.fieldCount(), fChans, false);
+  //       // offsetBuffer.setFieldSize(strip.fieldSize()); // ^ clone target-buffer and then just adjust its offset instead. fugly.
 
-        auto& strip = outs.get(i);
-        auto offsetBuffer = Buffer(*b, strip.fieldCount(), render.get(0).f->numChannels, false);
-        offsetBuffer.setFieldSize(strip.fieldSize()); // ^ clone target-buffer and then just adjust its offset instead. fugly.
+  //       if(blank) { // so, need more stuff to splice which seems reasonable?  or rather, need Patch.  Tho given mult outs in this case dunno whether eg 2 renderers x 240px or all in one makes more sense?
+  //         // renderer->updateTarget(offsetBuffer, i);
+  //         blank = false; // doesn't hold up with multiple buffers.
+  //       } else {
+  //         int blendMode = 4; //used to come from iot but decoupled
+  //         // renderer->updateTarget(offsetBuffer, i, blendMode, true);
+  //       }
 
-        if(blank) { // so, need more stuff to splice which seems reasonable?  or rather, need Patch.  Tho given mult outs in this case dunno whether eg 2 renderers x 240px or all in one makes more sense?
-          render.get(0).updateTarget(offsetBuffer, i);
-          blank = false; // doesn't hold up with multiple buffers.
-        } else {
-          int blendMode = 4; //used to come from iot but decoupled
-          render.get(0).updateTarget(offsetBuffer, i, blendMode, true);
-        }
+  //       b.setDirty(false); // consumed
+  //     }
+  //   }
 
-        b->setDirty(false); // consumed
-      }
-    }
+  //   if(false) { // } else if(all sources timed out) {
+  //     lg.dbg("No input for 5 seconds, running fallback...");
+  //     // auto model = (Outputter&)(*outs)[0];
+  //     // ins->add(new Generator("Fallback animation", model)); // what will be
+  //     progressMultiplier = 0.001f;
+  //   }
+  //   timeInputs += micros() - begin;
+  // }
 
-    if(false) { // } else if(all sources timed out) {
-      lg.dbg("No input for 5 seconds, running fallback...");
-      ins.add(new Generator("Fallback animation", outs.get(0))); // what will be
-      progressMultiplier = 0.001f;
-    }
-    timeInputs += micros() - now;
-  }
+  // void tick() override { _run(); }
 
-  void tick() override { _run(); }
-
-  bool _run() override {
-    lwd.stamp(PIXTOL_SCHEDULER_ENTRY);
-    handleInput();
-    return true;
-
-    // lwd.stamp(PIXTOL_RENDERER_FRAME);
-    // ins.run(); render.run(); outs.run(); general.run();
-    // all good. just bit pointless unless much more infra.
-    // std::vector<std::function<void(Scheduler&)>> vec =
-    //  { [] (Scheduler& s) { s.handleInput(); }, [] (Scheduler& s) { s.handleFallback(); }, [] (Scheduler& s) { s.render.get(0).frame(s.progressMultiplier); }, [] (Scheduler& s) { s.handleOutput(); }};
-
-    // remember to be careful with auto and initializer lists :P
-    // std::vector<std::pair<std::function<void(Scheduler*)>, uint32_t&>> vec =
-    // {{[this] { this->handleInput(); }, timeInputs}, {[this] { this->handleFallback(); }}, // should not be here but trigger putting a Generator in Inputter vec, by lapsing timer maybe dunno {[this] { this->render.get(0).frame(this->progressMultiplier); }, timeRenders }, {[this] { this->handleOutput(); }}, timeOutputs }
-
-    // for(auto&& f: vec) { // well and w renderer oopsien
-    //   wrapper()
-    //   // now = micros(); //, log before/after for each cat, much easier than now.
-    //   // f(*this);
-    //   // timeThing += micros() - now; // group their things so use right var for each.
-    //   // lwd.stamp(EnumsForThese...);
-    //   // update time, stamp di stamp, yada. common inbetween crap.
-    // }
-  }
+  // bool _run() override {
+  //   return true;
+  // }
 };
+
+}

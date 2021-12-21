@@ -1,18 +1,15 @@
 #include "buffer.h"
 
+namespace tol {
+
 template<class T, class T2>
 void iBuffer<T, T2>::setCopy(const T* const newData, uint16_t copyLength, uint16_t readOffset, uint16_t writeOffset) {
-  if(!copyLength) copyLength = lengthBytes(); //use internal size unless specified
-  // also need to boundz readOffset tho lol. tbh shouldnt correct errors but throw...
-  // if(!newData || writeOffset >= lengthBytes() || copyLength > lengthBytes())
-  //   return; //XXX improve with info on request. and fucking decide whether to accomodate (take what's possible)
-  // or fail asap. crash > weirdo behavior no...
+  if(!copyLength) copyLength = lengthBytes() - readOffset - writeOffset;
   memcpy(data + writeOffset, newData + readOffset, copyLength); // watch out offset, if using to eg skip past fnChannels then breaks
   setDirty();
 }
 template<class T, class T2>
 void iBuffer<T, T2>::setCopy(const iBuffer<T, T2>& newData, uint16_t copyLength, uint16_t readOffset, uint16_t writeOffset) {
-  // since this is getting a buffer it can also change whether copylength is oob etc...
   setCopy(newData.get(), copyLength, readOffset, writeOffset);
 }
 
@@ -37,18 +34,11 @@ void iBuffer<T, T2>::setPtr(const iBuffer<T, T2>& newData, uint16_t readOffset) 
 template<class T, class T2>
 void iBuffer<T, T2>::set(T* const newData, uint16_t copyLength, uint16_t readOffset, uint16_t writeOffset, bool autoLock) {
   if(ownsData) {
-    // if(!copyLength) copyLength = length(); //use internal size unless specified
-    // std::clamp(copyLength, (uint16_t)1, uint16_t(length() - readOffset - writeOffset)); //XXX check why last one somehow promoted to int when all 3 involved are u16??
-    // copyLength = std::clamp((int)copyLength, 1, length() - readOffset - writeOffset); //XXX check why last one somehow promoted to int when all 3 involved are u16??
-    // copyLength = std::clamp(copyLength? copyLength: length(), 1, length() - readOffset - writeOffset); //XXX check why last one somehow promoted to int when all 3 involved are u16??
-    // copyLength = std::clamp(copyLength? copyLength: length(), 1, length() - (readOffset + writeOffset)); //XXX check why last one somehow promoted to int when all 3 involved are u16??
     copyLength = std::clamp(int(copyLength? copyLength: length()), 1, length() - readOffset - writeOffset); // so u - u = i, sily
-    // ^ XXX also check writeoffset... or dont check and let wrong things crash cmon
     memcpy(data + writeOffset, newData + readOffset, copyLength); // watch out offset, if using to eg skip past fnChannels then breaks
   } else {
     data = newData + readOffset; // bc target shouldnt be offset... but needed for if buffer arrives in multiple dmx unis or whatever...  but make sure "read-offset" done in-ptr instead...
   }
-
   setDirty();
 }
 template<class T, class T2>
@@ -76,6 +66,16 @@ iBuffer<T, T2> iBuffer<T, T2>::getSubsection(uint16_t startField, uint16_t endFi
   return temp;
 }
 
+
+template<class T, class T2>
+iBuffer<T, T2> iBuffer<T, T2>::concat(const iBuffer& rhs) {
+  iBuffer temp(id() + " + " + rhs.id(), fieldSize(),
+                fieldCount() + rhs.fieldCount());
+  temp.setCopy(*this);
+  temp.setCopy(rhs, 0, 0, this->fieldCount());
+  return temp;
+}
+
 template<class T, class T2>
 void iBuffer<T, T2>::fill(const Field& source, uint16_t from, uint16_t to) {
   if(!to || to >= fieldCount()) to = fieldCount() - 1; // also check from tho I guess..
@@ -85,7 +85,7 @@ template<class T, class T2>
 void iBuffer<T, T2>::gradient(const Field& start, const Field& end, uint16_t from, uint16_t to) {
   if(!to || to >= fieldCount()) to = fieldCount() - 1; // also check from tho I guess..
   for(auto f = from; f <= to; f++) {
-    Field current = Field::blend(start, end, (float)to - f / to);
+    Field current = Field::blend(start, end, (float)to - (float)f / to);
     setField(current, f); //p sure this would crash...
   }
 }
@@ -94,22 +94,16 @@ template<class T, class T2>
 void iBuffer<T, T2>::rotate(int count, uint16_t first, uint16_t last) {
   count = count % fieldCount();
   if(count == 0) return;
+
   auto steps = abs(count);
   if(last == 0 || last >= fieldCount())
     last = fieldCount() - 1; // 0 means max.
 
-  /* int starts[2] = {last - (steps-1), first}; //depending on rotation direction */
-  /* T* pFirst = get() + fieldSize() * (fwd? starts[0]: starts[1]); */
-  //but as they then head in sep dirs will have to add further offset tho. keep up work later...
-  // uint8_t temp[steps * fieldSize()]; //store overflow in temp so can wrap...
-  // memcpy(temp, pFirst, steps);
   iBuffer<T, T2>* temp = new iBuffer<T, T2>("temp rotate" + id(), fieldSize(), steps); //copy whats needed
   auto readOffset = count > 0? (last - (steps-1)): first;
   temp->setByField(*this, steps, readOffset); //fix set so skip all the multi bull
 
   shift(count, first, last); // shift data
-  // pFirst = get() + fieldSize() * (fwd? starts[1]: starts[0]); //update origin
-  // copyFields(pFirst, temp, steps); // move temp back
   auto writeOffset = count > 0? first: (last - (steps-1));
   setByField(*temp, steps, 0, writeOffset);
   /* lock(false); */
@@ -126,20 +120,6 @@ void iBuffer<T, T2>::shift(int count, uint16_t first, uint16_t last) {
   uint16_t numFields = min(last - toIndex + 1, last - fromIndex + 1); //limited by both space copied to, and from
 
   memmove(get() + toIndex*fieldSize(), get() + fromIndex*fieldSize(), numFields * fieldSize());
-  // 0 1 2 3 4 5 orig -1
-  // t b
-  // 1 2 3 4 5
-  //
-  // 0 1 2 3 4 5 orig +1
-  // b t
-  //   0 1 2 3 4
-  // if(base < 0) { //cant touch before buffer so cleave
-  // }
-  // T* pFirst = get() + first*fieldSize();
-  // T* pFront = get() + base*fieldSize();
-
-  // moveFields(pFirst, pFront, numFields);
-  //something about memmove()
 } // intentional no dirty
 
 // template<class T, class T2>
@@ -163,26 +143,22 @@ void iBuffer<T, T2>::setDithering(bool on) {
 
 template<class T, class T2>
 void iBuffer<T, T2>::lock(bool state) { // finalize keyframe?, at that point can be flushed or interpolated against
-  // .... uh some checks
-  setDirty(!state);
+  setDirty(!state); // .... uh some checks
 }
 
 template<class T, class T2>
 T iBuffer<T, T2>::averageInBuffer(uint16_t startField, uint16_t endField) { //calculate avg brightness for buffer. Or put higher and averageValue?
-  // any way get type of type with trmplates?
-  // ints vs floats...`
   uint32_t tot = 0;
   endField = endField <= fieldCount()? endField: fieldCount();
   for(auto i = startField * fieldSize(); i < length(); i++) tot += data[i]; //bypasses field thing but seems lack enough ram for that anyways
   return tot / (endField - startField);
 }
 
-
 template<class T, class T2>
 void iBuffer<T, T2>::applyGain() {
   float gain = std::clamp(getGain(), 0.0f, 1.0f); //in this case. want overdrive too tho.
   uint8_t brightness = gain * 255;
-  /* if(brightness <= totalBrightnessCutoff) brightness = 0; //until dithering... */
+  if(brightness <= blackPoint) brightness = 0; //until dithering...
 
   /* uint16_t scale = (((uint16_t)brightness << 8) - 1) / 255; */
   // well this is useless in this context lol. only makes sense if shifting upwards/not 255 div
@@ -265,46 +241,84 @@ void iBuffer<T, T2>::blendUsingEnvelopeB(const iBuffer<T, T2>& origin, const iBu
 // blabla doubling up strips for added resolution -> hell yeah
 // but also, stay on 32 bits further.  use all the space. now  8 i/o, 8 weight, 8 scale.  go like 10 weight, 10 scale?
 // also carry over scale error same way we do pixels? tho then when higher applied next time existing residual is all wrong.
+
+// I forget what actual purpose this has. interpolate to next frame yes, but for example without taking heed
+// of nonlinear response (2 to 3 vs 15 to 16) so error != error
+// not feasible switching back and forth 2 to 3 without flicker.
+// nothing smooth about the flickering 0 to 1. was never pretty, but for color reasons.
+// now just does not look smooth at all.
+
+// does things that otherwise done elsewhere:
+// applies gain and blackpoint
+// adapts subfieldorder
+// especially latter prob best done on initial copy...
+// tricky if wanting to drive strips with diff orders from same renderer but seems niche
 template<class uint8_t, class int16_t>
 void iBuffer<uint8_t, int16_t>::
 interpolate(const iBuffer<uint8_t, int16_t>& origin,
             const iBuffer<uint8_t, int16_t>& target,
-            float progress, BlendEnvelope* e) { // input buffers being interpolated, weighting (0-255) of second buffer in interpolation
+            float progress) { // input buffers being interpolated, weighting (0-255) of second buffer in interpolation
 
-  // if(_residuals == nullptr) { // no error correction buffers. but passing e just for this seems dumb. blend and temporal dithering-interp are different things so should never be called unless got em!
-  //   blendUsingEnvelopeB(origin, target, progress, e);
-  //   return;
-  // }
-  if(_residuals == nullptr) setDithering(true); //avoid crash... but just fix callers/document reqs tbh
+  // if(_residuals == nullptr) setDithering(true); //avoid crash... but just fix callers/document reqs tbh
+  if(_residuals == nullptr) return; //avoid crash... but just fix callers/document reqs tbh
 
-  uint32_t scale = std::clamp(getGain(), 0.0f, 1.0f) * 255UL; // or 256, or 257 or whatever tf it is lol
+  uint32_t scale = std::clamp(getGain(), 0.0f, 1.0f) * 255UL + 1; // or 256?
   if(scale == 0) {
     memset(this->get(), 0x00, lengthBytes());
     memset(_residuals, 0x00, lengthBytes());
+    setDirty();
     return;
   }
 
-  // tho, in here I guess keep everything not reliant on overflow at u32?
+  // tho, in here I guess keep everything not reliant on overflow at u32? on 32bit arch...
+  uint32_t mix24;
   uint16_t mix16, error;          // should we add a bit of resolution? since gets compounded... wait no cause cancels hah
   uint8_t mix8;                   // but if 0xFFFF * 0xFF we shift down 16 for mix16
 
-  uint16_t targetWeight = (uint16_t)(progress * 255L) + 1, // 1-256
-           originWeight = 257 - targetWeight;              // same. max tot 255*256 + 255*1 = 256x256. men tappar kunna gå på framen hmm
+  uint16_t targetWeight = (uint16_t)(progress * 255L) + 1, // 1-256 - why? dont we want progress 0 to be zero target influence? 1 * 255 >> 8 = 0 tho :)
+           originWeight = 257 - targetWeight;              // 1-256. "max tot 255*256 + 255*1 = 256x256" // not true, 255*257 != 256*256. which is good tho bc it's 65535 so no overflow
+  // a constant input 9 turns into 7 with this fwiw... 57 to 56, 252 to 252. why do lower values drop?
+  // scale + >> 8 affecting even tho 
 
-  uint8_t *pOrigin = *origin, *pTarget = *target, *pData = this->get(), *pResiduals = _residuals;
+  uint8_t *pOrigin = *origin,   *pTarget = *target,
+          *pData = this->get(), *pResiduals = _residuals;
 
   for(uint16_t f=0; f < fieldCount(); f++) {
     for(uint8_t sub=0; sub < fieldSize(); sub++) {
       uint8_t destSub = subFieldForIndex(sub); // returns sub if no mapping. Best if done earlier stage tho... and even if inline better to prefetch and skip nullcheck each time?
                                                // same with scale tbh - speed is all and dumb redoing same shit. So have multiple versions.
-      mix16 = (scale * (*pOrigin++ * originWeight + *pTarget++ * targetWeight)) >> 8;
+
+      mix24 = scale * (*pOrigin++ * originWeight + *pTarget++ * targetWeight); // involving scale and downshift will also lead to error, so try putting that in residuals?
+      mix16 = mix24 >> 8; // shigt down 0xFFFFFF -> 0xFFFF
       mix8  = mix16 >> 8; //shift down 0xFFFF -> 0xFF
-      error = *pResiduals + mix16 - ((uint16_t)mix8 << 8);  // if err+16 overflows then 8 would restore yeah? the scales back upped one clipped..
-      *(pData + destSub) = (error < 256)? mix8: mix8 + 1;
+      error = *pResiduals + (mix16 - ((uint16_t)mix8 << 8))  // if err+16 overflows then 8 would restore yeah? the scales back upped one clipped..
+                          + (mix24 - ((uint32_t)mix16 << 8)); // max 255 residual, 255 mix16, 255 mix8? so certainly more than one.
+      // *(pData + destSub) = (error < 256)? mix8: mix8 + 1;
+      if(mix8 >= noDitherPoint)
+        *(pData + destSub) = mix8 + (error / 256);
+      else
+        *(pData + destSub) = mix8;
       *pResiduals++ = error; // anything over 8bit capacity gets rolled over. but that only makes sense if looking <256...
+      
+      if(*(pData + destSub) <= blackPoint)
+        *(pData + destSub) = 0;
+      
     }
     pData += fieldSize();
-  }
+  } // updated version seems much better! but still rocky
+  
+  // for(uint16_t f=0; f < fieldCount(); f++) {
+  //   for(uint8_t sub=0; sub < fieldSize(); sub++) {
+  //     uint8_t destSub = subFieldForIndex(sub); // returns sub if no mapping. Best if done earlier stage tho... and even if inline better to prefetch and skip nullcheck each time?
+  //                                              // same with scale tbh - speed is all and dumb redoing same shit. So have multiple versions.
+  //     mix16 = (scale * (*pOrigin++ * originWeight + *pTarget++ * targetWeight)) >> 8; // 
+  //     mix8  = mix16 >> 8; //shift down 0xFFFF -> 0xFF
+  //     error = *pResiduals + mix16 - ((uint16_t)mix8 << 8);  // if err+16 overflows then 8 would restore yeah? the scales back upped one clipped..
+  //     *(pData + destSub) = (error < 256)? mix8: mix8 + 1;
+  //     *pResiduals++ = error; // anything over 8bit capacity gets rolled over. but that only makes sense if looking <256...
+  //   }
+  //   pData += fieldSize();
+  // }
   // for black most important is only going Field level. No harm in 3-4-5-6 when other colors also in.
   // I think prob skip here for now...
   /* if(blackPoint != 0) { // tho guess (apart from going 0/twice) other thing might be like, 4-7 bump to 8, 3 be 0. */
@@ -323,3 +337,4 @@ template class iBuffer<uint8_t, int16_t>; //was this for againj
 /* template class iBuffer<uint16_t>; */
 /* template class iBuffer<float>; */
 
+}

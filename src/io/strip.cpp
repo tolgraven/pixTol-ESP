@@ -1,5 +1,7 @@
 #include "strip.h"
 
+namespace tol {
+
 void Strip::setGradient(RgbwColor* from, RgbwColor* to) { // XXX do with N points/colors...
   if(fieldSize() == 3) {
     for(uint16_t pixel=0; pixel<fieldCount(); pixel++) {
@@ -199,4 +201,6 @@ uint16_t Strip::getIndexOfField(uint16_t position) {
   }
   if(_flip) position = fieldCount()-1 - position;
   return position;
+}
+
 }

@@ -7,6 +7,8 @@
 // some fadecandy (pc end tho) mapping fns
 //
 
+// examples. not sure where from? :
+
   // Set the location of several LEDs arranged in a strip.
   // Angle is in radians, measured clockwise from +X.
   // (x,y) is the center of the strip.

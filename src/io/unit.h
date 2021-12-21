@@ -3,7 +3,7 @@
 #include <vector>
 //contains stuff to handle physical UI - encoders, buttons
 // #include <FunctionalInterrupt.h>
-#include <Encoder.h>
+// #include <Encoder.h>
 // #include <SmartPins.h>
 // button libs: InputDebounce 123, clickButton 1105
 //OLED screen lib?
@@ -41,13 +41,13 @@ class RotaryEncoder: public PhysicalComponent, public Inputter {
     PhysicalComponent(id, pins), Inputter(id, 1, 2), //two fields (pos and click), one wide
      clickCallback(clickCallback), resetOnClick(resetOnClick), debounceMs(debounceMs) {
   }
-  ~RotaryEncoder() { delete re; }
+  // ~RotaryEncoder() { delete re; }
   
   void (*clickCallback)(long pos); //then gotta pass it in, maybe as a lambda? but better if proper
   //std::function<void(const RotaryEncoder&)> clickCB = &RotaryEncoder::onDepressed;
 
   private:
-  Encoder* re;
+  // Encoder* re;
   //SmartPins::spEncoderAuto* rea;
   long _pos = -999;
   bool resetOnClick;
@@ -59,7 +59,7 @@ class RotaryEncoder: public PhysicalComponent, public Inputter {
   void onDepressed() { _depressed = true; }
   void depressed() { _depressed = true; }
   void setup() override {
-     re = new Encoder(pins[0], pins[1]);
+     // re = new Encoder(pins[0], pins[1]);
     // SmartPins.EncoderAuto(pins[0], pins[1], INPUT_PULLUP, &RotaryEncoder::onDepressed);
     if(pins.size() > 2) { //use a third pin for clicks
        pinMode(pins[3], INPUT_PULLUP);
@@ -70,12 +70,12 @@ class RotaryEncoder: public PhysicalComponent, public Inputter {
   void clicked() {
     _depressed = false;
     depressedAt = millis(); // only update time once debounce has passed
-    if(resetOnClick) re->write(0);
+    // if(resetOnClick) re->write(0);
     if(clickCallback) clickCallback(_pos);
   }
   bool run() {
-    long newPos = re->read();
-    if(newPos != _pos) _pos = newPos;
+    // long newPos = re->read();
+    // if(newPos != _pos) _pos = newPos;
     if(_depressed && millis()-depressedAt > debounceMs) clicked();
     return Inputter::run();
   }

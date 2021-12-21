@@ -11,6 +11,7 @@
 #include "log.h"
 #include "color.h"
 
+namespace tol {
 // // ESP32 doesn't define ICACHE_RAM_ATTR
 // #ifndef ICACHE_RAM_ATTR
 // #define ICACHE_RAM_ATTR IRAM_ATTR
@@ -39,13 +40,15 @@ using UartGRBW    = NeoPixelBrightnessBus<NeoGrbwFeature, Uart1>;
 
 using Uart0_GRB     = NeoPixelBrightnessBus<NeoGrbFeature,  Uart0>;
 using Uart0_GRBW    = NeoPixelBrightnessBus<NeoGrbwFeature, Uart0>;
-// using UartRGBW    = NeoPixelBrightnessBus<NeoRgbwFeature, Uart1>;
+  // using UartRGBW    = NeoPixelBrightnessBus<NeoRgbwFeature, Uart1>;
 /* using UartGRB     = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266AsyncUart0800KbpsMethod>; */
 /* using UartGRBW    = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp8266AsyncUart0800KbpsMethod>; */
 #endif
 #ifdef ESP32
-using GRB      = NeoPixelBrightnessBus<NeoGrbFeature, Neo800KbpsMethod>;
-using GRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, Neo800KbpsMethod>;
+// using GRB      = NeoPixelBrightnessBus<NeoGrbFeature, Neo800KbpsMethod>;
+// using GRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, Neo800KbpsMethod>;
+using GRB      = NeoPixelBrightnessBus<NeoGrbFeature, NeoEsp32I2s0800KbpsMethod>;
+using GRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp32I2s0800KbpsMethod>;
 // using Dma0GRB      = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp32I2s0800KbpsMethod>;
 // using Dma0GRBW     = NeoPixelBrightnessBus<NeoGrbwFeature, NeoEsp32I2s0800KbpsMethod>;
 // using UartGRB     = NeoPixelBrightnessBus<NeoGrbFeature,  NeoEsp8266AsyncUart800KbpsMethod>;
@@ -166,7 +169,7 @@ class StripRGBW: public iStripDriver {
       if(port == 0) bus0 = new GRBW(ledCount);
 #endif
 #ifdef ESP32
-      if(port == 0) bus0 = new GRBW(ledCount, 25);
+      if(port == 0) bus0 = new GRBW(ledCount, 27);
 #endif
 
       // else if(port == 1) bus1 = new Bus4<AUart1>(ledCount);
@@ -236,7 +239,7 @@ class StripRGBW: public iStripDriver {
 
 class Strip: public Outputter {
   public:
-  Strip(): Strip("Strip RGBW 125", (uint8_t)RGBW, 125) {}
+  // Strip(): Strip("Strip RGBW 125", (uint8_t)RGBW, 125) {}
 
   // Strip(iStripDriver* d):
   //   Outputter("Strip, ext driver", d->PixelSize(), d->PixelCount()),
@@ -355,6 +358,7 @@ class Strip: public Outputter {
   }
 };
 
+}
 
 /* class Blinky { */
 /*   public: */

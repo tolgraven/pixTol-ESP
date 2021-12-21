@@ -2,60 +2,138 @@
 
 #include "smooth/core/Task.h"
 #include "smooth/core/ipc/IEventListener.h"
+#include "smooth/core/ipc/SubscribingTaskEventQueue.h"
+#include "smooth/core/ipc/Publisher.h"
 #include "smooth/core/task_priorities.h"
 
 #include "base.h"
+#include "log.h"
+#include <stdexcept>
+
+namespace tol {
 
 using namespace smooth;
+using namespace smooth::core;
+using namespace smooth::core::ipc;
 using namespace std::chrono;
-using ms = std::chrono::milliseconds;
 
-const int AppBasePrio = core::APPLICATION_BASE_PRIO;
+// well this is dumb apart from as experiment, but afa that got better ways to learn unpacking.
+// for now too-simple sub is through creating EventFnTasks...
+// capture this in lambda and got full access so w/e
+//
+// template<class Final, class... Evts, class Listener = IEventListener>
+// template<class Final, class... Evts>
+// // class Subs: public Listener<Evts>... {
+// class Subs: public IEventListener<Evts>... {
+//   public:
+//   std::shared_ptr<SubscribingTaskEventQueue<Evts>>... queue;
+//   Subs(Inheritor* self, int size = 10, bool autostart = false):
+//     queue(SubscribingTaskEventQueue<Evts>::create(size, *self, *self))... {
+//     }
+// };
 
-
-class OSTask: public Runnable, public core::Task {
+// but mostly, use ...args and unpacking and can just list shit to inherit/use
+// template<class Inheritor, class T>
+template<class T>
+class Sub: public IEventListener<T> {
+  bool enabled = true;
   public:
-  OSTask(const String& id, int stackSize = 8000, int prio = AppBasePrio):
-    Runnable(id, "task"),
-    core::Task(id.c_str(), stackSize, prio, milliseconds{10}) {}
-  void tick() override { run(); }
+  std::shared_ptr<SubscribingTaskEventQueue<T>> queue;
+  Sub(core::Task* task, int size = 2):
+    queue(SubscribingTaskEventQueue<T>::create(size, *task, *this)) {}
+
+  void disableSub() { enabled = false; } // ideally would disable at source but we can also just ignore events...
+  void enableSub() { enabled = true; }
+  virtual void event(const T& out) { if(enabled) onEvent(out); } // a default so don't _HAVE_ to implement
+  virtual void onEvent(const T& out) = 0; // a default so don't _HAVE_ to implement
+};
+
+class PureEvtTask: public core::Task { // Evt = Event, in what sense lol? I guess cause does nothing etc
+  public:
+  PureEvtTask(const char* id, int priority = 4):
+    // core::Task(id, 3000, core::APPLICATION_BASE_PRIO - 10, seconds{1}, 1) { // pin cpu 1
+    core::Task(id, 4096, priority, seconds{1}, 1) { // pin cpu 1
+    // core::Task(id, 3000, core::APPLICATION_BASE_PRIO - 5, milliseconds{25}) {
+      start();
+    }
+};
+
+
+// if too much time passes dont forget THESE ARE DUMB however, plenty applications on plenty targets will
+// make much more sense basic & cooperative, so dont give up on runnableyada. Just. Fuckem here.
+class FnTask: public core::Task {
+  public:
+  std::function<void()> task;
+  FnTask(int ms, std::function<void()> task): // anon. attach to main task. except that means we enter loop here and get fucked.
+    core::Task(core::APPLICATION_BASE_PRIO - 5, milliseconds{ms}),
+    task(task) { start(); }
+
+  FnTask(const String& id, int ms, std::function<void()> task,
+         int stackSize = 3000, int prio = core::APPLICATION_BASE_PRIO):
+    core::Task(id.c_str(), stackSize, prio, milliseconds{ms}),
+    task(task) { start(); }
+
+  void tick() override { task(); }
+};
+
+template<class T> // ... args w eventlisteners?
+class EventFnTask: public core::Task, public IEventListener<T> {
+  public:
+  std::shared_ptr<SubscribingTaskEventQueue<T>> queue;
+  using EvtFn = std::function<void(const T& evt)>;
+  EvtFn task;
+  EventFnTask(const String& id, EvtFn task, int stackSize = 3000,
+              int prio = core::APPLICATION_BASE_PRIO - 5):
+    core::Task(id.c_str(), stackSize, prio, milliseconds{10000}),
+    queue(SubscribingTaskEventQueue<T>::create(5, *this, *this)),
+    task(task) {
+      start();
+    }
+  void event(const T& evt) override { task(evt); }
 };
 
 class TaskedRunnable: public core::Task { // will auto clear on dtor right
   protected:
   std::shared_ptr<Runnable> runner; // can also just be a RunnableContainer etc for grouping.
   public:
-  // TaskedRunnable(Runnable* runner, int stackSize = 8000, std::chrono::milliseconds tick = 5, int priority = core::APPLICATION_BASE_PRIO):
-  // TaskedRunnable(Runnable* runner, int stackSize = 8000, auto tick = milliseconds(5), int prio = AppBasePrio + 3):
-  TaskedRunnable(Runnable* runner, int stackSize = 8000, milliseconds tick = milliseconds{5}, int prio = AppBasePrio):
-    core::Task((runner->id() + " task").c_str(), stackSize, prio, tick),
+  TaskedRunnable(Runnable* runner, int stackSize = 4096,
+                 int prio = core::APPLICATION_BASE_PRIO - 5, int tick = 5, int cpu = tskNO_AFFINITY):
+    core::Task((runner->id() + " " + runner->type() + runner->uid()).c_str(), stackSize, prio, milliseconds{tick}, cpu),
     runner(runner) {
-      start();
+      // start(); // lets chill w auto init
     }
+
+  void init() override { DEBUG("Start TaskedRunnable " + runner->id() + " " + runner->uid()); }
   void tick() override { runner->run(); }
+
+  Runnable& get() { return *(runner.get()); }
+  Runnable& operator*() { return get(); }
+  Runnable* operator->() { return runner.get(); }
 };
 
-// class EventRunnable:
-//   public TaskedRunnable,
-//   public smooth::core::ipc::IEventListener<Buffer> { // test...
 
-//   public:
-//   EventRunnable(Runnable* runner, int stackSize = 8000, int priority = core::APPLICATION_BASE_PRIO):
-//     TaskedRunnable(runner, stackSize, milliseconds(1000), priority) { // well rather basically infinity, should only dispatch by event right
-//     }
+class TaskRunGroup: public RunnableGroup, public core::Task { // will auto clear on dtor right
+  public:
+  TaskRunGroup(const String& id, int stackSize = 4000,
+               int prio = core::APPLICATION_BASE_PRIO - 5, int tick = 5,
+               int cpu = tskNO_AFFINITY):
+    RunnableGroup(id),
+    core::Task(id.c_str(), stackSize, prio, milliseconds{tick}, cpu) {
+      // start();
+    }
 
-//   void event(const Buffer& updated) {
-//     // so eh first do test impl for Buffer copier... when creating Patch would use Buffer uid to lookup which dest(s) to route to...
-//   }
-// };
+  void init() override { DEBUG("Start TaskRunGroup " + id()); }
+  void tick() override { run(); }
+};
+
 
 template<class T> // like this'd solve but obv dum-dum lose are cntainer
 class TaskGroup: public Runnable, public core::Task { // Q is are eg Inputters one task tot with sep threads or each single one a task?
   // guess latter since can work priority dep on timed out, high activity etc...  but in the end should be very event driven w data coming in.
   public:
-  TaskGroup(const String& id, int priority = 7, int cpu = tskNO_AFFINITY):
+  TaskGroup(const String& id, int priority = 5, int tick = 5, int cpu = tskNO_AFFINITY):
     Runnable(id, "tasks"),
-    core::Task(id.c_str(), 8096, priority, milliseconds{5}, cpu) {
+    core::Task(id.c_str(), 4096, priority, milliseconds{tick}, cpu) {
       start(); //maybe not always safe start on reg? could also pass event to hook start to?
     }
 
@@ -69,7 +147,7 @@ class TaskGroup: public Runnable, public core::Task { // Q is are eg Inputters o
     for(auto&& t: _tasks)
       if(id == t->id())
         return *((T*)*t);
-    throw std::invalid_argument();
+    throw std::invalid_argument("No such task in TaskGroup");
   }
   bool _run() override {
     bool outcome = false;
@@ -104,7 +182,7 @@ class PeriodicTask: public LimitedRunnable {
 };
 
 class InterruptTask {
-  Ticker timer;
+  Ticker timer; // TODO Ticker is a tiny wrapper lib, just replicate and excise it...
   public:
   InterruptTask(uint32_t periodMs, std::function<bool()> fn) {
     timer.attach_ms(periodMs, fn);
@@ -118,3 +196,44 @@ class InterruptTask {
   }
 };
 
+// TODO this should use Timer from smooth...
+// schedule a fn (probably lambda wrapping something internal) in ms
+// to defer firing it
+class RunFnOnceIn {
+  Ticker timer; // TODO Ticker is a tiny wrapper lib, just replicate and excise it...
+  std::function<bool()> _fn;
+  // milliseconds start = duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+  milliseconds start = duration_cast<milliseconds>(steady_clock::now().time_since_epoch());
+  // might also have a memleak (move callback, set it to nullptr...?) we'll find out
+  // cause this will be set up and torn down a loooot?
+  public:
+  RunFnOnceIn(uint32_t runInMs, std::function<bool()> fn):
+    _fn(fn){
+    timer.once_ms(runInMs, _fn);
+  }
+  ~RunFnOnceIn() {
+    // disarm(); // Ticker detaches on destruction already tho
+  }
+  
+  void disarm() {
+    if(timer.active()) {
+      timer.detach();
+    }
+  }
+  void setNewTimeout(uint32_t runInMs) {
+    disarm();
+    timer.once_ms(runInMs, _fn);
+  }
+  // maybe better to avoid recreating entire class and its timer object if can be avoided, so...
+  void runAgainIn(uint32_t runInMs) {
+    timer.once_ms(runInMs, _fn);
+  }
+  // change (delay or move closer) time it should fire
+  // void adjustTimeout(int32_t diff) {
+  //   disarm();
+  //   auto passed = steady_clock::now()
+  //   timer.attach_once_ms(, _fn);
+  // }
+};
+
+}

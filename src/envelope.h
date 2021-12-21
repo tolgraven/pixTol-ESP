@@ -45,7 +45,6 @@ class BlendEnvelope { // simple "envelope" to control how much an incoming value
       if(!straight)
         for(uint8_t es = AT; es <= RE; es++)
           value[es] = constrain(1.0 - value[es], 0.0, 1.0);
-      // lg.f(__func__, Log::DEBUG, "divisors %f %f, values %f %f", divisor[AT], divisor[RE], value[AT], value[RE]);
     }
   public:
     BlendEnvelope(const String& id = "BlendEnvelope", float atDivisor = 1.0, float reDivisor = 1.0,
@@ -54,8 +53,6 @@ class BlendEnvelope { // simple "envelope" to control how much an incoming value
         setDivisor(AT, atDivisor);
         setDivisor(RE, reDivisor);
         adjustForDirection();
-        lg.f("BlendEnvelope", Log::DEBUG, "%s, base %.2f, div %.2f/%.2f, val %.2f/%.2f\n",
-            _id.c_str(), _baseline, divisor[AT], divisor[RE], value[AT], value[RE]);
     }
 
     void setDivisor(EnvStage es, float value) {
@@ -68,17 +65,16 @@ class BlendEnvelope { // simple "envelope" to control how much an incoming value
         value[es] = value[es] / divisor[es]; // dont ever quite arrive like this, two runs at max = 75% not 100%...
       adjustForDirection(); //XXX XXX figure out at later point why the fuuuuck values are coming in already inverted??? bizarre. oh well...
     }
-    float A(float progress) { return get(AT, progress); } //lol i was dividing...
-    float R(float progress) { return get(RE, progress); }
-    float get(EnvStage es, float progress) {
+    float A(float progress) const { return get(AT, progress); } //lol i was dividing...
+    float R(float progress) const { return get(RE, progress); }
+    float get(EnvStage es, float progress) const {
       return value[es] * progress; //wouldnt work for straight tho?
     }
 
-    float interpolate(float origin, float target, float progress, float min = 0, float max = 1) {
+    float interpolate(float origin, float target, float progress, float min = 0, float max = 1) const {
       if(origin == target) return origin;
       float scaler = target > origin? A(progress): R(progress);
       float result = origin + ((target - origin) * scaler);
-      // lg.logf(__func__, Log::DEBUG, "Current %d, result %f, higher %s", value[AT], higher? "true": "false");
       return constrain(result, min, max);
     }
     // this should be templatized obvs? uint8_t yo

@@ -1,22 +1,33 @@
 #pragma once
 
-// TODO turn into lib
 #include <vector>
 #include <limits>
 #include <type_traits>
+#include <valarray>
 
 #include <field.h>
 #include "base.h"
 #include "envelope.h"
 
+namespace tol {
+
+// TODO basic subclass for holding a large buffer such as nultiple dmx universes
+// in continous memory
+// and containing Buffer objects merely acting as views.
+// as such should disallow setPtr etc on those...
 
 template<class T, class T2 = T> // For integer types, T2 should generally be the next larger signed one. uint8_t -> int16_t etc.
-class iBuffer: public Named, public ChunkedContainer { //rename tBuffer?
-  public:
+class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots of overlap w (and inefficiences compared to) valarray.
+  using Buffer = iBuffer<T, T2>;                       //but when dont own the data, what can we do...
+  public:                                              // but then that's honestly not super common and can be made less so.
+                                                       // slices also map nicely onto our chunks, plus easier do stuff like "do op x on all white pixels"
+                                                       // but then most interesting stuff is here already prob?
+    iBuffer() = default;
     iBuffer(const String& id, uint8_t fieldSize, uint16_t fieldCount,
             T* const dataPtr = nullptr, bool copy = false):
       Named(id, "Buffer"), ChunkedContainer(fieldSize, fieldCount),
-      ownsData(!dataPtr || copy), data(!ownsData? dataPtr: nullptr) {
+      ownsData(!dataPtr || copy),
+      data(!ownsData? dataPtr: nullptr) {
 
         if(!data) {
           data = new T[length()]; // complains about non-const, also 0 might not work for all Ts anyways alloc mem if not passed valid ptr
@@ -26,28 +37,31 @@ class iBuffer: public Named, public ChunkedContainer { //rename tBuffer?
           setCopy(dataPtr, lengthBytes());
         }
     }
-    virtual ~iBuffer() {
+    virtual ~iBuffer() { // tho im not looking to inhering anymore right?
       setDithering(false);
       if(ownsData) delete[] data;
     }
-    // eh now sure what do afa  default copy/move constr stuff...
     iBuffer(const iBuffer& buffer, uint16_t numFields = 0, uint16_t offset = 0, bool copy = false):
       iBuffer(buffer.id() + " clone", buffer.fieldSize(),
-              numFields > 0? numFields: buffer.fieldCount(),
+              numFields > 0?
+                numFields + offset <= buffer.fieldCount()?
+                  numFields:
+                  numFields - offset:
+                buffer.fieldCount() - offset,
               buffer.get(offset), copy) {}
 
+    iBuffer(iBuffer&& buffer) = default; // eh ye nya
 
-    T&        operator[](uint16_t index) const { return *get(index); } //eh prob not so reasonable heh. but if want to be able to do f[0] = 5; f[1] = 30;
+    T&        operator[](uint16_t index) const { return *get(index); } // a Field getter would make sense too tho I guess.
     iBuffer&  operator+(const iBuffer& rhs) { return add(rhs); }
     iBuffer&  operator+(T2 delta) { return value(delta); } // Field has some ops we should borrow
     iBuffer&  operator-(const iBuffer& rhs) { return sub(rhs); } // Field has some ops we should borrow
     iBuffer&  operator-(T2 delta) { return value(delta); } // Field has some ops we should borrow
-    // iBuffer&  operator=(const iBuffer& rhs) { return *this; } // I guess? or delete? was invoking copy constructor when doing auto ... = ... But then that's an issue of other side I guess - returns a reference but then copied afterwards.
-    iBuffer&  operator=(const iBuffer& rhs) = delete;
-    // iBuffer&  operator*() {}
-    T*  operator*() const { return get(); }; //does raw offset make much sense ever? still, got getField.get() so...
+    iBuffer&  operator=(const iBuffer& rhs) { setPtr(rhs); return *this; } // also set fsize/count?
+    T*        operator*() const { return get(); } //does raw offset make much sense ever? still, got getField.get() so...
+    operator  T*() const { return get(); }
 
-    virtual size_t printTo(Print& p) const override {
+    size_t printTo(Print& p) const override {
       return Named::printTo(p) + ChunkedContainer::printTo(p) + p.printf("this %p, data %p\n", this, this->get());
     }
 
@@ -68,8 +82,18 @@ class iBuffer: public Named, public ChunkedContainer { //rename tBuffer?
     void setField(const Field& source, uint16_t fieldIndex); //XXX also set alpha etc - really copy entire field, but just grab data at ptr
 
     T* get(uint16_t unitOffset = 0) const { return this->data + unitOffset; } //does raw offset make much sense ever? still, got getField.get() so...
-    Field getField(uint16_t fieldIndex) const { return Field(data, fieldSize(), fieldIndex); }; //  // elide copy constructor - is straight
+    Field getField(uint16_t fieldIndex) const { return Field(data, fieldSize(), fieldIndex); } //  // elide copy constructor - is straight
+
     iBuffer getSubsection(uint16_t startField, uint16_t endField = 0) const;
+    using iBuffers = std::array<iBuffer, 2>;
+    iBuffers slice(uint16_t at, bool copy = false) {
+      return iBuffers{iBuffer(*this, at, 0, copy),
+                      iBuffer(*this, 0, at, copy)};
+    }
+    iBuffer concat(const iBuffer& rhs);
+    // iBuffer scaleLength(float fraction) {
+    //   // compress or drag out. W some antialiasing etc.
+    // }
 
     void fill(const Field& source, uint16_t from = 0, uint16_t to = 0);
     void gradient(const Field& start, const Field& end, uint16_t from = 0, uint16_t to = 0);
@@ -83,7 +107,6 @@ class iBuffer: public Named, public ChunkedContainer { //rename tBuffer?
     bool hasNew() { return dirty(); }
     bool dirty() { return _dirty; }
     void setDirty(bool state = true) { _dirty = state; } // nicer if ext cant fuck with but hardly possible
-
     void finishFrame() { setDirty(false); }
     void lock(bool state = true); // finalize keyframe?, at that point can be flushed or interpolated against
     // bool ready() const { return true; }/* return dirty; */ // havent actually thought through or properly sorted it, so for now... shouldnt be fucking needed we're not multi threaded lol
@@ -97,7 +120,7 @@ class iBuffer: public Named, public ChunkedContainer { //rename tBuffer?
     // DiffBuffer& difference(iBuffer& other, float fraction) const;
 
     // nice this! will need equiv over Field/Color later.  XXX and fixem for T... but mainly just defer to Field
-    iBuffer& mix(const iBuffer& other, std::function<T(T, T)> op) { // could auto this even or?
+    iBuffer& mix(const iBuffer& other, std::function<T(T, T)> op) {
       for(auto i=0; i < length(); i++)
         data[i] = op(data[i], other[i]); // no way this inlined tho so would want loop inside lambda to actually use...
       return *this;
@@ -105,17 +128,16 @@ class iBuffer: public Named, public ChunkedContainer { //rename tBuffer?
     iBuffer& mix(const iBuffer& other, std::function<T(T, T, float)> op, float progress) { // could auto this even or?
       for(auto i=0; i < length(); i++)
         data[i] = op(data[i], other[i], progress);
-      // might then wanna swap float to T for actual calcs tho?
       return *this;
     }
     iBuffer& add(const iBuffer& other) {
       return mix(other, [this](T a, T b) {
         // return (T)std::clamp((T2)a + (T2)b, minValue, maxValue); });
-        return (T)constrain((T2)a + (T2)b, minValue, maxValue); });
+        // return (T)constrain((T2)a + (T2)b, minValue, maxValue); });
+        return (T)std::clamp(T2((T2)a + (T2)b), minValue, maxValue); });
     }
     iBuffer& addBounce(iBuffer& other) {
       return mix(other, [this](T a, T b) {
-          // T2 sum = (T2)a + (T2)b; // no need for these early casts no?
           T2 sum = a + b; // no need for these early casts no?
           if(sum > maxValue) sum = maxValue - sum;
         return (T)sum; });
@@ -123,22 +145,18 @@ class iBuffer: public Named, public ChunkedContainer { //rename tBuffer?
 
     iBuffer& sub(const iBuffer& other) {
       return mix(other, [this](T a, T b) {
-        // return (T)std::clamp(a - (T2)b, minValue, maxValue); });
-        return (T)std::clamp(T2(a - b), minValue, maxValue); }); // so uT - uT turns iT, then coerce to T2, uh
-        // return (T)std::clamp((T2)a - (T2)b, minValue, maxValue); });
-        // return (T)constrain((T2)a - (T2)b, minValue, maxValue); });
+        return (T)std::clamp(T2((T2)a - (T2)b), minValue, maxValue); });
     }
     iBuffer& subBounce(const iBuffer& other) {
       return mix(other, [](T a, T b) {
-        return (T)abs((T2)a - (T2)b); });
+        return (T)std::abs((T2)a - (T2)b); });
     }
 
     iBuffer& avg(const iBuffer& other, bool ignoreZero = true) {
       return mix(other, [this, ignoreZero](T a, T b) {
         T2 sum = a + b;
-        if(ignoreZero && (sum == a || sum == b))
+        if(ignoreZero && (!a || !b))
           return (T)std::clamp(sum, minValue, maxValue);
-          // return (T)constrain(sum, minValue, maxValue);
         return (T)(sum / 2);
       });
     }
@@ -151,28 +169,27 @@ class iBuffer: public Named, public ChunkedContainer { //rename tBuffer?
     }
     iBuffer& value(T2 adjustment) {
       for(auto p=0; p < length(); p++)
-        // data[p] = std::clamp((T2)data[p] + adjustment, minValue, maxValue);
         data[p] = std::clamp(T2(data[p] + adjustment), minValue, maxValue);
-        // data[p] = constrain((T2)data[p] + adjustment, minValue, maxValue);
       return *this;
     }
     T averageInBuffer(uint16_t startField = 0, uint16_t endField = 0); //calculate avg brightness for buffer. Or put higher and averageValue?
     void blendUsingEnvelopeB(const iBuffer& origin, const iBuffer& target, float progress, BlendEnvelope* e = nullptr);
-    void interpolate(const iBuffer& origin, const iBuffer& target, float progress, BlendEnvelope* e = nullptr);
+    void interpolate(const iBuffer& origin, const iBuffer& target, float progress);
 
   protected:
-    bool ownsData;
-    T* data = nullptr;
+    bool ownsData = false; // q is whether shared_ptr can and if so should handle better.
+    T* data = nullptr;     // Would be nice but feels like raw only real option, asking for trouble hooking up to ext libs...
+    // std::valarray<T>* valData;
     T* _residuals = nullptr;
-    T2 maxValue = std::numeric_limits<T>::max(); // static might have to go as well if might want some different ones for floats
-    T2 minValue = std::numeric_limits<T>::min(); //generally 0
+    T2 maxValue = std::numeric_limits<T>::max(), // static might have to go as well if might want some different ones for floats
+       minValue = std::numeric_limits<T>::min(); //generally 0
     float alpha = 1.0; //or weight, or something...
     float _gain = 1.0;
-    /* T blackPoint = 6 * (maxValue / 255); */
-    T blackPoint = 0.016f * maxValue, whitePoint = maxValue * 0.95f;
+    T blackPoint = 0.010f * maxValue,
+      whitePoint = 0.95f  * maxValue,
+      noDitherPoint = 0.020f * maxValue;
     bool _dirty = false;
     // uint16_t updatedBytes = 0; //rename updatedFields?
-    // bool newData = false;
   private:
 };
 
@@ -180,23 +197,4 @@ using Buffer    = iBuffer<uint8_t, int16_t>; // first is actual, second to avoid
 using Buffer16  = iBuffer<uint16_t, int32_t>;
 using BufferF   = iBuffer<float>;
 
-// question is I guess, do we truly need PixelBuffer if Buffer contains Fields, which can be Colors,
-// and which themselves handle blending operations?
-// Usecase prob gamma shit and geometry whatever..
-//class PixelBuffer: public Buffer {
-//  public:
-//    PixelBuffer(uint8_t bytesPerPixel, uint16_t numPixels, uint8_t* dataPtr = nullptr):
-//      Buffer("PixelBuffer", bytesPerPixel, numPixels, dataPtr) {}
-//    PixelBuffer(Buffer& buffer):
-//      Buffer("PixelBuffer " + buffer.id(), buffer.fieldSize(), buffer.fieldCount(), buffer.get()) {}
-
-//    /* Color setPixelColor(uint16_t pixel, const Color& color); */
-//    /* Color getPixelColor(uint16_t pixel); */
-
-//    PixelBuffer& getScaled(uint16_t numPixels); // scale up or down... later xy etc
-//    //Color averageColor(int startPixel = -1, int endPixel = -1) {} // -1 = no subset
-
-//  //XXX how make this work with overshooting? compute delta for average timeBetweenFrames?
-//  // GammaCorrection* gamma = nullptr;
-//  // void interpolate(PixelBuffer* origin, PixelBuffer* target, float progress, GammaCorrection* gamma);
-//};
+}

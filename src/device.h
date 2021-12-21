@@ -11,9 +11,9 @@
 #include "firmware.h"
 #include "watchdog.h"
 #include "debuglog.h"
-#include "event.h"
 #include "io/networking.h"
 
+namespace tol {
 
 enum class Status { //based off homie, wrap that first and extend with eg RDM, OPC, HomeKit etc status events
   Invalid = -1, Setup = 1, Normal,
@@ -57,11 +57,12 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
   std::map<String, Updater*> updater;
   // NTPTime time; // reckon will help with the rougher (simpler) parts of sync https://github.com/aharshac/EasyNTPClient
   /* PhysicalUI* ui = nullptr; */ // WebUI* webUI;
-  Status lastStatus;
+  // Status lastStatus;
   Ticker recurring;
-  std::unique_ptr<WifiConnection> wifi;
+  // std::unique_ptr<WifiConnection> wifi;
+  // bool connected = false;
   // FileIO fs;
-  String cfgFile = "/config.json"; //let's just use WifiManager quick while then move to ConfigManager
+  // String cfgFile = "/config.json"; //let's just use WifiManager quick while then move to ConfigManager
   public:
 
   Debug* debug = nullptr;
@@ -69,10 +70,12 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
   /* Config* config; //we'll need to make one of these. */
 
   Device(const String& id): _id(id) { // serial, random seed mean this before anything else but that makes sense since want watchdog, statusled, display etc from boot...
-    uint8_t stackStart = 0;
-    debug = new Debug(&stackStart);
-    Serial.begin(SERIAL_BAUD); //well, not if uart strip tho...
-    lg.initOutput("Serial");  //logging can be done after here
+    // uint8_t stackStart = 0;
+    // debug = new Debug(&stackStart);
+    // Serial.begin(SERIAL_BAUD); // XXX tempwell, not if uart strip tho...
+    // lg.initOutput("Serial");  //logging can be done after here
+    Serial2.begin(SERIAL_BAUD, SERIAL_8N1, 4, 2);
+    lg.initOutput("Serial2");  //mirror to pins 2-4
 
     uint32_t finishAt = millis() + 2000;
     auto dotter = [finishAt]() {
@@ -84,27 +87,27 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
 
     lwd.init(); //muy important, chilled out constructor
     lg.dbg(lwd.getResetReason() + (lwd.softResettable()? ", softResettable!": ""));
+
     // lg.dbg(debug->getStacktrace());
-    //
     // OTA update leads to crash in Neo i2s_slc_isr
     // SaveCrash leads to stack overflow repeat exception while handling exception
     // debug->saveCrash.print(lg); //can use our logger as output. i thought?
     // debug->saveCrash.print(); //can use our logger as output. i thought?
     // if(debug->saveCrash.count() >= 3) debug->saveCrash.clear();
-    debug->stackAvailableLog();
+
 
     initRNG();
-    wifi = std::unique_ptr<WifiConnection>(new WifiConnection("pixTol-proto", "wifi"));
-    wifi->start(); //blocking...
 
-    updater["OTA"] = new ArduinoOTAUpdater(_id);
+    // wifi = std::make_unique<WifiConnection>("pixTol-proto", "wifi");
+    // connected = wifi->start(); //blocking...
+
+    // updater["OTA"] = new ArduinoOTAUpdater(_id);
     /* updater["HTTP"] = new HttpUpdater(String(Homie.getConfiguration().mqtt.server.host), 1880, s); */
 
     handleBootLoop();
 
     /* lwd.stamp(PIXTOL_SETUP_EXIT); */
     timeBootDone = micros();
-    debug->stackAvailableLog();
 
     lg.dbg("Done Device");
   }
@@ -118,8 +121,7 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
       // debug->saveCrash.print();
       // debug->saveCrash.clear();
 
-      // disable helpfully actual culprit but main is just ensure updater lives
-      // would still make sense just stalling here tho still feeding wdt giving chance to update...
+      // disable helpfully actual culprit but main is just ensure updater lives would still make sense just stalling here tho still feeding wdt giving chance to update...
       uint32_t otaTimeout = constrain(resetCount * 3000, 3000, 30000);
       uint32_t finishAt = millis() + otaTimeout;
       auto dotter = [finishAt]() {
@@ -127,8 +129,7 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
                         Serial.print("."); return true;
                       } else return false; };
       // recurring.attach_scheduled(1, dotter); // oh yeah bc we never reach loop, no shit.
-      recurring.attach(1, dotter); // so, cant find where in lib return false to detach actually handled?
-      // nor where I read about it. hmm.
+      recurring.attach(1, dotter); // so, cant find where in lib return false to detach actually handled?  nor where I read about it. hmm.
       while(millis() < finishAt) {
         lwd.feed();
         this->loop();
@@ -142,7 +143,8 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
 
 
   void loop() {
-    for(auto& up: updater) up.second->loop(); //would fit better here than in "IOT" (shit name) anyways?
+    for(auto& up: updater)
+      up.second->loop();
   }
 
   void initRNG() { // slightly less shit-resolution analogRead random seed ting...
@@ -163,8 +165,6 @@ class SystemComponent {
   SystemComponent() {}
   void loop() {}
 };
-
-#define ESP_NOW_MAX_PEERS 20
 
 class PowerBudget {
   // had some minor power stuff in the battery experiment but so many aspects.
@@ -237,3 +237,5 @@ class DataIO: public Named { // something common then subclass for SPIFFS, EEPRO
 //   DataFormat() {}
 //   ~DataFormat() {}
 // };
+
+}

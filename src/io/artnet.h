@@ -1,155 +1,195 @@
 #pragma once
 
 #include <functional>
-#include <ArtNetE131Lib.h>
+#include <artnet4real.h>
+#include <AsyncUDP.h>
+
+#include "smooth/core/logging/log.h"
+
 #include "log.h"
 #include "renderstage.h"
+#include "task.h"
 
-// I mean indirection for Driver is just dumb since all calls to it is gonna be type-dependent haha.
-// class ArtnetDriver: public Driver<espArtnetRDM> {
-//   ArtnetDriver():
-//     Driver("Artnet") {};
-// };
-class ArtnetDriver: public Runnable { // well prob want to inherit Task directly? but leave design open...
-// class ArtnetDriver { // or just wrap this after?
-  std::unique_ptr<espArtNetRDM> artnet;
+
+namespace tol {
+
+using namespace smooth;
+using namespace smooth::core::ipc;
+
+// using namespace anfr;
+namespace artnet = anfr;
+
+class ArtnetDriver: public IEventListener<IPAddress>, public core::Task { // or just wrap this after?
+  // const int pollReplyInterval = 4000; // XXX figure out how the fuck this doesnt work as supposed to
+  // milliseconds{4000} to Task works. milliseconds{const int} turns ns or some shit,
+  // static const + constexpr milliseconds works. But passing ints works everywhere else.
+  static const int pollReplyInterval = 4000; // well actually it's 2500-3000 and only for controllers. 4s is resend stale frame, but 0.8-1.0s recommended "for sacn compat"
+  // static constexpr milliseconds pollReplyTick = milliseconds{pollReplyInterval};
+  static constexpr auto pollReplyTick = milliseconds{pollReplyInterval};
+  std::unique_ptr<artnet::Driver> artnet;
+	AsyncUDP socket; //fix more flexibility so ethernet etc tho! maybe template like applemidi lib but so much boilerp
   bool started = false;
-  bool newInput = false;
 
   public:
   ArtnetDriver(const String& id):
-    Runnable(id, "driver"),
-    artnet(new espArtNetRDM()) {
-    artnet->init(id.c_str());
+    core::Task("artnet-driver", 4096, core::APPLICATION_BASE_PRIO + 2, pollReplyTick),
+    artnet(new artnet::Driver((id + " ArtNet").c_str())) {
   }
+  // template<class Fun, class... Args> typename std::result_of<Fun&&(Args&&...)>::type
   // template<class Fun, class... Args>
-  // typename std::result_of<Fun&&(Args&&...)>::type
-  // operator()(Fun&& f, Args&&... args) {
-  //   artnet->std::forward<Fun>(f)(std::forward<Args>(args)...);
-  // }
-
-  // espArtnetRDM& operator() { return *(*_driver); }
-  // espArtnetRDM* operator* { return *_driver; }
-  espArtNetRDM* operator*() { return artnet.get(); }
-  espArtNetRDM* operator->() { return artnet.get(); }
-  espArtNetRDM* get() { return artnet.get(); }
-  // espArtNetRDM* get() { return *artnet; }
+  //   auto operator()(Fun&& f, Args&&... args) { artnet->(f)(std::forward<Args>(args)...); }
+  artnet::Driver* operator*() { return get(); }
+  artnet::Driver* operator->() { return get(); }
+  artnet::Driver* get() { return artnet.get(); }
   template<typename ...Args, typename T>
-  // typename std::result_of<Fun&&(Args&&...)>::type
-  // T forward(T (espArtNetRDM::* function)(Args...), Args &&...args) {
-  void operator()(T (espArtNetRDM::* function)(Args...), Args&& ...args) {
+  void operator()(T (artnet::Driver::* function)(Args...), Args&& ...args) {
     return (artnet->*function)(std::forward<Args>(args)...);
   }
 
-  void init() {
+  void init(const IPAddress& ip, const IPAddress& sub, uint8_t* mac) { // this should be called in response to NetworkEvent.
     if(!started) {
+      lg.dbg("ARTNET INIT"); // BAD ERROR
+      if(ip != INADDR_NONE)
+        artnet->init(ip, sub, mac);
+      else
+        artnet->init();
+
+      artnet->setPacketSendFn([this](IPAddress dest, uint8_t* data, uint16_t length,
+                                     uint16_t port = artnet::def::defaultUdpPort) {
+            AsyncUDPMessage packet{length};
+            packet.write(data, length);
+            auto res = this->socket.sendTo(packet, dest, port);
+            // lg.dbg("ARTNET SEND PACKET");
+          });
+
+      if(!socket.listen(artnet::def::defaultUdpPort)) { // Start listening for UDP packets
+        lg.dbg("ARTNET BAD CANT LISTEN"); // BAD ERROR
+      } else {
+        // socket.onPacket([this](AsyncUDPPacket& packet) { // INFO copy not ref due to AsyncUDP bug (pbuf_free thing, copy-ctor PR exists but is stale and might have issues(=))
+        socket.onPacket([this](AsyncUDPPacket packet) { // INFO copy not ref due to AsyncUDP bug (pbuf_free thing, copy-ctor PR exists but is stale and might have issues(=))
+                                                        // fucking or not? #3290 it is then.
+            // this (asyncudp) was acting up again (stack overflow if lucky, thread stuck if unlucky)
+            // move to smooth equivalent asap... looks a bit fiddly tho
+            this->artnet->onPacket(packet.remoteIP(), packet.data(), packet.length());
+            // lg.dbg("ARTNET RECEIVE PACKET");
+          });
+      }
       artnet->begin();
       started = true;
     }
   }
 
-  bool _run() {
-    auto res = artnet->handler(); // would want to translate (ext-of-driver relevant) artnet types to some generic ones
-    if(res == ARTNET_ARTDMX) {    // so DMX = "dataInput", RDM = "configYada",
-      newInput = true;
-      return true;
-    }
-    return false;
+  void stop() { started = false; socket.close(); }
+
+  void event(const IPAddress& ip) override {
+    DEBUG("Artnet got IP event");
+    artnet->setIP(ip); //etc. update config. more to come.
+  }
+
+  void tick() override {     //only on start and response. unless controller. or controllers poll says yada...
+    // lg.dbg("ARTNET driver tick - send pollreply");
+    artnet->sendPollReply(); // ola runs as node tho so welp gotta spam.
   }
 
   void cbRDM() {} // get on so can start using
-
-  bool checkAndClearInput() {
-    if(newInput) {
-      newInput = false;
-      return true;
-    }
-    return false;
-  }
 };
 
 class ArtnetIn: public NetworkIn {
   std::shared_ptr<ArtnetDriver> driver;
+  uint32_t runs = 0, attempts = 0;
+  Buffer bigData;
 
   public:
-  ArtnetIn(const String& id, uint16_t startUni, uint8_t numPorts, ArtnetDriver* driver):
-    NetworkIn(id, startUni, numPorts), driver(driver) {
-      setType("artnet");
+  ArtnetIn(uint16_t startUni, uint8_t numPorts, std::shared_ptr<ArtnetDriver> driver):
+    NetworkIn("artnet in", startUni, numPorts), driver(driver),
+    bigData(Buffer("Artnet Chunk", 1, numPorts * 512)) {
+      setType("input");
 
-      uint8_t groupID = driver->get()->addGroup(0, 0); // net, subnet
-      // uint8_t groupID = driver()->addGroup(0, 0); // net, subnet
-      // uint8_t groupID = driver(addGroup, 0, 0); // net, subnet
-      for(int port=0; port < numPorts; port++) {
-        driver->get()->addPort(groupID, port, startUni + port, (uint8_t)port_type::RECEIVE_DMX);
+      (*driver)->setupBulkInputs(artnet::Universe(startUni, 0, 0), bigData.get(), numPorts * 512);
+      auto off = bigData.get();
+      for(auto& b: buffers()) {
+        b->setPtr(off);
+        off += 512;
       }
 
       driver->get()->setArtDMXCallback(
-          [this](uint8_t group, uint8_t port, uint16_t length, bool sync) {
-            uint8_t* data = this->driver->get()->getDMX(group, port);
-            if(data) this->onData(port, length, data, !sync);
+          [this](uint8_t group, uint8_t port, uint8_t* data, uint16_t length, bool defer) {
+            if(data) { // DEBUG("DMX DATA INCOMING");
+              // this->onData(port, length, data, !defer);
+              this->onData(group * 4 + port, length, data, !defer);
+              this->getCounts().run = ++runs; // XXX TEMP haha
+              this->getCounts().attempt = ++attempts;
+            }
       });
       driver->get()->setArtSyncCallback([this] {
             for(auto&& buf: this->buffers())
-            buf->setDirty(true);
+              buf->setDirty(true); // TODO just store incoming on internal queue then post all on sync
       });
-
-      driver->init(); // cause lib aint ready for begin() before got groups and stuff right? so gotta dupl for now. fix
-  }
-
-  // now with cb silliness refactoring exposes it's dumb design in any case to
-  // have an I + O underlying driver _IN_ status depend on its general run-fn.
-  // but this is because "in" means multiple things:
-  // - actual input (dmx)
-  // - other networking shit
-  //
-  // if Driver then becomes standalone Runnable or straight OS task,
-  // how keep this neat generalized packet counting?
-  //
-  // could rely on checking self for dirty(), but if consumer doesnt keep up w input,
-  // would double count and shit.
-  // But then if Driver coupled to OS event, us coupled to effect of that,
-  // need to run() disappears anyways and eg cb could just do a dummy one for stats.
-  // different for Outputter side since supposed to stick to a specific clock and such...
-  //
-  // also afa Artnet since supports multiple "input types" really, the more we can decouple
-  // each one the better? then artpollreply status becomes an output ostream, yada lala
-  bool _run() override {
-    // OLA now complaining about "got unknown packet", "mismatched version" 3584 and stuff. investigate!!
-    return driver->checkAndClearInput(); //safe to poll away at I guess, will change soon anyways
   }
 };
 
 class ArtnetOut: public Outputter {
+  // should be a PatchOut subscriber somehow (probably put in Outputter itself...)
+  // then to enforce FPS simply have like a one-time scheduled event Task
+  // which gets a callback in this class
+  // and gets scheduled to fire in (ms til next keyframe)
+  // IMPORTANT might get more frames while waiting, so first clear any scheduled Task.
+  // this way no relying on silly polling for frame-limited shit!
+
+  // nor risk of flushing buffer while it's mid-update (could (should?) also be done with mutex)
+  // since still very much run that risk I suppose if Renderer spins all spare cycles...
+  //
+  // actually amt of Tasks = num buffers/ports...
   std::shared_ptr<ArtnetDriver> driver;
 
   public:
-  ArtnetOut(const String& id, uint16_t startUni, uint8_t numPorts, ArtnetDriver* driver):
-    Outputter(id, 1, 512, numPorts), driver(driver) {
-      // setType("artnet");
+  ArtnetOut(uint16_t startUni, uint8_t numPorts, std::shared_ptr<ArtnetDriver> driver):
+    Outputter("artnet out", 1, 512, numPorts), driver(driver) {
+      setType("output");
 
-      // uint8_t groupID = driver->get()->addGroup(0, 1); // net, subnet
-      // uint8_t groupID = *driver->addGroup(0, 1); // net, subnet
-      uint8_t groupID = (*driver)->addGroup(0, 1); // net, subnet
-      for(int port=0; port < numPorts; port++) {
-        driver->get()->addPort(groupID, port, startUni + port, (uint8_t)port_type::SEND_DMX);
+      // oh yeah so have to re-engineer internal Port getup a bit...
+      // if same group is to be able to have one port both send/receive.
+      // bring back ext buffer option, then sendDMX optionally becomes just a signal
+      // to take what's curr in buf and send.
+      // - buffer optional (might need 1 in, 0 in 0 out, 1 out...)
+      uint8_t groupID = 0; // net, subnet
+      // for(int p=0; p < numPorts; p++) {
+      //   auto port = (*driver)->getPort(groupID, p);
+      //   if(port) port->portType = artnet::PortArtnetHub; // XXX temp test
+      // }
+       
+      // uint8_t groupID = (*driver)->addGroup(0, 1)->index; // net, subnet
+      
+      // uint8_t groupID = (*driver)->addGroup(0, 0); // fuckit lets try dupl
+      // uint8_t groupID = 0; // XXX bad depends on in creating it first...
+      // causes buffer overflow in "IP" because called from there? lol
+      // but we're not even are we??
+
+      for(int portIdx=0; portIdx < numPorts; portIdx++) {
+        auto port = (*driver)->getPort(0, portIdx);
+        if(!port) {
+          int pID = (*driver)->addPort(groupID, portIdx, startUni + portIdx, artnet::PortArtnetIn); // XXX have swapped "In" and "Out"
+        } else {
+          port->portType = artnet::PortArtnetHub;
+        }
+        
       }
-
-      driver->init();
   }
 
-  bool _run() {
+  bool _run() override {
     bool outcome = false;
-    for(uint8_t port=0; port < buffers().size(); port++) {
-      uint8_t group = 1; //send-group, made-up for now...
-      // auto& buf = buffer(port);
-      auto&& buf = buffer(port);
+    for(uint8_t port=0; port < buffers().size(); port++) { // XXX bad wrong because now eg port 3 is idx 0
+      // uint8_t group = 1; //send-group, made-up for now...
+      uint8_t group = 0; //send-group, made-up for now...
+      auto& buf = buffer(port);
       // it's weird tho how buf1/controls somehow throttles even w/o dirty check? not actually impl like...
       // turns out setting maxHz makes it start pushing data even when no changes.
       // WEIRD! bc should only affect microsTilReady() right?
 
       if(buf.dirty()) { // well not gonna happen because got mult buffer objs using same resource, not us getting set...
       // if(buf.dirty() || port.hasnt_sent_in_4s_yada()) { // well not gonna happen because got mult buffer objs using same resource, not us getting set...
-        driver->get()->sendDMX(group, port, buf.get(), buf.lengthBytes()); // so it's required it properly set up. wont overflow at least
+        // (*driver)->sendDMX(group, port, buf.get(), buf.lengthBytes()); // so it's required it properly set up. wont overflow at least
+        (*driver)->sendDMX(group, port, buf.get(), buf.lengthBytes()); // XXX TEMP
         buf.setDirty(false); // our view anyways. Many Buf same addr both good and tricky
         outcome = true;
       }
@@ -157,6 +197,21 @@ class ArtnetOut: public Outputter {
     return outcome;
   }
 
+  void onEvent(const PatchOut& event) override {
+    uint8_t group = 0; //send-group, made-up for now...
+    auto& buf = buffer(event.i);
+    // it's weird tho how buf1/controls somehow throttles even w/o dirty check? not actually impl like...
+    // turns out setting maxHz makes it start pushing data even when no changes.
+    // WEIRD! bc should only affect microsTilReady() right?
+
+    if(buf.dirty() /* || port.hasnt_sent_in_4s_yada() */) { // should always be dirty if event arrived tho
+      (*driver)->sendDMX(group, event.i, buf.get(), buf.lengthBytes());
+      buf.setDirty(false); // our view anyways. Many Buf same addr both good and tricky
+    }
+    
+  }
+
   void cbRDM() {} // get on so can start using
 };
 
+}

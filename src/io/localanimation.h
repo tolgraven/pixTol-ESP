@@ -1,13 +1,91 @@
 #pragma once
 
 #include <functional>
+#include <NeoPixelBrightnessBus.h>
+#include <NeoPixelAnimator.h>
 #include "renderstage.h"
+#include "log.h"
+#include "color.h"
 
 // use for on-chip generated stuff. StatusLed/Ring breathing, strip standby and simple animations...
-class LocalAnimation: public Generator {
-  LocalAnimation(const String& name, uint8_t bitDepth, uint16_t pixels):
-    Generator(name, bitDepth, pixels) {
+// and random set/fill colors prob pass through here?
+// again, maybe Generator should be thing, transforming Inputter ctrl data to cool shit passed back to it
+//                             Output
+//                               ^
+// or oh yeah maybe. ctrl -> Inputter -> Generator
+//                                ^   <- puts anim
+// should this maybe be a HomieNode btw? so dont gotta pass...
+// start off by basically equally shitty Blinky, but with Buffer target instead of Strip...
+class LocalAnimation: public Inputter {
+  public:
+  LocalAnimation(const String& id, uint8_t bitDepth, uint16_t pixels):
+    Inputter(id, bitDepth, pixels) {
     }
+
+  bool run() {
+    // if animation registered, advance it appropriately. if "static" animation + pinned source,
+    // simply refresh (if sharing buffer and has been overwritten? but seems unlikely)
+    // or simply... nothing
+    // start by using NeoPixelAnimator prob...
+  }
+  std::map<String, RgbwColor> colors;
+  void generatePalette() {
+    colors["black"]  = RgbwColor(0, 0, 0, 0);
+    colors["white"]  = RgbwColor(150, 150, 150, 255);
+    colors["red"]    = RgbwColor(255, 15, 5, 8);
+    colors["orange"] = RgbwColor(255, 40, 20, 35);
+    colors["yellow"] = RgbwColor(255, 112, 12, 30);
+    colors["green"]  = RgbwColor(20, 255, 22, 35);
+    colors["blue"]   = RgbwColor(37, 85, 255, 32);
+  }
+  bool color(const String& name = "black") {
+    if(colors.find(name) != colors.end()) {
+      uint8_t c[4];
+      c[0] = colors[name].R;
+      c[1] = colors[name].G;
+      c[2] = colors[name].B;
+      c[3] = colors[name].W;
+      for(auto t=0; t<sizeInBytes(); t+=fieldSize()) {
+        get().set(c, 4, 0, t);
+      }
+      // get().fill(colors[name]); //soon!
+      // s->setColor(colors[name]);
+      lg.dbg("Set color: " + name);
+      return true;
+    }
+    return false;
+  }
+
+  void gradient(const String& from = "white", const String& to = "black") {
+    lg.dbg(from + "<>" + to + " gradient requested");
+    RgbwColor* one = colors.find(from) != colors.end()? &colors[from]: nullptr; //colors["white"];
+    RgbwColor* two = colors.find(to)   != colors.end()? &colors[to]:   nullptr; //colors["black"];
+    s->setGradient(one, two);
+  }
+
+  void test() {
+    lg.logf("Blinky test", Log::DEBUG, "Run gradient test");
+    color("black"); //homieDelay(50); homiedelay (and also reg delay? causing crash :/)
+    gradient("black", "blue"); //homieDelay(300);
+    color("blue"); //homieDelay(100);
+    gradient("blue", "green"); //homieDelay(300);
+    gradient("green", "red"); //homieDelay(300);
+    gradient("red", "orange"); //homieDelay(300);
+    gradient("orange", "black");
+  }
+
+  void blink(const String& colorName, uint8_t blinks = 1) {
+    for(int8_t b = 0; b < blinks; b++) {
+      color(colorName);
+      // homieDelay(100);
+      color("black");
+      // homieDelay(50);
+    }
+  }
+
+  void fadeRealNiceLike() { //proper, worthy, impl of above...
+    // scheduler->registerAnimation(lala); //nahmean
+  }
 };
 
 

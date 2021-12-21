@@ -4,6 +4,8 @@
 #include "log.h"
 #include "renderstage.h"
 
+namespace tol {
+
 class sAcnInput: public NetworkIn {
   ESPAsyncE131* sacn;
   e131_packet_t* packet;
@@ -21,3 +23,5 @@ class sAcnInput: public NetworkIn {
     return onData(htons(packet->universe), htons(packet->property_value_count) - 1, packet->property_values + 1); //htons for byte order. sub baseuni and get buffer index / Start code is ignored
   }
 };
+
+}

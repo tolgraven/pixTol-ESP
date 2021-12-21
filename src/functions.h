@@ -5,14 +5,16 @@
 #include <algorithm>
 #include <map>
 #include <vector>
-#include <lib8tion.h>  // fastled math and shit
+// #include <lib8tion.h>  // fastled math and shit
 #include <Arduino.h>
 #include "log.h"
 #include "envelope.h"
 #include "buffer.h"
 
 #define MILLION 1000000
-#define EPSILON 0.0001   // dont need crazy precision.. maybe revert to uint16 internally. at least for anything per-pixel.
+#define EPSILON 0.0001f   // dont need crazy precision.. maybe revert to uint16 internally. at least for anything per-pixel.
+
+namespace tol {
 
 enum CH: uint8_t {
  chDimmer = 0, chStrobe, chHue, chAttack, chRelease, chBleed, chNoise,
@@ -22,6 +24,7 @@ enum CH: uint8_t {
 bool fIsZero(float value);
 bool fIsEqual(float lhs, float rhs);
 
+// rework this as Runnable derived (derived). Need to incorporate Keyframe concept to that + generic update mechanism as well (tho better stick to show-where data is, go run...
 class FunctionChannel { //rename, or group as, Function, for effects with multiple params?
   private:
     virtual float _apply(float value, float progress) { //force should be a persistent flag, not fn arg
@@ -30,9 +33,9 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
     String _id;
   protected:
     Buffer* b = nullptr;
-    float origin = 0, target = 0, current = 0;
+    float origin = 0.f, target = 0.f, current = 0.f;
     /* std::tuple<float> range; */
-    /* float min = 0, max = 1; // XXX scaling */
+    /* float min = 0.f, max = 1.f; // XXX scaling */
     BlendEnvelope* e = nullptr;
     // ADSREnvelope adsr; //dis the goal
   public:
@@ -41,15 +44,12 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
     FunctionChannel(const String& id, float a, float r):
       FunctionChannel(id, new BlendEnvelope(id)) { e->set(a, r); }
     virtual ~FunctionChannel() { if(e) delete e; }
-    //prob have dedicated "end (curr run) and clean up" fn?
 
     void apply(float progress) {
       float value = !e? target: e->interpolate(origin, target, progress); //first generic envelope interpolation
       /* float value = target; */
       current = _apply(value, progress); // apply using that, possibly returning further changed value
-      /* if(targetFn && !fIsZero(current)) targetFn(get()); //wait, would make dimmer0 never apply. ugh. not necessarily current(input), but result */
       if(targetFn) targetFn(get()); //not necessarily current(input), but result
-      /* if(targetFn) targetFn(1.0); //not necessarily current(input), but result */
     } // so now strobe is calling this every time even off. but not really a prob i guess.
 
 
@@ -108,9 +108,9 @@ class Stage {
 class Strober: public FunctionChannel { //maybe more appropriate further general and with multiple main inputs (value = toprange, otherval = timing...)
   private:
   std::vector<Stage> stages =
-    { Stage("open", 1.0, 1.0, MILLION/200, MILLION/15, 7.0),
-      Stage("fading", 1.0, 0.0, MILLION/200, MILLION/7, 5.0),
-      Stage("closed", 0.0, 0.0),
+    { Stage("open", 1.0f, 1.0f, MILLION/200, MILLION/15, 7.0f),
+      Stage("fading", 1.0f, 0.0f, MILLION/200, MILLION/7, 5.0f),
+      Stage("closed", 0.0f, 0.0f),
     };
 
   float hzMin, hzMax;
@@ -118,15 +118,15 @@ class Strober: public FunctionChannel { //maybe more appropriate further general
   uint32_t timeInStage[5] = {0};
   int32_t timeRemaining = 0;
   uint8_t activeStage = PRE;
-  float fraction[2] = {1/8.5, 1/6.0}; //OPEN, FADING
+  float fraction[2] = {1/8.5f, 1/6.0f}; //OPEN, FADING
   uint32_t maxTime[2] = {(MILLION/20), (MILLION/8)}; //OPEN, FADING
   uint32_t minTime[2] = {(MILLION/200), (MILLION/100)}; //OPEN, FADING
 
   uint32_t lastTick = 0;
-  float variance = 1.0; // use for more organic type thing...
-  float minResult = 0.0;
-  float maxResult = 1.0; //want positive modulation in some cases.
-  float result = 1.0;
+  float variance = 1.0f; // use for more organic type thing...
+  float minResult = 0.0f;
+  float maxResult = 1.0f; //want positive modulation in some cases.
+  float result = 1.0f;
 
   void start(float value);
   void initStage(uint32_t debt = 0);
@@ -134,7 +134,7 @@ class Strober: public FunctionChannel { //maybe more appropriate further general
 
   float _apply(float value, float progress) override; //this was why not being called... turned into different function without Strip arg
   public:
-  Strober(const String& id = "Strobe", float hzMin = 1.0, float hzMax = 12.5):
+  Strober(const String& id = "Strobe", float hzMin = 1.0f, float hzMax = 12.5f):
    FunctionChannel(id), hzMin(hzMin), hzMax(hzMax) {}
 
   float get() override { return result; }
@@ -221,37 +221,36 @@ class Functions { // receives control values and runs on-chip effect functions l
 
   Functions(Buffer& targetBuffer):
     b(&targetBuffer) {
+    // b(new Buffer(targetBuffer, 12, 0, false)) { // well no cause targetbuf has no fn chs it's offset...
     lg.dbg("Create Functions, targetBuffer: " + targetBuffer.id());
      
     for(uint8_t i=0; i < numChannels; i++) {
       chOverride[i] = -1; //dont seem to properly auto init from {-1} otherwise hmm
-      blendOverride[i] = 0.5;
+      blendOverride[i] = 0.5f;
     }
 
     using namespace std::placeholders;
     lg.f("Functions", Log::DEBUG, "Buffer: %p, ptr: %p\n", b, b->get());
-    chan[chDimmer] = new Dimmer(new BlendEnvelope("dimmerEnvelope", 1.2, 1.1));
-    /* chan[chDimmer] = new Dimmer(new BlendEnvelope("dimmerEnvelope", 1.0, 1.0)); */
+    chan[chDimmer] = new Dimmer(new BlendEnvelope("dimmerEnvelope", 1.2f, 1.1f));
     chan[chDimmer]->targetFn = std::bind(&Buffer::setGain, b, _1);
 
-    chan[chStrobe] = new Strober("Shutter", 0.5, 10.0);
+    chan[chStrobe] = new Strober("Shutter", 0.5f, 10.0f);
     /* // or auto& buf = b; then capture buf */
-    chan[chStrobe]->targetFn = [this](float value) { //somehow not doing the trick anymore. like captured scope no longer valid...
-      if(value < 1.0 && this->b) {
-        /* lg.dbg(String("Val, gain:") + value + " " + this->b->getGain()); */
+    chan[chStrobe]->targetFn = [this](float value) {
+      if(value < 1.0f && this->b) {
         this->b->setGain(value * this->b->getGain());
       }
     }; //works, but then becomes dependent on dimmer being executed first, etc... figure out something clean.
     // i guess yeah "virtual" channel shutter is pointed to by dimmer + strobe,
 
-    /* chan[chNoise] = new Noise(); */
-    /* chan[chBleed] = new Bleed(); */
-    /* chan[chRotateFwd] = new Rotate(true); */
-    /* chan[chRotateBack] = new Rotate(false); */
-    /* chan[chHue] = new RotateHue(); */
+    chan[chNoise] = new Noise();
+    chan[chBleed] = new Bleed();
+    chan[chRotateFwd] = new Rotate(true);
+    chan[chRotateBack] = new Rotate(false);
+    chan[chHue] = new RotateHue();
     for(auto c: chan) c.second->setTarget(b); //lock in strip s as our target...
 
-    /* e.set(0.5, 0.5); //default not 0 so is nice for local sources if no input */
+    /* e.set(0.5f, 0.5f); //default not 0 so is nice for local sources if no input */
   }
   ~Functions() {} //remember for when got mult
 
@@ -280,6 +279,8 @@ class Functions { // receives control values and runs on-chip effect functions l
   static const uint8_t numChannels = 12;
   uint8_t ch[numChannels] = {0};
   int chOverride[numChannels] = {-1};
-  float val[numChannels] = {0}, blendOverride[numChannels] = {0.5};
-  BlendEnvelope e = BlendEnvelope("pixelEnvelope", 1.6, 1.4); //remember attack and dimattack are inverted, fix so anim works same way...
+  float val[numChannels] = {0.f}, blendOverride[numChannels] = {0.5f};
+  BlendEnvelope e = BlendEnvelope("pixelEnvelope", 1.4f, 1.3f); //remember attack and dimattack are inverted, fix so anim works same way...
 };
+
+}

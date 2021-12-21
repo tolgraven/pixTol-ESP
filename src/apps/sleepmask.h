@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Homie.h>
+/* #include <Homie.h> */
 #include "renderstage.h"
 #include "buffer.h"
-#include "io/strip.h"
+/* #include "io/strip.h" */
 
 // def one for ESP32, or whatever cheapest alt w ble is.
 // OTOH, nah yeah you need bt.

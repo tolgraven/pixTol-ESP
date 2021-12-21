@@ -12,29 +12,18 @@ int _write(int file, char *ptr, int len) {
 }
 }
 
+namespace tol {
 
 bool Log::initOutput(const String& output) {
   Print* pr = nullptr;
   if(output == "Serial") { // tho, obviously, entire point is being able to define elsewhere.
-    // auto fmtFn = [](const String& text, const String& level, const String& location) {
-    //   Serial.printf("%lu\t[%s]\t%s\t%s",
-    //       millis(), level.c_str(), location.c_str(), text.c_str()); };
-    // destinations.emplace_back(output, Serial, fmtFn);
     pr = &Serial;
-
+  } else if(output == "Serial1") {
+    pr = &Serial1;
   } else if(output == "Serial2") {
-    Serial1.begin(SERIAL_BAUD);
-    // serialObject = &Serial1;
-  /* } else if(output == "Homie") { */
-  /*   using namespace std::placeholders; */
-  /*   homieLogger = new HomieNode("Log", "Logger", std::bind(&Log::handleInput, this, _1, _2, _3)); */
-  /*   for(auto& o: outputs) { */
-  /*     homieLogger->advertise(o.first.c_str()).settable(); //ugly lol useless fix */
-  /*   } */
-  /*   homieLogger->advertise("Level").settable(); */
+    pr = &Serial2;
   }
   if(pr) {
-    // destinations.emplace_back(output, *pr);
     auto dest = LogOutput(output, *pr);
     if(enableColor) {
       auto fmt = [](const String& loc, const String& lvl, const String& txt) {
@@ -69,11 +58,10 @@ void Log::log(const String& text, const Level level, const String& location) con
   }
 
   String lvl = convert(level);
-  // String lvl = std::move(convert(level));
-  // String loc = Ansi<Blue>(location);
-  for(auto&& dest: destinations) {
-    dest.log(location, lvl, text);
-  }
+  auto& guard = smooth::core::logging::Log::guard;
+  std::unique_lock<std::mutex> lock(guard);
+  for(auto& dest: destinations) { dest.log(location, lvl, text); }
+  for(auto& dest: moreDest) { dest.log(location, lvl, text); } // temp. need tuuplay of various strategies
 }
 
 void Log::ln(const String& text, const Level level, const String& location) const {
@@ -94,19 +82,10 @@ void Log::f(const String& location, const Level level, const char *format, ...) 
   va_end(arg);
   log(b, level, location);
 }
-void Log::logf(const String& location, const Level level, const char *format, ...) const {
-  if(!shouldLog(level)) return;
-  va_list arg; va_start(arg, format);
-  char b[180];
-  size_t len = vsnprintf(b, sizeof(b), format, arg);
-  va_end(arg);
-  log(b, level, location);
-}
 
 void Log::fEvery(uint16_t numCalls, uint8_t id, const String& location, const Level level, const char *format, ...) const {
   if(!shouldLog(level)) return;
 
-  /* static std::map<String, uint16_t> callTracker; */
   static std::map<uint8_t, uint16_t> callTracker;
   callTracker[id] = (callTracker.find(id) == callTracker.end())? 1: ++callTracker[id]; //init or inc
   if(callTracker[id] < numCalls) return;
@@ -121,29 +100,5 @@ void Log::fEvery(uint16_t numCalls, uint8_t id, const String& location, const Le
 }
 
 
-/* bool Log::handleInput(const String& property, const HomieRange& range, const String& value) { */
-/*   f("Log settings", DEBUG, "requested setting property %s to %s", property.c_str(), value.c_str()); */
-/*   if(property == "Level") { */
-/*     Level newLevel = convert(value); */
-/*     if(newLevel == INVALID) { */
-/*       f("Log settings", ERROR, "Received invalid level %s.", value.c_str()); */
-/*       return false; */
-/*     } */
-/*     _level = newLevel; */
-/*     f("Log settings", INFO, "Level now %s", value.c_str()); //this needed tho when setproperty does something right? */
-/*     homieLogger->setProperty("Level").send(value); */
-/*     return true; */
-/*   } else if(property == "Serial" || property == "MQTT") { //check keys rather, ugh */
-/*     bool state = (value.equalsIgnoreCase("on") || value == "1"); //or some lib fn for checken positive hapy words or signals heh */
-/*     f("Log settings", INFO, "%s output %s", property.c_str(), state? "ON": "OFF"); */
-/*     homieLogger->setProperty(property).send(state? "On": "Off"); */
-/*     outputs[property] = state; */
-/*     // if(property == "Serial") serial = state; */
-/*     // if(property == "MQTT") mqtt = state; */
-/*     return true; */
-/*   } */
-/*   f("Log settings", ERROR, "Invalid: %s / %s", property.c_str(), value.c_str()); */
-/*   return false; */
-/* } */
-
 Log lg;
+}
