@@ -1,6 +1,3 @@
-[submodule "components/smooth"]
-	path = components/smooth
-	url = https://github.com/PerMalmberg/Smooth.git
 [submodule "externals/smooth"]
 	path = externals/smooth
 	url = https://github.com/PerMalmberg/Smooth.git
@@ -10,12 +7,12 @@
 [submodule "arduino-printstream"]
 	path = lib/Arduino-PrintStream
 	url = file:///Users/tol/CODE/pixTol/lib-submodule/Arduino-PrintStream
-[submodule "externals/functional_plus"]
-	path = externals/functional_plus
-	url = https://github.com/Dobiasd/FunctionalPlus.git
 [submodule "externals/fmt"]
 	path = externals/fmt
 	url = https://github.com/fmtlib/fmt
 [submodule "lib/tweeny"]
 	path = lib/tweeny
 	url = https://github.com/mobius3/tweeny
+[submodule "lib/WiFiManager"]
+	path = lib/WiFiManager
+	url = https://github.com/tzapu/WiFiManager
