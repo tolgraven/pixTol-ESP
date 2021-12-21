@@ -16,3 +16,6 @@
 [submodule "externals/fmt"]
 	path = externals/fmt
 	url = https://github.com/fmtlib/fmt
+[submodule "lib/tweeny"]
+	path = lib/tweeny
+	url = https://github.com/mobius3/tweeny
