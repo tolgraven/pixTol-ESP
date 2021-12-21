@@ -87,7 +87,7 @@ void Ticker::detach()
 {
     __disarm(_timer);
     _timer = nullptr;
-    _callback_function = nullptr; // is this not memleak recipe after a ::move??
+    _callback_function = nullptr; // XXX is this not memleak recipe after a ::move?? we'll find out
 }
 
 bool Ticker::active() const

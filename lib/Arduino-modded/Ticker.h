@@ -140,12 +140,7 @@ protected:
     }
     callback_function_t _callback_function = nullptr;
     TickerInternal _timer;
-// #ifdef ESP32
-//     esp_timer_handle_t _timer;
-// #endif
 #ifdef ESP8266
-//     // ETSTimer* _timer;
-//     ETSTimer _timer;
 private:
     ETSTimer _etsTimer;
 #endif
