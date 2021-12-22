@@ -16,6 +16,7 @@ using namespace smooth::core::ipc;
 using namespace smooth::core::filesystem;
 using namespace smooth::application::network;
 
+using namespace std::chrono;
 
 void App::init() {
   Serial.begin(SERIAL_BAUD); // XXX tempwell, not if uart strip tho...
@@ -117,15 +118,12 @@ void App::wifiCrap() {
   
   wifi_config_t conf;
   auto err = esp_wifi_get_config(WIFI_IF_STA, &conf);
-  // lg.f("Wifi", Log::INFO, "Errcode %d", err);
   
   // char errString[64]{};
   // esp_err_to_name_r(err, errString, 64);
   // lg.f("Wifi", Log::INFO, "Errcode %s", errString);
   auto ssid = (std::string)reinterpret_cast<const char*>(conf.sta.ssid);
   auto pw = (std::string)reinterpret_cast<const char*>(conf.sta.password);
-  // DEBUG(ssid.c_str());
-  // DEBUG(pw.c_str());
   
 
   if(pw != "") { // use stored creds
@@ -158,26 +156,37 @@ std::string moreStatz() {
   auto numTasks = uxTaskGetNumberOfTasks(); /* Take a snapshot of the number of tasks in case it changes while this function is executing. */
   TaskStatus_t taskStats[numTasks]; // should be np auto work over malloc/free? w enough stack
   std::string s;
-  std::map<uint64_t, std::string> m;
+  std::map<uint32_t, std::string> m;
 
   uint32_t timeTot;
   uxTaskGetSystemState(taskStats, numTasks, &timeTot);
   timeTot /= 100UL; /* For percentage calculations. */
-  constexpr const char* fmtStr = "{:<25} {:<16} {}{}%\t\t{} \t {} \t {} \t {} \t {}\r\n";
+  constexpr const char* fmtStr = "{:<25} {:<14} {}{}%\t {} \t {}\t{}\t{}\t{}\r\n";
   if(timeTot > 0) { /* Avoid divide by zero errors. */
     for(auto& task: taskStats) { /* Create a human readable table from the binary data. */
-      uint32_t percent = (task.ulRunTimeCounter/portNUM_PROCESSORS) / timeTot;
+      uint32_t percent = task.ulRunTimeCounter / timeTot;
+      auto state = "";
+      switch(task.eCurrentState) {
+        case eRunning:   state = "RUN"; break;
+        case eReady:     state = "READY"; break;
+        case eBlocked:   state = "BLOCK"; break;
+        case eSuspended: state = "SUS"; break;
+        case eDeleted:   state = "DEL"; break;
+        default: state = "INVLD";
+      }
+      
+      auto time = fmt::format("{:%H:%M:%S}", microseconds(task.ulRunTimeCounter));
 
       auto s = fmt::format(fmtStr,
-            task.pcTaskName, task.ulRunTimeCounter, percent > 0UL? " ": "~", percent,
-            task.eCurrentState, task.uxCurrentPriority, task.xTaskNumber,
-            (task.xCoreID == 0 || task.xCoreID == 1)? task.xCoreID: -1,
+            task.pcTaskName, time, percent > 0UL? " ": "~", percent,
+            state, task.uxCurrentPriority, task.xTaskNumber,
+            (task.xCoreID == 0 || task.xCoreID == 1)? std::to_string(task.xCoreID): " ",
             task.usStackHighWaterMark);
       m[task.ulRunTimeCounter] = s; //prev was sexier but oorder for 0
     }
   }
   for(auto& t: m) s = t.second + s;
-  return fmt::format(fmtStr, "TASK", "TICKS", " ", " ", "STATE",
+  return fmt::format(fmtStr, "TASK", "TIME", " ", " ", "STATE",
                              "PRIO", "#", "CPU", "MIN STACK") + s;
 }
 

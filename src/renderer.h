@@ -36,10 +36,15 @@ class Renderer: public Runnable,
   void updateTarget(const Buffer& mergeIn, int index, uint8_t blendType = 0, bool mix = false);
 
   void onEvent(const PatchIn& in) override  { updateTarget(in.buffer, in.i); }
+  // should have FunctionsRunner (Functions not a good name in general for it tho. Effects? Transforms?)
+  // which subscribes to this (with num mapping to registered FnChannels) as well as single-field events
+  // which contains name and looks up that way.
+  // BTW: multi param Functions, duh. would have to take a buf and do their own lookup so stays uniform
+  // (= every Function gets a buffer, most are just single-field)
+  // ALSO: a way to eg map two DMX fields to 16bit int for higher precision (since using float internally anyways)
   void onEvent(const PatchControls& controls) override  { updateControls(controls.buffer, false); }
   void tick() override { frame(); } // not that any of this is design but remember will have to adjust rate so very much cant be like this.
 
-  void frameSimple();
   void frame(float timeMultiplier = 0.0f);
 
 

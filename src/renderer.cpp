@@ -75,18 +75,21 @@ void Renderer::mixBuffers(Buffer& lhs, const Buffer& rhs, uint8_t blendType) {
 }
 
 
-void Renderer::frame(float timeMultiplier) { // this hack can be achieved other ways, then
-  lwd.stamp(PIXTOL_RENDERER_FRAME);          // turn it run() / Runnable.
+void Renderer::frame(float timeMultiplier) {
   uint32_t now = micros();
-  _numFrames++;
-
-  static uint32_t timeToInterpolate = 0;
-  float progress = (now - _lastKeyframe + timeToInterpolate) / (float)_keyFrameInterval; //remember to adjust stuff to interpolation can overshoot...
-  // we keep track of expected time for Buffer::interpolate and Strip flush and aim "later"
+  static uint32_t timeLastRender = 0;
+  static uint32_t timeSpentRendering = 0;
+  
+  float progress = (now - _lastKeyframe + timeLastRender) / (float)_keyFrameInterval; // we keep track of expected time for Buffer::interpolate and Strip flush and aim "later" by adding interpolation time...
+  
+  // this only really makes sense in the incoming merge step, not here
+  // what really ought to be happening is a Generator with low weight/alpha/whatever steps in and everything moves towards that.
   if(timeMultiplier > 0.0f)       // no data fall-back or far-apart frames...
     progress *= timeMultiplier;   // progress is then made up so no realism huhu
-  if(progress > 1.0f)   // guess havent reflected on how rel little resolution needed / possible in progress anyways.  prob dont got much to win w float. nor to lose, oth...
-    progress = fabs(fmod(1.0f + progress, 2) - 1.0f); /* progress = fabs(sin(progress * PI - 0.5*PI)); //oh yeah dont even want a sine lol, just triangle */
+  
+  if(progress > 1.0f)
+    progress = 1.0f; // bouncing is neat idea but prob means progress 0.3 0.6 0.9 0.8... when should be 1.0 in that case.
+    // progress = fabs(fmod(1.0f + progress, 2) - 1.0f); /* progress = fabs(sin(progress * PI - 0.5*PI)); //oh yeah dont even want a sine lol, just triangle */
   else if(progress < 0.0f)
     progress = 0.0f;
 
@@ -102,36 +105,28 @@ void Renderer::frame(float timeMultiplier) { // this hack can be achieved other 
       else curr.interpolate(origin, target, progress);
       // I guess we're doing order shuffling in interpolate (good considering speed)
       // meaning original shite when straight copy = bad.
-
+      // hence, do fieldOrder shuffle on copy not interp!
     } else {
       curr.interpolate(origin, target, progress);
     }
-    timeToInterpolate = micros() - now; // oh yeah will get wonky in case interpolate skips on own bc gain 0 etc...
 
     patches.emplace_back(curr, i); // at least curr RMT method we want these synchronized.
   }
 
-  if(!(_numFrames % 2500)) {
-    lg.f(__func__, tol::Log::DEBUG, "Time one run: %u, render fps: %u, keyFrames/frames %u %u, last %u\n",
-          timeToInterpolate, _numFrames / (1 + (_lastFrame / MILLION)), _numKeyFrames, _numFrames, _lastFrame);
-    // uhh beware div by 0 no matter where. but wtf no fn info or fucking anything but why didnt this cause crashing the entire time??
-  }
-  f->apply(progress); // XXX not going to affect all buffers yet
-  for(auto& p: patches) { // TODO we are waiting on all in this case, so send one event hehe. Different in other scenarios..
-    // publish "PatchOut" (poor name? not a one-time patch but like, current mapping, so...)
-    ipc::Publisher<PatchOut>::publish(p); // hence batch'd be better...
+  _numFrames++;
+  if(!(_numFrames % 5000)) {
+    lg.f(__func__, tol::Log::DEBUG, "Time last run: %u (avg %u), render fps: %u, keyFrames/frames %u %u\n",
+          timeLastRender, timeSpentRendering / (_numFrames + 1), _numFrames / (1 + (_lastFrame / MILLION)), _numKeyFrames, _numFrames);
   }
 
-  // can also take fair bit of time dep on effect. points straight at *current...
-  // now means we might inter but then f opens or closes shutter -> wait til next time...
-  // but if apply before inter must be to something else or eg rotation lost...
-  //
-  // issue most fx make sense run only each dmx frame, plus is destructive
-  // try various options.
-  // YET: got interp/envelope on that side too, and Strobe must run each frame anyways.
-  //
-  // reason says Strobe keep pointing to *current, updates before inter
-  // hence dimmer too (also due to env), bleed, noise run on incoming, rotate too for now (for speed reasons), tho with lfo driving and rescale/basic AA faster = cooler...
+  f->apply(progress); // XXX not going to affect all buffers yet
+  
+  for(auto& p: patches) { // TODO we are waiting on all in this case, so send one event hehe. Different in other scenarios..
+    ipc::Publisher<PatchOut>::publish(p); // publish "PatchOut" (poor name? not a one-time patch but like, current mapping, so...)
+  }
+
+  timeLastRender = micros() - now; // oh yeah will get wonky in case interpolate skips on own bc gain 0 etc...
+  timeSpentRendering += timeLastRender;
 
   _lastFrame = micros();
   _lastProgress = progress;
