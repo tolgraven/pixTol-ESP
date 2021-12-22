@@ -125,7 +125,7 @@ class Outputter: public RenderStage, public PureEvtTask, public Sub<PatchOut> {
   Outputter(const String& id, uint8_t fieldSize, uint16_t fieldCount,
             uint8_t bufferCount = 1, uint16_t portIndex = 0):
     RenderStage(id, fieldSize, fieldCount, bufferCount, portIndex),
-    PureEvtTask((id + " event runner").c_str(), 2),
+    PureEvtTask((id + " event runner").c_str(), 24),
     Sub<PatchOut>(this, 4) {
       setType("outputter");
       start();

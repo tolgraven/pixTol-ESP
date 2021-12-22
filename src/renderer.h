@@ -53,8 +53,7 @@ class Renderer: public Runnable,
   void crapLogging();
 
   private:
-  int targetFps = rendererBaseTargetFPS;
-  const static int taskPrio = 3;
+  const static int taskPrio = 18;
 
   uint32_t _keyFrameInterval, _lastKeyframe = 0, _lastFrame = 0; // still need tracking expected interval dep on srces yada but go away these...
   const uint32_t keyFrameAdjustmentInterval = 1000000;
