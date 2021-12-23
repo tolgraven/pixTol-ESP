@@ -7,13 +7,15 @@
 #include <iostream>
 #include <string>
 #include <memory>
+#include <vector>
+
+#include <Arduino.h>
 
 #include <smooth/core/logging/log.h>
 // #include "fmt/format.h"
 // #include <Print.h> // how design to implement Print stuff yet include log shit w/o knowing bout it..
 // #include <PrintStream.h>
 
-#include "base.h"
 
 class Print;
 
@@ -89,6 +91,7 @@ namespace ansi {
 #define TRACE(s) tol::lg.ln(s, tol::Log::TRACE, __LOC__)
 // #define DEBUG(s) tol::lg.ln(s, tol::Log::DEBUG, __func__)
 #define DEBUG(s) tol::lg.ln(s, tol::Log::DEBUG, __PRETTY_FUNCTION__)
+#define DEBUGF(s, ...) tol::lg.f(__LOC__, tol::Log::DEBUG, s, __VA_ARGS__)
 #define ERROR(s) tol::lg.ln(s, tol::Log::ERROR, __LOC__)
 #define LOG(s) tol::lg.ln(s, tol::Log::INFO, __func__)
 
@@ -121,12 +124,12 @@ _logging(Fun&& f, String&& name, Args&&... args) {
 #define logging(f, ...) _logging(f, (String)#f, __VA_ARGS__)
 // makes a str out of fn name, then hopefully rest of args also Stringifyable.
 
-class LogOutputClean: public Named { // guess concept of both being and containing (and/or either way? a printer seems snazzy)
+class LogOutputClean { // guess concept of both being and containing (and/or either way? a printer seems snazzy)
   using FmtFn = std::function<String(const String&, const String&, const String&)>;
   using PrintFn = std::function<void(const String&)>;
   public:
   LogOutputClean(const String& id, PrintFn printFn, FmtFn fmt, bool enabled = true):
-    Named(id, "LogOutput"), printFn(printFn), enabled(enabled), fmt(fmt) {} // id(id), pr(reinterpret_cast<Print*>(&printer)), enabled(enabled) {}
+    printFn(printFn), enabled(enabled), fmt(fmt) {} // id(id), pr(reinterpret_cast<Print*>(&printer)), enabled(enabled) {}
 
   PrintFn printFn;
   bool enabled; //or should outside control that instead maybe
@@ -150,7 +153,7 @@ class LogOutputClean: public Named { // guess concept of both being and containi
 //               (dont just fucking switch from String to std::string, templatize.)
 // - add back mqtt out already ffs - smooth has something too
 
-class LogOutput: public Named { // guess concept of both being and containing (and/or either way? a printer seems snazzy)
+class LogOutput { // guess concept of both being and containing (and/or either way? a printer seems snazzy)
   using FmtFn = std::function<String(const String&, const String&, const String&)>;
   FmtFn fmt = [](const String& loc, const String& lvl, const String& txt) {
                   return String((String)millis() + "\t[" + lvl + "]\t" + loc + "\t" + txt); };
@@ -169,7 +172,7 @@ class LogOutput: public Named { // guess concept of both being and containing (a
 
   LogOutput(const String& id, Print& printer, bool enabled = true):
     //  fmt(std::move(f)) // not sure if inline-default declated lambda w ::move was issue? anyways no biggie
-    Named(id, "LogOutput"), pr(&printer), enabled(enabled) {} // id(id), pr(reinterpret_cast<Print*>(&printer)), enabled(enabled) {}
+   pr(&printer), enabled(enabled) {} // id(id), pr(reinterpret_cast<Print*>(&printer)), enabled(enabled) {}
 
   void setFmt(const FmtFn& fmtFn) { fmt = std::move(fmtFn); }
 };
