@@ -29,7 +29,9 @@ Renderer::Renderer(const String& id, uint32_t keyFrameHz, uint16_t targetHz, con
     lg.f(__func__, Log::DEBUG, "curr at %p ptr %p\n", &get(i, CURRENT), get(i, CURRENT).get());
   }
   if(auto order = target.buffer(0).getSubFieldOrder())
-    setSubFieldOrder(order);
+    setSubFieldOrder(order); // only sets it on "internal"/dest buffers so ORIGIN/TARGET now affected
+
+  effectors.emplace_back(std::make_shared<Interpolator>());
 
   DEBUG("DONE");
 }
@@ -99,14 +101,16 @@ void Renderer::frame(float timeMultiplier) {
     auto& target = get(i, TARGET);
     bool fullGain = curr.getGain() > 0.95f; // skip interp for early frames to bust more out? such little time actually spent interp hehe
     if(false && fullGain && timeMultiplier == 0.0f) { // however need scaling elsewhere then if dimmer...
-      if(progress < 0.10f)      curr.setCopy(origin); // or eh what destructive we doing could maybe current temp pass through?
-      else if(progress > 0.90f) curr.setCopy(target);
-      else curr.interpolate(origin, target, progress);
+      // if(progress < 0.10f)      curr.setCopy(origin); // or eh what destructive we doing could maybe current temp pass through?
+      // else if(progress > 0.90f) curr.setCopy(target);
+      // else curr.interpolate(origin, target, progress);
       // I guess we're doing order shuffling in interpolate (good considering speed)
       // meaning original shite when straight copy = bad.
       // hence, do fieldOrder shuffle on copy not interp!
     } else {
-      curr.interpolate(origin, target, progress);
+      // curr.interpolate(origin, target, progress);
+      for(auto& eff: effectors)
+        eff->execute(curr, origin, target, progress);
     }
 
     patches.emplace_back(curr, i); // at least curr RMT method we want these synchronized.

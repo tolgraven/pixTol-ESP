@@ -5,6 +5,7 @@
 
 #include "renderstage.h"
 #include "buffer.h"
+#include "effector.h"
 #include "functions.h"
 #include "log.h"
 #include "watchdog.h"
@@ -30,6 +31,7 @@ class Renderer: public RenderStage,
   uint32_t _numKeyFrames = 0, _numFrames = 0;
   float _lastProgress = 0;
   std::vector<std::shared_ptr<Functions>> functions;
+  std::vector<std::shared_ptr<Effector>> effectors; // tho same concept could also be run on input especially if more intensive...
 
   Renderer(const String& id, uint32_t keyFrameInterval, uint16_t targetHz, const RenderStage& target);
   
