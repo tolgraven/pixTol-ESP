@@ -119,21 +119,18 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
     // iBuffer<int>& difference(iBuffer& other, float fraction) const {
     // DiffBuffer& difference(iBuffer& other, float fraction) const;
 
-    // nice this! will need equiv over Field/Color later.  XXX and fixem for T... but mainly just defer to Field
     iBuffer& mix(const iBuffer& other, std::function<T(T, T)> op) {
       for(auto i=0; i < length(); i++)
-        data[i] = op(data[i], other[i]); // no way this inlined tho so would want loop inside lambda to actually use...
+        data[i] = op(data[i], *other.get(i)); // no way this inlined tho so would want loop inside lambda to actually use...
       return *this;
     }
     iBuffer& mix(const iBuffer& other, std::function<T(T, T, float)> op, float progress) { // could auto this even or?
       for(auto i=0; i < length(); i++)
-        data[i] = op(data[i], other[i], progress);
+        data[i] = op(data[i], *other.get(i), progress);
       return *this;
     }
     iBuffer& add(const iBuffer& other) {
       return mix(other, [this](T a, T b) {
-        // return (T)std::clamp((T2)a + (T2)b, minValue, maxValue); });
-        // return (T)constrain((T2)a + (T2)b, minValue, maxValue); });
         return (T)std::clamp(T2((T2)a + (T2)b), minValue, maxValue); });
     }
     iBuffer& addBounce(iBuffer& other) {
@@ -143,6 +140,8 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
         return (T)sum; });
     }
 
+    // TODO obviously can be done much more efficient easily.
+    // but even better, try esp-dsp lib that has optimized asm functions for arrays...
     iBuffer& sub(const iBuffer& other) {
       return mix(other, [this](T a, T b) {
         return (T)std::clamp(T2((T2)a - (T2)b), minValue, maxValue); });
@@ -153,10 +152,10 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
     }
 
     iBuffer& avg(const iBuffer& other, bool ignoreZero = true) {
-      return mix(other, [this, ignoreZero](T a, T b) {
+      return mix(other, [this, ignoreZero](T a, T b) -> T {
         T2 sum = a + b;
         if(ignoreZero && (!a || !b))
-          return (T)std::clamp(sum, minValue, maxValue);
+          return (T)sum;
         return (T)(sum / 2);
       });
     }
