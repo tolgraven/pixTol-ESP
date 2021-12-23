@@ -96,7 +96,7 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
     // if(debug->saveCrash.count() >= 3) debug->saveCrash.clear();
 
 
-    initRNG();
+    // initRNG();
 
     // wifi = std::make_unique<WifiConnection>("pixTol-proto", "wifi");
     // connected = wifi->start(); //blocking...
