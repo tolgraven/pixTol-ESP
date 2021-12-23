@@ -45,6 +45,7 @@
 #include "log.h"
 #include "commands.h"
 #include "util.h"
+#include "logger.h"
 
 
 namespace tol {
@@ -60,10 +61,7 @@ namespace json = nlohmann;
 using LOG = logging::Log;
 
 
-
 std::string timeString(system_clock::time_point t = system_clock::now());
-std::string moreStatz();
-
 
 std::vector<uint8_t> fileToData(const std::string& path);
 
@@ -95,6 +93,8 @@ class App: public core::Application,
   const char* deviceId = "pixTol";
   std::unique_ptr<Device>  device;
   std::unique_ptr<FnTask>  deviceLoop; // for now
+  
+  std::unique_ptr<Logger>  logger;
 
   std::unique_ptr<Scheduler> scheduler;
   std::unique_ptr<WifiConnection> wifiOld;
@@ -118,9 +118,15 @@ class App: public core::Application,
     void init() override;
 
     void tick() override {
-      logging::Log::info("Stats++", "\n{}", moreStatz());
-      util::logHeap();
-      util::logHeapRegions();
+      // logging::Log::info("Stats++", "\n{}", moreStatz());
+      // XXX uncommented cause causing crashes. Almost eclusively loadprohibited
+      // but at least once indicating heap poisoning!! so definitely investigate
+      // seems to run fine tho with no major errors tho without these calls...
+
+      // util::logHeap();
+      // heap_caps_print_heap_info(MALLOC_CAP_8BIT);
+      // vTaskDelay(5);
+      // util::logHeapRegions();
       // SystemStatistics::instance().dump();
     }
 

@@ -4,8 +4,8 @@
 
 #include "smooth/core/filesystem/File.h"
 #include "smooth/core/filesystem/MountPoint.h"
-
 #include "smooth/core/network/IPv4.h"
+
 #include "util.h"
 
 namespace tol {
@@ -21,10 +21,11 @@ using namespace std::chrono;
 void App::init() {
   Serial.begin(SERIAL_BAUD); // XXX tempwell, not if uart strip tho...
   lg.initOutput("Serial");  //logging can be done after here
+  logger = std::make_unique<Logger>();
   // TODO figure out heap situation. ipc0 using 27kb heap before anything inits - why?
   // tbf it also uses 10.5kb in their minimal example so maybe it just is what it is? still weird tho.
-  util::logHeap();
-  util::logHeapRegions();
+  Logger::logHeap();
+  Logger::logHeapRegions();
   
   Application::init();
   logging::Log::error("App", "init");
@@ -32,8 +33,8 @@ void App::init() {
   wifiCrap();
   // esp_log_level_set(mqtt_log_tag, static_cast<esp_log_level_t>(CONFIG_SMOOTH_MQTT_LOGGING_LEVEL)); //<- remember set up my loggers w esp then easy set lvl etc
    
-  util::logHeap();
-  util::logHeapRegions();
+  Logger::logHeap();
+  Logger::logHeapRegions();
   
   device = std::make_unique<Device>(deviceId); // this is getting emptied for now (and most stuff native support in idf) but might restore some
   // deviceLoop = std::make_unique<FnTask>("device->loop", 25, [this]{ this->device->loop(); }); // XXX replace with Task
@@ -91,8 +92,8 @@ void App::init() {
 
   timeSync.start();
 
-  util::logHeap();
-  util::logHeapRegions();
+  Logger::logHeap();
+  Logger::logHeapRegions();
   // SystemStatistics::instance().dump(); // apparently causes stack overflow now
   DEBUG("END SETUP");
 }
@@ -150,44 +151,6 @@ std::vector<uint8_t> fileToData(const std::string& path) {
     }
   }
   return data;
-}
-
-std::string moreStatz() {
-  auto numTasks = uxTaskGetNumberOfTasks(); /* Take a snapshot of the number of tasks in case it changes while this function is executing. */
-  TaskStatus_t taskStats[numTasks]; // should be np auto work over malloc/free? w enough stack
-  std::string s;
-  std::map<uint32_t, std::string> m;
-
-  uint32_t timeTot;
-  uxTaskGetSystemState(taskStats, numTasks, &timeTot);
-  timeTot /= 100UL; /* For percentage calculations. */
-  constexpr const char* fmtStr = "{:<25} {:<14} {}{}%\t {} \t {}\t{}\t{}\t{}\r\n";
-  if(timeTot > 0) { /* Avoid divide by zero errors. */
-    for(auto& task: taskStats) { /* Create a human readable table from the binary data. */
-      uint32_t percent = task.ulRunTimeCounter / timeTot;
-      auto state = "";
-      switch(task.eCurrentState) {
-        case eRunning:   state = "RUN"; break;
-        case eReady:     state = "READY"; break;
-        case eBlocked:   state = "BLOCK"; break;
-        case eSuspended: state = "SUS"; break;
-        case eDeleted:   state = "DEL"; break;
-        default: state = "INVLD";
-      }
-      
-      auto time = fmt::format("{:%H:%M:%S}", microseconds(task.ulRunTimeCounter));
-
-      auto s = fmt::format(fmtStr,
-            task.pcTaskName, time, percent > 0UL? " ": "~", percent,
-            state, task.uxCurrentPriority, task.xTaskNumber,
-            (task.xCoreID == 0 || task.xCoreID == 1)? std::to_string(task.xCoreID): " ",
-            task.usStackHighWaterMark);
-      m[task.ulRunTimeCounter] = s; //prev was sexier but oorder for 0
-    }
-  }
-  for(auto& t: m) s = t.second + s;
-  return fmt::format(fmtStr, "TASK", "TIME", " ", " ", "STATE",
-                             "PRIO", "#", "CPU", "MIN STACK") + s;
 }
 
 
