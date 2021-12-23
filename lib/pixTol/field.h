@@ -19,14 +19,15 @@ enum FieldSize: uint8_t {
 //       //code to set/read individual indexes of bitfield
 //   }
 // };
-class Field {
+template<class T, class T2=T>
+class iField {
 // make template? should be as lean as possible packing bits, ie BlendMode fits in half a byte...
 // so a field of fields probably makes more sense than individual objects
 // no premature optimization tho, make it fancy then trim later. But need one per field _per incoming stream_, plus end dest... lots
 // same type should store value + metadata, whether field is single float or 4-byte pixel
   protected:
-  uint8_t* data = nullptr; //skip dataptr and only have offset and size?  then gotta pass baseptr for literally everything so kinda shit and pointless but would save loads of memory...
-  uint8_t _size = 1; // uint8_t _size;
+  T* data = nullptr; //skip dataptr and only have offset and size?  then gotta pass baseptr for literally everything so kinda shit and pointless but would save loads of memory...
+  size_t _size = 1; // uint8_t _size;
   bool ownsData = false;
   // float alpha = 1.0; //uint8_t alpha = 255; //switch to int if too slow/big?
   // Blend mode = Blend::Overlay; // could also have pointers for both alpha and mode, so optional and then always returning values 1.0 / OVERLAY? or better yet "DEFER" = Buffer-wide setting handles...
@@ -41,140 +42,156 @@ class Field {
   //     alpha = fractionAlpha*255;
   //   }
   // }; Alpha alpha;
+  using LIM = typename std::numeric_limits<T>; // or have static like iBuffer. per-type so...
 
   public:
-  Field(uint8_t size): Field(nullptr, size, 0, false) { } // noo go gets to messy if we fuck with own allocs or smart ptrs
-  // Field(args...): Field()
-  Field(uint8_t* bufferStart, uint8_t size, uint16_t fieldIndex = 0, bool copy = false):
+  iField(size_t size): iField(nullptr, size, 0, false) { } // noo go gets to messy if we fuck with own allocs or smart ptrs
+  iField(T& value):
+    data(new T[1]), _size(1), ownsData(true) {
+      *data = value;
+  } // noo go gets to messy if we fuck with own allocs or smart ptrs
+  // iField(args...): iField()
+  iField(T* bufferStart, size_t size, uint16_t fieldIndex = 0, bool copy = false):
     _size(size) {
+      // XXX these make no sense. looks like copy makes it set *bufferStart to whats at fieldIndex...
       if      (!copy && bufferStart) { setPtr(bufferStart, fieldIndex);
       } else if(copy && bufferStart) { setCopy(bufferStart + fieldIndex);
       } else if(!bufferStart) {
           ownsData = true;
-          data = new uint8_t[size];
+          data = new T[size];
       }
   }
-  Field(const Field& rhs): Field(rhs.get(), rhs.size(), 0, true) {  } // p f dangerous copy constructor unless actually copies, so...
-  ~Field() { if(ownsData) delete[] data; }; // ~Field() { if(ownsData) delete[] data; }; //how goz dis when we dont created array, just using ptr?
+  iField(const iField& rhs): iField(rhs.get(), rhs.size(), 0, true) {  } // p f dangerous copy constructor unless actually copies, so...
+  ~iField() { if(ownsData) delete[] data; }; // ~iField() { if(ownsData) delete[] data; }; //how goz dis when we dont created array, just using ptr?
 
-  bool operator==(const Field& rhs) const { return memcmp(rhs.get(), data, _size); } //XXX add alpha check n shite
-  bool operator!=(const Field& rhs) const { return !(*this == rhs); }
-  bool operator<(const Field& rhs)  const { return (average() <  rhs.average()); }
-  bool operator<=(const Field& rhs) const { return (average() <= rhs.average()); }
-  bool operator>(const Field& rhs)  const { return (average() >  rhs.average()); }
-  bool operator>=(const Field& rhs) const { return (average() >= rhs.average()); }
+  bool operator==(const iField& rhs) const { return memcmp(rhs.get(), data, _size * sizeof(T)); } //XXX add alpha check n shite
+  bool operator!=(const iField& rhs) const { return !(*this == rhs); }
+  bool operator<(const iField& rhs)  const { return (average() <  rhs.average()); }
+  bool operator<=(const iField& rhs) const { return (average() <= rhs.average()); }
+  bool operator>(const iField& rhs)  const { return (average() >  rhs.average()); }
+  bool operator>=(const iField& rhs) const { return (average() >= rhs.average()); }
 
-  uint8_t& operator[](uint8_t index) const { return *get(index); } //eh prob not so reasonable heh. but if want to be able to do f[0] = 5; f[1] = 30;
-  Field& operator=(const Field& rhs) { setCopy(rhs.get()); return *this; }
+  T& operator[](uint8_t index) const { return *get(index); } //eh prob not so reasonable heh. but if want to be able to do f[0] = 5; f[1] = 30;
+  iField& operator=(const iField& rhs) { setCopy(rhs.get()); return *this; }
 
-  Field& operator+(const uint8_t delta) { value(delta, true); return *this; } // lighten
-  Field& operator+(const Field& rhs) { return add(rhs); }
-  Field& operator++() { return value(1); } // lighten
+  iField& operator+(const T delta) { value(delta, true); return *this; } // lighten
+  iField& operator+(const iField& rhs) { return add(rhs); }
+  iField& operator++() { return value(1); } // lighten
 
-  Field& operator-(const Field& rhs) { return sub(rhs); }
-  Field& operator-(const uint8_t delta) { value(delta, false); return *this; } // lighten
-  Field& operator--() { return value(-1); } // darken
+  iField& operator-(const iField& rhs) { return sub(rhs); }
+  iField& operator-(const T delta) { value(delta, false); return *this; } // lighten
+  iField& operator--() { return value(-1); } // darken
 
   // might be overkill and that  should only do this directly in Buffer, but let's see
-  Field& mix(const Field& rhs, std::function<uint8_t(uint8_t, uint8_t)> op, bool perByte = true) { // could auto this even or?
-    uint8_t* otherData = rhs.get();
+  iField& mix(const iField& rhs, std::function<T(T, T)> op, bool perByte = true) { // could auto this even or?
+    T* otherData = rhs.get();
     if(perByte) {
-      for(auto i=0; i<_size; i++)
+      for(auto i=0; i<_size; i += sizeof(T))
         data[i] = op(data[i], otherData[i]);
     } else { // compare "total" value and use accordingly...
     }
     return *this;
   }
-  Field& add(const Field& rhs) {
-    return mix(rhs, [](uint8_t l, uint8_t r) -> uint8_t { return std::clamp((int)l + r, 0, 255); });
+  iField& add(const iField& rhs) {
+    return mix(rhs, [](T l, T r) {
+        // TODO OR pass limits on creation (eg for float clamped to unity)
+        return (T)std::clamp((T2)((T2)l + (T2)r), (T2)LIM::min(), (T2)LIM::max());
+      });
   }
-  Field& sub(const Field& rhs) {
-    return mix(rhs, [](uint8_t l, uint8_t r) { return std::clamp((int)l - r, 0, 255); });
+  iField& sub(const iField& rhs) {
+    return mix(rhs, [](T l, T r) {
+        return (T)std::clamp((T2)((T2)l - (T2)r), (T2)LIM::min(), (T2)LIM::max());
+      });
   }
-  Field& avg(const Field& rhs, bool skipZero = true) {
-    auto op = [skipZero](uint8_t l, uint8_t r) {
-      auto c = (int)l + r;
+  iField& avg(const iField& rhs, bool skipZero = true) {
+    auto op = [skipZero](T l, T r) {
+      auto c = (T2)l + r;
       bool gotZero = (c == l || c == r);
-      uint8_t div = skipZero && gotZero? 1: 2;
-      return (uint8_t)(c / div);
+      T div = skipZero && gotZero? 1: 2;
+      return (T)(c / div);
     };
     return mix(rhs, op);
   }
-  Field& htp(const Field& rhs, bool perByte = true) {
+  iField& htp(const iField& rhs, bool perByte = true) {
     if(!perByte) {
       if(rhs.average() > average()) *this = rhs;
       return *this;
     } else // else return *this; //thats what lotp does
-      return mix(rhs, [](uint8_t l, uint8_t r) { return std::max(l, r); });
+      return mix(rhs, [](T l, T r) { return std::max(l, r); });
   }
-  Field& ltp(const Field& rhs) {
+  iField& ltp(const iField& rhs) {
     return (*this = rhs);
     // *this = rhs; return *this;
   }
-  Field& lotp(const Field& rhs, bool perByte = true) {
+  iField& lotp(const iField& rhs, bool perByte = true) {
     if(!perByte) {
       if(rhs.average() < average()) *this = rhs;
       return *this;
     } else
-      return mix(rhs, [](uint8_t l, uint8_t r) { return std::min(l, r); });
+      return mix(rhs, [](T l, T r) { return std::min(l, r); });
   }
 
   //dangerous naming avg/average. getStrength() or something?
-  uint8_t average() const { //average value of field elements or like?
-    uint16_t cum = 0;
+  T average() const { //average value of field elements or like?
+    T2 cum = 0;
     for(auto p=0; p<_size; p++) cum += data[p];
     return (cum / _size);
   }
-  Field& value(int adjustment) { //still 255 range, but +/-...
-    for(auto p=0; p<_size; p++) data[p] = std::clamp((int)data[p] + adjustment, 0, 255);
+  iField& value(T adjustment) { //still 255 range, but +/-...
+    for(auto p=0; p<_size; p++)
+      data[p] = std::clamp((T2)((T2)data[p] + adjustment), (T2)LIM::min(), (T2)LIM::max());
     return *this;
   }
-  Field& value(float absolute) {
-    for(auto p=0; p<_size; p++) data[p] = absolute * 255;
+  iField& value(float absolute, float dummyParam) {
+    for(auto p=0; p<_size; p++)
+      data[p] = absolute * LIM::max();
     return *this;
   }
-  Field& value(uint8_t delta, bool higher) {//lighten or darken as appropriate...
-    int adjust = higher? delta: -(int)delta;
-    for(auto p=0; p<_size; p++) data[p] = std::clamp((int)data[p] + adjust, 0, 255);
+  iField& value(T delta, bool higher) {//lighten or darken as appropriate...
+    T2 adjust = higher? delta: -(T2)delta;
+    for(auto p=0; p<_size; p++)
+      data[p] = std::clamp((T2)((T2)data[p] + adjust), (T2)LIM::min(), (T2)LIM::max());
     return *this;
   }
 
 
-  uint8_t size() const { return _size; }
-  uint8_t* get(uint8_t offset = 0) const { return data + offset; } //call oob or something otherwise.
+  size_t size() const { return _size; }
+  T* get(uint8_t offset = 0) const { return data + offset; } //call oob or something otherwise.
   
-  Field& setCopy(const uint8_t* newData) { //set data by copy. also need a copy constructor
-    for(auto i=0; i<_size; i++) data[i] = newData[i];
+  iField& setCopy(const T* newData) { //set data by copy. also need a copy constructor
+    for(auto i=0; i<_size; i += sizeof(T)) data[i] = newData[i];
     return *this;
   }
-  Field& setCopy(const Field& newData) { return setCopy(newData.get()); } //set data by copy. also need a copy constructor
-  Field& setPtr(uint8_t* bufferStart, uint16_t fieldIndex) { //set ptr, or copy block
+  iField& setCopy(const iField& newData) { return setCopy(newData.get()); } //set data by copy. also need a copy constructor
+  iField& setPtr(T* bufferStart, uint16_t fieldIndex) { //set ptr, or copy block
     data = bufferStart + fieldIndex * _size;
     return *this;
   }
-  Field& setSubField(uint8_t value, uint16_t index) { //set subfield. dunno I mean field[2] = 8 yeah?
+  iField& setSubField(T value, uint16_t index) { //set subfield. dunno I mean field[2] = 8 yeah?
     data[index] = value; return *this;
   }
 
   // per-subpixel a/r also good...
-  void blend(const Field& target, uint8_t progress) {
-    uint16_t targetWeight = progress + 1,
-             ourWeight = 257 - targetWeight;
-    for(uint8_t p = 0; p < _size; p++) {
-      data[p] = ((data[p] * ourWeight) + (target[p] * targetWeight)) >> 8; // works because rolls over I guess
-    }
-  }
+  // XXX update for T
+  void blend(const iField& target, uint8_t progress);
+  // void blend(const iField& target, uint8_t progress) {
+  //   uint16_t targetWeight = progress + 1,
+  //            ourWeight = 257 - targetWeight;
+  //   for(uint8_t p = 0; p < _size; p++) {
+  //     data[p] = ((data[p] * ourWeight) + (target[p] * targetWeight)) >> 8; // works because rolls over I guess
+  //   }
+  // }
   enum AlphaMode { MIX = 0, WEIGHT };
-  /* void blend(const Field& target, float progress = 0.5f, uint8_t alphaMode = MIX) { */
+  /* void blend(const iField& target, float progress = 0.5f, uint8_t alphaMode = MIX) { */
     /* if(alphaMode == MIX) { // alpha = (alpha * progress) + target.alpha * (1.0f - progress); */
     /* } else if(alphaMode == WEIGHT) { } // XXX a blend weighting by (not merely mixing) alpha */
-  void blend(const Field& target, float progress = 0.5f) {
+  void blend(const iField& target, float progress = 0.5f) {
     /* progress = std::clamp(progress, 0.0f, 1.0f); //tho past-1.0 should also work eventually */
     for(uint8_t p = 0; p < _size; p++) {
       data[p] += ((target[p] - data[p]) * progress); // works because rolls over I guess
     }
   }
-  void blend(const Field& x1, const Field& y0, const Field& y1, float x = 0.5f, float y = 0.5f) {
+  void blend(const iField& x1, const iField& y0, const iField& y1, float x = 0.5f, float y = 0.5f) {
     float wx0 = (1.0f - x) * (1.0f - y);
     float wx1 =         x  * (1.0f - y);
     float wy0 = (1.0f - x) * y;
@@ -184,26 +201,30 @@ class Field {
     }
     // alpha = alpha * wx0 + x1.alpha * wx1 + y1.alpha * wy0 + y1.alpha * wy1;
   }
-  static Field blend(const Field& one, const Field& two, float progress = 0.5f, uint8_t alphaMode = MIX) {
+  static iField blend(const iField& one, const iField& two, float progress = 0.5f, uint8_t alphaMode = MIX) {
     progress = std::clamp(progress, 0.0f, 1.0f); //tho past-1.0 should also work eventually
-    Field blended = Field(one.size());
+    iField blended = iField(one.size());
     for(uint8_t p = 0; p < one.size(); p++) {
       blended.setSubField(one[p] + progress * (uint16_t(two[p]) - uint16_t(one[p])), p); // works because rolls over I guess
     }
     return blended;
   }
-  static Field blend(const Field& x0, const Field& x1, const Field& y0, const Field& y1, float x = 0.5f, float y = 0.5f) {
+  static iField blend(const iField& x0, const iField& x1, const iField& y0, const iField& y1, float x = 0.5f, float y = 0.5f) {
     float wx0 = (1.0f - x) * (1.0f - y);
     float wx1 =         x  * (1.0f - y);
     float wy0 = (1.0f - x) * y;
     float wy1 =         x  * y;
-    Field blended = Field(x0.size());
+    iField blended = iField(x0.size());
     for(uint8_t p = 0; p < x0.size(); p++) {
       blended.setSubField(x0[p] * wx0 + (x1[p] * wx1) + (y1[p] * wy0) + (y1[p] * wy1), p);
     }
     return blended;
   }
 };
+
+using Field = iField<uint8_t, int16_t>;
+using Field16 = iField<uint16_t, int32_t>;
+using FieldF = iField<float>;
 // so w both Field and Buffer growing in parallell and mostly overlapping
 // and Field is just a scaled -down tiny buffer w fieldCount as fieldSize...
 // sort further code reuse.

@@ -79,10 +79,11 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
     void set(const iBuffer& from, uint16_t bytesLength = 0, uint16_t readOffset = 0, uint16_t writeOffset = 0, bool autoLock = true);
 
     void setByField(const iBuffer& from, uint16_t numFields = 0, uint16_t readOffsetField = 0, uint16_t writeOffsetField = 0, bool autoLock = true);
-    void setField(const Field& source, uint16_t fieldIndex); //XXX also set alpha etc - really copy entire field, but just grab data at ptr
+    void setField(const iField<T, T2>& source, uint16_t fieldIndex); //XXX also set alpha etc - really copy entire field, but just grab data at ptr
 
+    // T* get(uint16_t unitOffset = 0) const { return this->data + sizeof(T) * unitOffset; } //does raw offset make much sense ever? still, got getField.get() so...
     T* get(uint16_t unitOffset = 0) const { return this->data + unitOffset; } //does raw offset make much sense ever? still, got getField.get() so...
-    Field getField(uint16_t fieldIndex) const { return Field(data, fieldSize(), fieldIndex); } //  // elide copy constructor - is straight
+    iField<T, T2> getField(uint16_t fieldIndex) const { return iField<T, T2>(data, (size_t)fieldSize(), fieldIndex); } //  // elide copy constructor - is straight
 
     iBuffer getSubsection(uint16_t startField, uint16_t endField = 0) const;
     using iBuffers = std::array<iBuffer, 2>;
@@ -95,8 +96,9 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
     //   // compress or drag out. W some antialiasing etc.
     // }
 
-    void fill(const Field& source, uint16_t from = 0, uint16_t to = 0);
-    void gradient(const Field& start, const Field& end, uint16_t from = 0, uint16_t to = 0);
+    void fill(const iField<T, T2>& source, uint16_t from = 0, uint16_t to = 0);
+    void fill(const T& source, uint16_t from = 0, uint16_t to = 0);
+    void gradient(const iField<T, T2>& start, const iField<T, T2>& end, uint16_t from = 0, uint16_t to = 0);
 
     void rotate(int count, uint16_t first = 0, uint16_t last = 0);
     void shift(int count, uint16_t first = 0, uint16_t last = 0);
@@ -111,7 +113,9 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
     void lock(bool state = true); // finalize keyframe?, at that point can be flushed or interpolated against
     // bool ready() const { return true; }/* return dirty; */ // havent actually thought through or properly sorted it, so for now... shouldnt be fucking needed we're not multi threaded lol
 
-    void setGain(float gain) { _gain = max(0.0f, gain); } // 0-1 acts like brightness/dimmer, >1 drives values higher...
+    void setGain(float gain) {
+      _gain = std::clamp(gain, 0.0f, 1.0f);
+    } // 0-1 acts like brightness/dimmer, >1 drives values higher...
     float getGain() const { return _gain; } // 0-1 acts like brightness/dimmer, >1 drives values higher...
     void applyGain(); // since destructive / can only do once per refresh...
     // iBuffer& flip(bool state = true) { _flip = state; return *this; }
@@ -194,6 +198,7 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
 
 using Buffer    = iBuffer<uint8_t, int16_t>; // first is actual, second to avoid overflow on ops...
 using Buffer16  = iBuffer<uint16_t, int32_t>;
+using BufferI  =  iBuffer<int16_t, int32_t>;
 using BufferF   = iBuffer<float>;
 
 }

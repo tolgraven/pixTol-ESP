@@ -50,7 +50,7 @@ void iBuffer<T, T2>::setByField(const iBuffer<T, T2>& from, uint16_t numFields, 
   setCopy(from.get(), numFields * fieldSize(), readOffsetField * fieldSize(), writeOffsetField * fieldSize());
 }
 template<class T, class T2>
-void iBuffer<T, T2>::setField(const Field& source, uint16_t fieldIndex) { //XXX also set alpha etc - really copy entire field, but just grab data at ptr
+void iBuffer<T, T2>::setField(const iField<T, T2>& source, uint16_t fieldIndex) { //XXX also set alpha etc - really copy entire field, but just grab data at ptr
   if(fieldIndex >= 0 && fieldIndex < fieldCount()) { // fill entire buffer. Or use sep method?
     memcpy(data + fieldIndex * fieldSize(), source.get(), fieldSize() * sizeof(T));
   }
@@ -77,15 +77,23 @@ iBuffer<T, T2> iBuffer<T, T2>::concat(const iBuffer& rhs) {
 }
 
 template<class T, class T2>
-void iBuffer<T, T2>::fill(const Field& source, uint16_t from, uint16_t to) {
+void iBuffer<T, T2>::fill(const iField<T, T2>& source, uint16_t from, uint16_t to) {
   if(!to || to >= fieldCount()) to = fieldCount() - 1; // also check from tho I guess..
   for(auto f = from; f <= to; f++) setField(source, f);
 }
 template<class T, class T2>
-void iBuffer<T, T2>::gradient(const Field& start, const Field& end, uint16_t from, uint16_t to) {
+void iBuffer<T, T2>::fill(const T& source, uint16_t from, uint16_t to) {
+  // for(int i=0; i < lengthBytes(); i += sizeof(T)) {
+  for(int i=0; i < lengthBytes(); i++) {
+    data[i] = source;
+  }
+}
+
+template<class T, class T2>
+void iBuffer<T, T2>::gradient(const iField<T, T2>& start, const iField<T, T2>& end, uint16_t from, uint16_t to) {
   if(!to || to >= fieldCount()) to = fieldCount() - 1; // also check from tho I guess..
   for(auto f = from; f <= to; f++) {
-    Field current = Field::blend(start, end, (float)to - (float)f / to);
+    iField<T, T2> current = iField<T, T2>::blend(start, end, (float)to - (float)f / to);
     setField(current, f); //p sure this would crash...
   }
 }
@@ -148,14 +156,15 @@ void iBuffer<T, T2>::lock(bool state) { // finalize keyframe?, at that point can
 
 template<class T, class T2>
 T iBuffer<T, T2>::averageInBuffer(uint16_t startField, uint16_t endField) { //calculate avg brightness for buffer. Or put higher and averageValue?
-  uint32_t tot = 0;
-  endField = endField <= fieldCount()? endField: fieldCount();
-  for(auto i = startField * fieldSize(); i < length(); i++) tot += data[i]; //bypasses field thing but seems lack enough ram for that anyways
+  T2 tot = 0;
+  endField = endField <= fieldCount() && endField != 0? endField: fieldCount();
+  for(auto i = startField * fieldSize(); i < length(); i++)
+    tot += data[i]; //bypasses field thing but seems lack enough ram for that anyways
   return tot / (endField - startField);
 }
 
-template<class T, class T2>
-void iBuffer<T, T2>::applyGain() {
+template<class uint8_t, class uint16_t>
+void iBuffer<uint8_t, uint16_t>::applyGain() {
   float gain = std::clamp(getGain(), 0.0f, 1.0f); //in this case. want overdrive too tho.
   uint8_t brightness = gain * 255;
   if(brightness <= blackPoint) brightness = 0; //until dithering...
@@ -174,6 +183,13 @@ void iBuffer<T, T2>::applyGain() {
   while (ptr != ptrEnd) {
     uint16_t value = *ptr;
     *ptr++ = (value * scale) >> 8;
+  }
+}
+
+template<>
+void iBuffer<float, float>::applyGain() {
+  for(auto i=0; i < fieldCount(); i++) {
+    data[i] *= _gain;
   }
 }
 // iBuffer<int>& iBuffer<T, T2>::difference(iBuffer& other, float fraction) const {
@@ -209,7 +225,8 @@ void iBuffer<T, T2>::applyGain() {
 // }
 
 template<class T, class T2>
-void iBuffer<T, T2>::blendUsingEnvelopeB(const iBuffer<T, T2>& origin, const iBuffer<T, T2>& target, float progress, BlendEnvelope* e) {
+void iBuffer<T, T2>::blendUsingEnvelopeB(const iBuffer<T, T2>& origin, const iBuffer<T, T2>& target,
+                                         float progress, BlendEnvelope* e) {
   // later fix so eg pre scale buffers if different size and whatnot
   float  attack = e? e->A(progress): progress,
         release = e? e->R(progress): progress;
@@ -221,9 +238,9 @@ void iBuffer<T, T2>::blendUsingEnvelopeB(const iBuffer<T, T2>& origin, const iBu
   // }
   for(uint16_t i=0; i < fieldCount(); i++) { // XXX this needs tighening up. Skip fields lol put directly...
 
-    Field fOrigin = origin.getField(i);
-    Field fTarget = target.getField(i);
-    Field fCurrent = this->getField(i); // oh wait now there turns constructor -> assignment copy constructor?
+    iField<T, T2> fOrigin = origin.getField(i);
+    iField<T, T2> fTarget = target.getField(i);
+    iField<T, T2> fCurrent = this->getField(i); // oh wait now there turns constructor -> assignment copy constructor?
     fCurrent = fOrigin;
     fCurrent.blend(fTarget, (fTarget > fOrigin? aScale: rScale)); // get Field for our buffer, put origin in it, blend with target...
   }
@@ -263,7 +280,7 @@ interpolate(const iBuffer<uint8_t, int16_t>& origin,
   if(_residuals == nullptr) return; //avoid crash... but just fix callers/document reqs tbh
 
   uint32_t scale = std::clamp(getGain(), 0.0f, 1.0f) * 255UL + 1; // or 256?
-  if(scale == 0) {
+  if(scale <= blackPoint) {
     memset(this->get(), 0x00, lengthBytes());
     memset(_residuals, 0x00, lengthBytes());
     setDirty();
@@ -331,10 +348,17 @@ interpolate(const iBuffer<uint8_t, int16_t>& origin,
   setDirty();
 }
 
+template<>
+void iBuffer<float, float>::
+interpolate(const iBuffer<float, float>& origin,
+            const iBuffer<float, float>& target,
+            float progress) { // input buffers being interpolated, weighting (0-255) of second buffer in interpolation
+  throw std::invalid_argument("Float interpolate not implemented");
+}
 
 template class iBuffer<uint8_t, int16_t>; //was this for againj
-/* template class iBuffer<int>; */
-/* template class iBuffer<uint16_t>; */
-/* template class iBuffer<float>; */
+template class iBuffer<uint16_t, int32_t>;
+template class iBuffer<int16_t, int32_t>;
+template class iBuffer<float>;
 
 }
