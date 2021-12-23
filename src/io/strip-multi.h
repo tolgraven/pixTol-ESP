@@ -69,10 +69,10 @@ class Strip: public Outputter {
   }
 
   void onEvent(const PatchOut& out) {
-    buffer(out.i).setCopy(out.buffer); // will already need to do one copy to driver buf so might as well do it here?
+    buffer(out.destIdx).setCopy(out.buffer); // will already need to do one copy to driver buf so might as well do it here?
     flushAttempts++;
 
-    if(flush(out.i)) flushes++;
+    if(flush(out.destIdx)) flushes++;
   }
 
   bool flush(int i) override {

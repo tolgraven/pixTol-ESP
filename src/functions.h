@@ -1,18 +1,20 @@
 #pragma once
 
-// TODO
-// decouple from Strip. Outputter could work, but best just Buffer...
 #include <algorithm>
 #include <map>
 #include <vector>
-// #include <lib8tion.h>  // fastled math and shit
+#include <string>
+
 #include <Arduino.h>
+
 #include "log.h"
 #include "envelope.h"
 #include "buffer.h"
+#include "renderstage.h"
+#include "task.h"
 
 #define MILLION 1000000
-#define EPSILON 0.0001f   // dont need crazy precision.. maybe revert to uint16 internally. at least for anything per-pixel.
+#define EPSILON 0.001f   // dont need crazy precision.. maybe revert to uint16 internally. at least for anything per-pixel.
 
 namespace tol {
 
@@ -32,8 +34,10 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
     }
     String _id;
   protected:
-    Buffer* b = nullptr;
+    RenderStage* rs;
+    std::vector<Buffer*> targetBuffers; // need to be able to control multiple.
     float origin = 0.f, target = 0.f, current = 0.f;
+    // bool running = false;
     /* std::tuple<float> range; */
     /* float min = 0.f, max = 1.f; // XXX scaling */
     BlendEnvelope* e = nullptr;
@@ -47,16 +51,16 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
 
     void apply(float progress) {
       float value = !e? target: e->interpolate(origin, target, progress); //first generic envelope interpolation
-      /* float value = target; */
       current = _apply(value, progress); // apply using that, possibly returning further changed value
-      if(targetFn) targetFn(get()); //not necessarily current(input), but result
+      // running = fIsZero(current)? false: true;
+      if(targetFn) targetFn(get()); // gotta run even if zero to get 0 well ya get...
     } // so now strobe is calling this every time even off. but not really a prob i guess.
 
 
     void update(float value) {
       origin = current; target = value;
     }
-    void setTarget(Buffer* targetBuffer) { b = targetBuffer; } //tho can manip anything taking a float (or properly wrapped), most common to just set a buffer?
+    void setTarget(RenderStage& targetRs) { rs = &targetRs; } //tho can manip anything taking a float (or properly wrapped), most common to just set a buffer?
     void setEnvelope(BlendEnvelope* newEnv) { if(e) delete e; e = newEnv; }
     void setEnvelope(float a, float r) { e->set(a, r); }
 
@@ -212,46 +216,56 @@ class Fill: public FunctionChannel { // good test case for one w multiple inputs
 };
 
 
-class Functions { // receives control values and runs on-chip effect functions like dimmer, strobe, blend and rotation
+class Functions: public RenderStage,
+                 public PureEvtTask,
+                 public Sub<PatchControls> { // receives control values and runs on-chip effect functions like dimmer, strobe, blend and rotation
   private:
 
   public:
-  Buffer* b = nullptr;
+  RenderStage& target;
   std::map<CH, FunctionChannel*> chan; //or just vector lol std::vector<FunctionChannel*> chan;
 
-  Functions(Buffer& targetBuffer):
-    b(&targetBuffer) {
-    // b(new Buffer(targetBuffer, 12, 0, false)) { // well no cause targetbuf has no fn chs it's offset...
-    lg.dbg("Create Functions, targetBuffer: " + targetBuffer.id());
+  Functions(const String& id, RenderStage& target, uint8_t channelCount = 12):
+    RenderStage(id + " functions", 1, channelCount),
+    PureEvtTask((id + " functions updater").c_str(), 2),
+    Sub<PatchControls>(this),
+    target(target), numChannels(channelCount),
+    chOverride("override", 1, channelCount),
+    val("val", 1, channelCount), blendOverride("blendOverride", 1, 12) {
+      
+    lg.dbg("Create Functions, target Stage: " + target.id());
      
-    for(uint8_t i=0; i < numChannels; i++) {
-      chOverride[i] = -1; //dont seem to properly auto init from {-1} otherwise hmm
-      blendOverride[i] = 0.5f;
-    }
+    chOverride.fill(-1);
+    blendOverride.fill(0.5f);
 
     using namespace std::placeholders;
-    lg.f("Functions", Log::DEBUG, "Buffer: %p, ptr: %p\n", b, b->get());
     chan[chDimmer] = new Dimmer(new BlendEnvelope("dimmerEnvelope", 1.2f, 1.1f));
-    chan[chDimmer]->targetFn = std::bind(&Buffer::setGain, b, _1);
+    // chan[chDimmer]->targetFn = std::bind(&RenderStage::setGain, target, _1);
+    chan[chDimmer]->targetFn = [this](float result) {
+      this->target.setGain(result);
+    }; // an exercise in pointlessness: the std::bind equivalent suddenly simply stopped working.
+    // is it this done in ctor and passed target overrides member target?
+    // but being an opaque ref to a still existing asshole shouldn't that not matter?
+    // or at least error? :S
+    chan[chDimmer]->update(1.0); // set to full so works if not actively set
 
     chan[chStrobe] = new Strober("Shutter", 0.5f, 10.0f);
-    /* // or auto& buf = b; then capture buf */
-    chan[chStrobe]->targetFn = [this](float value) {
-      if(value < 1.0f && this->b) {
-        this->b->setGain(value * this->b->getGain());
-      }
-    }; //works, but then becomes dependent on dimmer being executed first, etc... figure out something clean.
-    // i guess yeah "virtual" channel shutter is pointed to by dimmer + strobe,
+    chan[chStrobe]->targetFn = [this](float result) { /* // or auto& buf = b; then capture buf */
+      if(result < 2.0f) { // btw strobe should obviously overdrive (very first frames then quickly ramp down to regular...), will clip to 1 later
+        // and gain > 1.0 further down should eventually whiten and shit right, cool
+        this->target.setGain(result * this->target.getGain()); // NOTE assumes chDimmer runs prior and resets gain each tick
+      }};
 
     chan[chNoise] = new Noise();
     chan[chBleed] = new Bleed();
     chan[chRotateFwd] = new Rotate(true);
     chan[chRotateBack] = new Rotate(false);
     chan[chHue] = new RotateHue();
-    for(auto c: chan) c.second->setTarget(b); //lock in strip s as our target...
+    for(auto c: chan) c.second->setTarget(target); //lock in strip s as our target...
 
     /* e.set(0.5f, 0.5f); //default not 0 so is nice for local sources if no input */
   }
+  
   ~Functions() {} //remember for when got mult
 
   void apply(float progress) { //so this gets renamed run? but usually those are without args.
@@ -259,28 +273,39 @@ class Functions { // receives control values and runs on-chip effect functions l
       c.second->apply(progress);
   }
 
-  void update(uint8_t* fun) { //rename update. or just set? and shouldnt need args - we'd already know where to fetch new data.
+// void Renderer::updateControls(const Buffer& controlData, bool blend) {
+//     if(blend) controls->avg(controlData, false);
+//     else      controls->set(controlData);
+//     f->update(controls->get());
+// }
+// // doing some extra stuff ya ^
+  void update(const Buffer& controls) { //rename update. or just set? and shouldnt need args - we'd already know where to fetch new data.
+    buffer().setCopy(controls);
     for(uint8_t i=0; i < numChannels; i++) { // prep for when moving entirely onto float
-      ch[i] = chOverride[i] < 0?
-              fun[i]:
-      ((uint8_t)chOverride[i] * blendOverride[i] + // Generally these would be set appropriately (or from settings) at boot and used if no ctrl values incoming
-                ch[i] * (1.0f - blendOverride[i])); //but also allow (with prio/mode flag) override etc. and adjust behavior, why have anything at all hardcoded tbh
-      val[i] = ch[i] / 255.0f;
+      // *buffer().get(i) = *chOverride.get(i) < 0?
+      //   *controls.get(i):
+      //   ((uint8_t)*chOverride.get(i) * *blendOverride.get(i) + // Generally these would be set appropriately (or from settings) at boot and used if no ctrl values incoming
+      //    *controls.get(i) * (1.0f - *blendOverride.get(i))); //but also allow (with prio/mode flag) override etc. and adjust behavior, why have anything at all hardcoded tbh
+      *val.get(i) = std::clamp(*controls.get(i) / 255.0f, 0.0f, 1.0f);
+      
     }
 
-    e.set(val[chAttack], val[chRelease]); // high val can btw only slow things,
+    e.set(*val.get(chAttack), *val.get(chRelease)); // high val can btw only slow things,
     // but low (=quick/high) should actually hype progress, at extreme completely cancel frame blending... or overshoot diff? haha
-    chan[chDimmer]->setEnvelope(val[chDimmerAttack], val[chDimmerRelease]); //point straight instead let them update it
+    chan[chDimmer]->setEnvelope(*val.get(chDimmerAttack), *val.get(chDimmerRelease)); //point straight instead let them update it
 
     for(auto c: chan)
-      c.second->update(val[c.first]);
+      c.second->update(*val.get(c.first));
   }
 
-  static const uint8_t numChannels = 12;
-  uint8_t ch[numChannels] = {0};
-  int chOverride[numChannels] = {-1};
-  float val[numChannels] = {0.f}, blendOverride[numChannels] = {0.5f};
-  BlendEnvelope e = BlendEnvelope("pixelEnvelope", 1.4f, 1.3f); //remember attack and dimattack are inverted, fix so anim works same way...
+  void onEvent(const PatchControls& controls) {
+    update(controls.buffer);
+  }
+
+  uint8_t numChannels;
+  BufferI chOverride;
+  BufferF val, blendOverride;
+  BlendEnvelope e = BlendEnvelope("pixelEnvelope", 1.2f, 1.15); //remember attack and dimattack are inverted, fix so anim works same way...
 };
 
 }

@@ -11,23 +11,29 @@
 #include "task.h"
 
 namespace tol {
+
+class RenderStage;
   
 enum class Patching { IN, OUT, INCopy, OUTCopy };
 enum class PatchType { Controls, Pixels };
 
+// needs a new name
 template<Patching dir, auto dest = PatchType::Pixels>
 struct BufferPatch {
   BufferPatch() = default;
-  BufferPatch(const Buffer& buffer, int i): buffer(buffer), i(i) {}
+  BufferPatch(const Buffer& buffer, int i): buffer(buffer), destIdx(i) {}
   // BufferPatch(Buffer& buffer, int i): buffer(&buffer), i(i) {}
   // BufferPatch& operator=(BufferPatch& rhs) {
   //   buffer = rhs.buffer; i = rhs.i; return *this;
   // }
   BufferPatch& operator=(const BufferPatch& rhs) = default;
   // Buffer* buffer = nullptr;
-  Buffer buffer = Buffer(); // XXX copy needed since eg slicing in ArtnetIn, but for most stuff really inefficient yeah...
+  Buffer buffer = Buffer(); // XXX copy needed since eg slicing in ArtnetIn, but for most stuff bit inefficient (one hand, only ptr no copy, other hand, tons of other crap in class)
   // Buffer& buffer;
-  int i = 0;
+  int destIdx = 0; // index for OUTGOING buffer (in future not necessarily the same as )
+  int sourceIdx = 0;
+  RenderStage* originator = nullptr;
+  int priority = 10; // 0 to 20 I guess. If actively receiving messages of a higher priority, ignore lower ones?
 };
 
 using PatchIn = BufferPatch<Patching::IN>;
@@ -41,7 +47,7 @@ class RenderStage: public ChunkedContainer, public Runnable { // should be calle
   public:
     RenderStage(const String& id, uint16_t numBytes): RenderStage(id, 1, numBytes) {}
     RenderStage(const String& id, uint8_t fieldSize, uint16_t fieldCount,
-                uint8_t bufferCount = 1, uint16_t portIndex = 0);
+                uint8_t bufferCount = 1, uint16_t portIndex = 0, uint16_t targetHz = 40);
     virtual ~RenderStage() { _buffers.clear(); }
     virtual void init() {}
 
@@ -64,7 +70,11 @@ class RenderStage: public ChunkedContainer, public Runnable { // should be calle
       // tho as Buffers themselves still have notion of raw data ptr ownership shouldnt result in anything hmm
       // _buffers.at(index).assign(&pointTo);
     }
-    void setGain(float gain) {  _gain = gain; }
+    void setGain(float gain) {
+      _gain = gain;
+      for(auto& b: buffers())
+        b->setGain(gain);
+    }
     float getGain() const { return _gain; }
 
     void setPortId(uint16_t port) { _portId = port; }

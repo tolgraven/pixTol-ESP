@@ -3,9 +3,9 @@
 namespace tol {
 
 RenderStage::RenderStage(const String& id, uint8_t fieldSize, uint16_t fieldCount,
-                         uint8_t bufferCount, uint16_t portIndex):
+                         uint8_t bufferCount, uint16_t portIndex, uint16_t targetHz):
   ChunkedContainer(fieldSize, fieldCount),
-  Runnable(id, "Renderstage"), _portId(portIndex) {
+  Runnable(id, "Renderstage", targetHz), _portId(portIndex) {
 
   for(auto i=0; i<bufferCount; i++)
     _buffers.emplace_back(std::make_unique<Buffer>(id, fieldSize, fieldCount));
@@ -59,12 +59,9 @@ bool Inputter::onData(uint16_t index, uint16_t length, uint8_t* data, bool flush
       buffer(index).setDirty(true);
 
       if(index == 0 && controlDataLength != 0) { // temp til real Patch structure, 0 ctrls, 1 data...
-        auto [controls, data] = buffer(index).slice(controlDataLength); // XXX wouldn't these be transient n shit?
+        auto [controls, data] = buffer(index).slice(controlDataLength); // should return shader_ptrs tho
         ipc::Publisher<PatchControls>::publish(PatchControls(controls, index));
         ipc::Publisher<PatchIn>::publish(PatchIn(data, index));
-        // auto bufs = buffer(index).slice(controlDataLength); // XXX wouldn't these be transient n shit?
-        // ipc::Publisher<PatchControls>::publish(PatchControls(bufs[0], index));
-        // ipc::Publisher<PatchIn>::publish(PatchIn(bufs[1], index));
       } else {
         ipc::Publisher<PatchIn>::publish(PatchIn(buffer(index), index));
       }

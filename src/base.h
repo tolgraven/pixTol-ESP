@@ -83,8 +83,8 @@ struct Checkpoint {
 // same concepts are good forbtracking keyframes and interpolation and in some ways triggered stuff that will run anim eg strobe.
 class Runnable: public Named { // something expected to be run (usually continously
   public:
-    Runnable(const String& id, const String& type):
-      Named(id, type) {
+    Runnable(const String& id, const String& type, uint16_t targetHz = 40): // make default targetHz build config option
+      Named(id, type), targetHz(targetHz) {
       ts.start = micros(); // more like create I guess
     }
     virtual ~Runnable() {}
@@ -119,11 +119,13 @@ class Runnable: public Named { // something expected to be run (usually continou
     using RunFn_t = std::function<bool()>;
     void setRunFn(RunFn_t fn) { _runFn = std::move(fn); } // void setRunFn(RunFn_t fn) { _runFn = std::move(fn); }
     const RunFn_t& runFn() const { return _runFn; }
+  
+  protected:
+    uint16_t targetHz = 0; // disabled by default. "targetHz" more sense, incl doing whatever w (actual) scheduler to ensure doens't drop below either, and offsets get compensated both dirs so no drift.
 
   private:
     bool _active = true, _enabled = true;
     RunFn_t _runFn;
-    uint16_t targetHz = 0; // disabled by default. "targetHz" more sense, incl doing whatever w (actual) scheduler to ensure doens't drop below either, and offsets get compensated both dirs so no drift.
 
     void checkAndHandleTimeOut();
     void setActive(bool state = true) { _active = state; } // private simple setter makes no sense hah

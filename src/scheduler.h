@@ -172,7 +172,8 @@ class Scheduler: public Runnable, public core::Task  {
     outs.push_back(artnetOut);
     lg.dbg("Done add outputs");
 
-    renderer = std::make_shared<Renderer>("Renderer", MILLION / 40, *strip);
+    renderer = std::make_shared<Renderer>("Renderer", 40, 1000, *strip);
+    renderer->addEffectManager(new Functions("Strip", *renderer)); // welll eh myeh...
 
     // connect artnetOut to renderer result...
     // should have a cleaner way to multi-setup second output for something

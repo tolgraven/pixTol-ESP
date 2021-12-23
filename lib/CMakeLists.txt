@@ -24,6 +24,7 @@ set(COMPONENT_SRCS # cant use both apparently...
     NeoPixelBus/src/internal/Esp32_i2s.c # test. dont think need any at all actually
     OpcServer/src/OpcServer.cpp
     WifiManager/WiFiManager.cpp
+    pixTol/field.cpp
     )
 
 set(COMPONENT_REQUIRES arduino)

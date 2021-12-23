@@ -57,17 +57,18 @@ void Strober::tick(uint32_t passedMicros) {
     initStage(-timeRemaining); // pass on any debt incurred by late update
   }
   if(activeStage == FADING) {
-    result -= std::min(passedMicros / (float)timeInStage[FADING], result);
+    result -= std::min(passedMicros / (float)timeInStage[FADING], result); // easing would be nice especially here!
   }
   // lastTick = micros();
 }
 
 
-
 float Rotate::_apply(float value, float progress) {
   if(fIsZero(value)) return 0.f;
-  if(forward) b->rotate(value); // these would def benefit from anti-aliasing = decoupling from leds as steps
-  else b->rotate(-value); // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
+  for(auto& b: rs->buffers()) {
+    if(forward) b->rotate(value); // these would def benefit from anti-aliasing = decoupling from leds as steps
+    else b->rotate(-value); // very cool kaozzzzz strobish when rotating strip folded, 120 long but defed 60 in afterglow. explore!!
+  }
   return value;
 }
 
@@ -77,52 +78,54 @@ float Bleed::_apply(float value, float progress) {
 
   /* std::vector<Field> color; */
   /* Field color[4] = {b->fieldSize()}; */
-  uint8_t fs = b->fieldSize();
+  uint8_t fs = rs->fieldSize();
   Field color[4] = {fs, fs, fs, fs};
   /* // well this needs fixed p math etc */
 
-  for(int pixel = 0; pixel < b->fieldCount(); pixel++) {
+  for(auto b: rs->buffers()) {
+    for(int pixel = 0; pixel < rs->fieldCount(); pixel++) {
 
-    color[THIS] = b->getField(pixel); //this one could be in-place tho..
-    auto thisBrightness = color[THIS].average(); //tho W oughta contribute more yeah
-    auto brightnessForWeight = (thisBrightness > 0? thisBrightness: 1);
-    float weight[2]; // float prevWeight, nextWeight;
+      color[THIS] = b->getField(pixel); //this one could be in-place tho..
+      auto thisBrightness = color[THIS].average(); //tho W oughta contribute more yeah
+      auto brightnessForWeight = (thisBrightness > 0? thisBrightness: 1);
+      float weight[2]; // float prevWeight, nextWeight;
 
-    if(pixel-1 >= 0) { //could be tiny fn
-      color[BEHIND] = b->getField(pixel-1);
-      weight[BEHIND] = color[BEHIND].average() / (float)brightnessForWeight;
-      if(weight[BEHIND] < 0.3f) { // skip if dark, test. Should use weight and scale smoothly instead...
+      if(pixel-1 >= 0) { //could be tiny fn
+        color[BEHIND] = b->getField(pixel-1);
+        weight[BEHIND] = color[BEHIND].average() / (float)brightnessForWeight;
+        if(weight[BEHIND] < 0.3f) { // skip if dark, test. Should use weight and scale smoothly instead...
+          color[BEHIND] = color[THIS];
+        }
+      } else {
         color[BEHIND] = color[THIS];
+        weight[BEHIND] = 1.f;
       }
-    } else {
-      color[BEHIND] = color[THIS];
-      weight[BEHIND] = 1.f;
-    }
 
-    if(pixel+1 < b->fieldCount()) {
-      color[AHEAD] = b->getField(pixel+1);
-      weight[AHEAD] = color[AHEAD].average() / (float)brightnessForWeight;
-      if(weight[AHEAD] < 0.3f) { // do some more shit tho. Important thing is mixing colors, so maybe look at saturation as well as brightness dunno
-        color[AHEAD] = color[THIS];  // since we have X and Y should weight towards more interesting.
+      if(pixel+1 < b->fieldCount()) {
+        color[AHEAD] = b->getField(pixel+1);
+        weight[AHEAD] = color[AHEAD].average() / (float)brightnessForWeight;
+        if(weight[AHEAD] < 0.3f) { // do some more shit tho. Important thing is mixing colors, so maybe look at saturation as well as brightness dunno
+          color[AHEAD] = color[THIS];  // since we have X and Y should weight towards more interesting.
+        }
+      } else {
+        color[AHEAD] = color[THIS];
+        weight[AHEAD] = 1.f;
       }
-    } else {
-      color[AHEAD] = color[THIS];
-      weight[AHEAD] = 1.f;
+      auto amount = value/2.f;  //this way only ever go half way = before starts decreasing again
+      // how does progress enter picture?
+
+      /* color[BLEND] = Field::blend(color[BEHIND], color[AHEAD], 0.5f); //test */
+      /* color.insert(std::pair<LOCATION, Field>(BLEND, Field::blend(color[BEHIND], color[AHEAD], 0.5f))); //test */
+      /* color.emplace(BLEND, Field::blend(color[BEHIND], color[AHEAD], 0.5f)); //test */
+          // (1 / (prevWeight + weight[AHEAD] + 1)) * prevWeight); //got me again loll
+          // color[THIS] = RgbwColor::BilinearBlend(color[THIS], color[AHEAD], color[BEHIND], color[BLEND], amount, amount);
+      /* color[THIS] = Field::blend(color[THIS], color[AHEAD], color[BEHIND], color[THIS], amount, amount); */
+      color[THIS].blend(color[AHEAD], color[BEHIND], color[THIS], amount, amount);
+      /* color.insert(std::pair<LOCATION, Field>(THIS, Field::blend(color[THIS], color[AHEAD], color[BEHIND], color[THIS], amount, amount))); */
+      /* color.emplace(THIS, Field::blend(color[THIS], color[AHEAD], color[BEHIND], color[THIS], amount, amount)); */
+
+      b->setField(color[THIS], pixel); // XXX handle flip and that
     }
-    auto amount = value/2.f;  //this way only ever go half way = before starts decreasing again
-    // how does progress enter picture?
-
-    /* color[BLEND] = Field::blend(color[BEHIND], color[AHEAD], 0.5f); //test */
-    /* color.insert(std::pair<LOCATION, Field>(BLEND, Field::blend(color[BEHIND], color[AHEAD], 0.5f))); //test */
-    /* color.emplace(BLEND, Field::blend(color[BEHIND], color[AHEAD], 0.5f)); //test */
-        // (1 / (prevWeight + weight[AHEAD] + 1)) * prevWeight); //got me again loll
-        // color[THIS] = RgbwColor::BilinearBlend(color[THIS], color[AHEAD], color[BEHIND], color[BLEND], amount, amount);
-    /* color[THIS] = Field::blend(color[THIS], color[AHEAD], color[BEHIND], color[THIS], amount, amount); */
-    color[THIS].blend(color[AHEAD], color[BEHIND], color[THIS], amount, amount);
-    /* color.insert(std::pair<LOCATION, Field>(THIS, Field::blend(color[THIS], color[AHEAD], color[BEHIND], color[THIS], amount, amount))); */
-    /* color.emplace(THIS, Field::blend(color[THIS], color[AHEAD], color[BEHIND], color[THIS], amount, amount)); */
-
-    b->setField(color[THIS], pixel); // XXX handle flip and that
   }
   return value;
 }
