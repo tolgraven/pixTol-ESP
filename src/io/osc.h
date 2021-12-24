@@ -8,12 +8,12 @@
 
 class Osc: public IO {
 
-    OSC(const String& pathPrefix, uint8_t numPorts: hz(sourceHz), name(deviceName) {
+    OSC(const std::string& pathPrefix, uint8_t numPorts: hz(sourceHz), name(deviceName) {
     }
 
     void update() { osc.parse(); }
 
-    void subscribe(const String& address, callback) { }
+    void subscribe(const std::string& address, callback) { }
 
   WiFiUDP udp;
   ArduinoOSCWiFi osc;
@@ -23,7 +23,7 @@ class Osc: public IO {
 
 class OSCInput: public Inputter {
   public:
-    OSCInput(const String& pathPrefix): Inputter() {
+    OSCInput(const std::string& pathPrefix): Inputter() {
       osc.addCallback("/ard/aaa", &callback);
       osc.addCallback("/ard", &callback);
     }

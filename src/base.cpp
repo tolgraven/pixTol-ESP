@@ -9,7 +9,7 @@ UID generateUID() {
 }
 }
 
-Named::Named(const String& id, const String& type):
+Named::Named(const std::string& id, const std::string& type):
       _id(id), _type(type), _uid(generateUID()) {}
 
 

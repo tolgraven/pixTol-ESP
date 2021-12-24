@@ -15,7 +15,7 @@ namespace tol {
 
 class Updater { //holds various OTA update strategies and logic
   public:
-    Updater(const String& id): _id(id) { }
+    Updater(const std::string& id): _id(id) { }
     virtual ~Updater() {}
 
     //some types use callbacks, some not... hence no pure virtual
@@ -30,14 +30,14 @@ class Updater { //holds various OTA update strategies and logic
     }
     virtual void onTick(uint16_t progress, uint16_t total) {
     }
-    virtual void onError(const String& error) {}
+    virtual void onError(const std::string& error) {}
     virtual void onEnd() {}
 
     virtual void loop() {
     } //feed callback-based updater
     virtual void run() { lg.f(__func__, Log::WARNING, "From-device update not available for updater %s\n", _id.c_str()); } //actively attempt update, from our end
   protected:
-  String _id;
+  std::string _id;
   /* int prevPixel = -1; */
   //const RgbwColor* otaColor;
   /* const RgbwColor* otaColor = new RgbwColor(70, 70, 200, 50); */
@@ -45,7 +45,7 @@ class Updater { //holds various OTA update strategies and logic
 
 class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies and logic
   public:
-  ArduinoOTAUpdater(const String& hostname):
+  ArduinoOTAUpdater(const std::string& hostname):
     Updater("ArduinoOTA") {
 
     lg.ln("ArduinoOTA", Log::DEBUG, "Create Updater ArduinoOTA");
@@ -95,7 +95,7 @@ class ArduinoOTAUpdater: public Updater { //holds various OTA update strategies 
 
   void onError(ota_error_t err) {
       // Serial.printf("OTA Error[%u]: ", e);
-      String es = (err == OTA_AUTH_ERROR)?    "Auth Failed":
+      std::string es = (err == OTA_AUTH_ERROR)?    "Auth Failed":
                   (err == OTA_BEGIN_ERROR)?	  "Begin Failed":
                   (err == OTA_CONNECT_ERROR)? "Connect Failed":
                   (err == OTA_RECEIVE_ERROR)? "Receive Failed":
@@ -161,7 +161,7 @@ class HttpUpdater: public Updater {
   // [HTTP_X_ESP8266_SDK_VERSION] => 1.3.0
   // [HTTP_X_ESP8266_VERSION]     => DOOR-7-g14f53a19
   bool flaggedForUpdate = false;
-  String _host, _path = "/update/BUILD_ENV_NAME", _currentVersion = "FW_VERSION";
+  std::string _host, _path = "/update/BUILD_ENV_NAME", _currentVersion = "FW_VERSION";
   uint16_t _port;
 
   void run() {
@@ -177,7 +177,7 @@ class HttpUpdater: public Updater {
     }
   }
   public:
-  HttpUpdater(const String& host, uint16_t port):
+  HttpUpdater(const std::string& host, uint16_t port):
     Updater("HttpOTA"), _host(host), _port(port) {
     ESPhttpUpdate.rebootOnUpdate(false); //ensure time to properly log, run anim?
   }
@@ -206,7 +206,7 @@ class HttpUpdater: public Updater {
 
 #ifdef ESP8266
 class IdfUpdater: public Updater {
-  IdfUpdater(const String& host, uint16_t port):
+  IdfUpdater(const std::string& host, uint16_t port):
     Updater("IdfOTA"), _host(host), _port(post) {
       // do whatever
     }

@@ -33,7 +33,7 @@ class Renderer: public RenderStage,
   std::vector<std::shared_ptr<Functions>> functions;
   std::vector<std::shared_ptr<Effector>> effectors; // tho same concept could also be run on input especially if more intensive...
 
-  Renderer(const String& id, uint32_t keyFrameInterval, uint16_t targetHz, const RenderStage& target);
+  Renderer(const std::string& id, uint32_t keyFrameInterval, uint16_t targetHz, const RenderStage& target);
   
   void addEffectManager(Functions* fun) {
     functions.emplace_back(fun);

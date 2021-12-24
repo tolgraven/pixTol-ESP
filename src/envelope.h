@@ -11,9 +11,9 @@ class ADSREnvelope {
 
 
 class EnvelopeStage {
- EnvelopeStage(const String& id, uint32_t maxDuration, float fraction):
+ EnvelopeStage(const std::string& id, uint32_t maxDuration, float fraction):
   _id(id), maxDuration(maxDuration), fraction(fraction) {}
- String _id;
+ std::string _id;
  uint32_t duration, maxDuration;
  float start, end, current; //starting, ending, and current value
  float fraction = -1; //fraction of total animation this stage should run for, 0 = container decides
@@ -21,7 +21,7 @@ class EnvelopeStage {
    // OR in a full class and Shutter inherits both Animation and FunctionChannel?
 
 class Envelope { // base class for envelopes and "envelopes" like blendfactors.
-    String _id;
+    std::string _id;
     bool straight; // no invert = high-is-low
     std::vector<EnvelopeStage*> stage;
     virtual Envelope& setLevel(const EnvelopeStage& stage, float level);
@@ -33,7 +33,7 @@ enum EnvStage: uint8_t { AT = 0, RE }; //should be dynamic and that...
 // template<typename T>
 class BlendEnvelope { // simple "envelope" to control how much an incoming value should affect the current
   private:
-    String _id;
+    std::string _id;
     bool straight = false; // default is actually inverted (since used for progress), so straight is unmodified high-attack high-number...
     float divisor[RE+1] = {1.0}; // float attackDivisor = 1.0, releaseDivisor = 1.0; //XXX fix for float
     float _baseline = 1.0; //0.5 // default no effect. the value at 0 attack/release. Later move away from envelope to renderer?
@@ -47,7 +47,7 @@ class BlendEnvelope { // simple "envelope" to control how much an incoming value
           value[es] = constrain(1.0 - value[es], 0.0, 1.0);
     }
   public:
-    BlendEnvelope(const String& id = "BlendEnvelope", float atDivisor = 1.0, float reDivisor = 1.0,
+    BlendEnvelope(const std::string& id = "BlendEnvelope", float atDivisor = 1.0, float reDivisor = 1.0,
         bool straight = false, float baseline = 1.0):
       _id(id), straight(straight), _baseline(baseline) {
         setDivisor(AT, atDivisor);

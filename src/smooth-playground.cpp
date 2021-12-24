@@ -65,9 +65,9 @@ void App::init() {
   // if(!file.write("not even json shiite"))
   //   logging::Log::error("FS", "{}", "Failed to write crap");
 
-  // auto fmt = [](const String& loc, const String& lvl, const String& txt) {
-  //                 return String("[" + Ansi<Yellow>(lvl) + "] " + Ansi<Blue>(loc) + "\t" + txt); };
-  // auto logThroughSmooth = [](const String& text) {
+  // auto fmt = [](const std::string& loc, const std::string& lvl, const std::string& txt) {
+  //                 return std::string("[" + Ansi<Yellow>(lvl) + "] " + Ansi<Blue>(loc) + "\t" + txt); };
+  // auto logThroughSmooth = [](const std::string& text) {
   //                           logging::Log::log('I', "", (std::string)text.c_str()); };
   // lg.moreDest.emplace_back("IDF/smooth", logThroughSmooth, fmt);
   // XXX works but needs further fixes (newline)

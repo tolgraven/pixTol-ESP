@@ -182,7 +182,7 @@ class LoopWatchdog {
     lapseAt = fedAt + timeout;
     if(wd.id != LWD_ID_LOOP_END) {
       setReason(LWD_REASON_BETWEEN_RST);
-      lg.dbg("wd.id changed between loops: " + wd.id);
+      // lg.dbg("wd.id changed between loops: " + wd.id);
       // ESP.restart(); //ehh better just really serious logging? or? still broken too - happens reg boot
     }
   }
@@ -265,29 +265,30 @@ class LoopWatchdog {
 #endif
   }
 
-  String getResetReason() { // Returns human-readable reset info, like ESP.getResetReason(), but also reporting our five additional reasons.
+  std::string getResetReason() { // Returns human-readable reset info, like ESP.getResetReason(), but also reporting our five additional reasons.
+    return "not implemented";
     // lwdCount_t count;
     // lwdID_t id;
     // lwdReason_t restartReason = getReason(count, id);
-    // String countStr = ", count: " + (String)count + ", last stamp " + wd.id;
-    // String idStr = " " + (String)id + countStr;
-    lwdReason_t restartReason = getReason();
-    String countStr = ", count: " + (String)wd.count + ", last stamp/id " + wd.id;
-    String idStr = " id " + (String)wd.id + countStr;
-#if defined(ESP8266)
-    auto mainReason = ESP.getResetReason();
-#elif defined(ESP32)
-    String mainReason = "Not impl";
-#endif
-    return ("Reset:  " + (
-     (restartReason == REASON_EXCEPTION_RST)?    mainReason + idStr:
-     (restartReason <= REASON_EXT_SYS_RST)?      mainReason + countStr:
-     (restartReason == LWD_REASON_USER_RESET)?   "User reset, id" + idStr:
-     (restartReason == LWD_REASON_USER_RESTART)? "User restart, id" + idStr:
-     (restartReason == LWD_REASON_LOOP_RST)?     "Loop watchdog in" + idStr:
-     (restartReason == LWD_REASON_BETWEEN_RST)?  "Loop watchdog incomplete in" + idStr:
-     (restartReason == LWD_REASON_CORRUPT)?      "Loop watchdog overwritten in" + idStr:
-     mainReason));
+    // std::string countStr = ", count: " + (std::string)count + ", last stamp " + wd.id;
+    // std::string idStr = " " + (std::string)id + countStr;
+    // lwdReason_t restartReason = getReason();
+    // std::string countStr = ", count: " + std::to_string(wd.count) + ", last stamp/id " + wd.id;
+    // std::string idStr = " id " + (std::string)wd.id + countStr;
+// #if defined(ESP8266)
+    // auto mainReason = ESP.getResetReason();
+// #elif defined(ESP32)
+    // std::string mainReason = "Not impl";
+// #endif
+    // return ("Reset:  " + (
+    //  (restartReason == REASON_EXCEPTION_RST)?    mainReason + idStr:
+    //  (restartReason <= REASON_EXT_SYS_RST)?      mainReason + countStr:
+    //  (restartReason == LWD_REASON_USER_RESET)?   "User reset, id" + idStr:
+    //  (restartReason == LWD_REASON_USER_RESTART)? "User restart, id" + idStr:
+    //  (restartReason == LWD_REASON_LOOP_RST)?     "Loop watchdog in" + idStr:
+    //  (restartReason == LWD_REASON_BETWEEN_RST)?  "Loop watchdog incomplete in" + idStr:
+    //  (restartReason == LWD_REASON_CORRUPT)?      "Loop watchdog overwritten in" + idStr:
+    //  mainReason));
   }
   int getCount() { return (int)wd.count; }
 

@@ -39,11 +39,11 @@ int _write(int file, char *ptr, int len); // redefine for GCC to autoredirect bu
 
 // doesnt actually make sense since just does same thing as +. just to test...
 // template<class T>
-// inline String operator <<(String&& s, T&& arg) { return s + arg; }
-// // inline String& operator <<(String& s, T&& arg) { s += arg; return s; } // like dis?
+// inline std::string operator <<(std::string&& s, T&& arg) { return s + arg; }
+// // inline std::string& operator <<(std::string& s, T&& arg) { s += arg; return s; } // like dis?
 // // typedef decltype(endl) endl_t; // why does this work here but not for Print?
 // enum _EndLineCode { endl };
-// inline String operator <<(String&& s, _EndLineCode arg) { return s + '\n'; }
+// inline std::string operator <<(std::string&& s, _EndLineCode arg) { return s + '\n'; }
 
 namespace tol {
 
@@ -53,12 +53,12 @@ enum AnsiColor: int {
 };
 
 template<typename T>
-String Ansi(T& value, AnsiColor color) {
-    return (String)"\033[1;" + static_cast<int>(color) + "m" + value + "\033[0m";
+std::string Ansi(T& value, AnsiColor color) {
+    return (std::string)"\033[1;" + std::to_string(static_cast<int>(color)) + "m" + value + "\033[0m";
 }
 template<AnsiColor color, typename T>
-String Ansi(T& value) {
-    return (String)"\033[1;" + static_cast<int>(color) + "m" + value + "\033[0m";
+std::string Ansi(T& value) {
+    return (std::string)"\033[1;" + std::to_string(static_cast<int>(color)) + "m" + value + "\033[0m";
 }
 
 namespace ansi {
@@ -81,13 +81,13 @@ namespace ansi {
   // template <class CharT> // or build a builder? no I wuz silly ha
   // std::function<std::basic_ostream<CharT>& (std::basic_ostream<CharT>&)>
   // // create_ansi(const std::string& ansiCode) {
-  // create_ansi(const String& ansiCode) {
+  // create_ansi(const std::string& ansiCode) {
   //   return [ansiCode](std::basic_ostream<CharT>& os) { return os << ansiCode; };
   // }
   // auto red = create_ansi<char>(aRED);
 }
 
-#define __LOC__ (String)__func__ + " " + __FILE__ + ":" + __LINE__
+#define __LOC__ (std::string)__func__ + " " + __FILE__ + ":" + std::to_string(__LINE__)
 #define TRACE(s) tol::lg.ln(s, tol::Log::TRACE, __LOC__)
 // #define DEBUG(s) tol::lg.ln(s, tol::Log::DEBUG, __func__)
 #define DEBUG(s) tol::lg.ln(s, tol::Log::DEBUG, __PRETTY_FUNCTION__)
@@ -104,73 +104,73 @@ void expand(std::initializer_list<T>) {}
 // or become templating ninja and figure out an easier way...
 template<class Fun, class... Args>
 typename std::result_of<Fun&&(Args&&...)>::type
-_logging(Fun&& f, String&& name, Args&&... args) {
+_logging(Fun&& f, std::string&& name, Args&&... args) {
     // std::cout << ": ";
     // expand({(std::cout << args << ' ', 0)...});
     // std::cout << endl;
     if(printer) { // print out all args.
-      printer->print("calling fn " + name + "(");
-      printer->print((String)args + ", " ...);
+      printer->print(("calling fn " + name + "(").c_str());
+      printer->print((std::string)args + ", " ...);
       printer->print(")");
     } // if the _write thing actually works won't need the check or pointer right? straight printf or cout will work?
     // soo does this work? nope already checked just realized. bc template + dynamic binding...
-    // print("calling fn " + name + "("); print((String)args + ", " ...); print(")");
+    // print("calling fn " + name + "("); print((std::string)args + ", " ...); print(")");
 
     // forward the call, and log the result.
     auto&& result = std::forward<Fun>(f)(std::forward<Args>(args)...);
-    if(printer) printer->println((result != nullptr)? (" -> " + (String)result): "");
+    if(printer) printer->println((result != nullptr)? (" -> " + (std::string)result): "");
     return result;
 }
-#define logging(f, ...) _logging(f, (String)#f, __VA_ARGS__)
-// makes a str out of fn name, then hopefully rest of args also Stringifyable.
+#define logging(f, ...) _logging(f, (std::string)#f, __VA_ARGS__)
+// makes a str out of fn name, then hopefully rest of args also std::stringifyable.
 
 class LogOutputClean { // guess concept of both being and containing (and/or either way? a printer seems snazzy)
-  using FmtFn = std::function<String(const String&, const String&, const String&)>;
-  using PrintFn = std::function<void(const String&)>;
+  using FmtFn = std::function<std::string(const std::string&, const std::string&, const std::string&)>;
+  using PrintFn = std::function<void(const std::string&)>;
   public:
-  LogOutputClean(const String& id, PrintFn printFn, FmtFn fmt, bool enabled = true):
+  LogOutputClean(const std::string& id, PrintFn printFn, FmtFn fmt, bool enabled = true):
     printFn(printFn), enabled(enabled), fmt(fmt) {} // id(id), pr(reinterpret_cast<Print*>(&printer)), enabled(enabled) {}
 
   PrintFn printFn;
   bool enabled; //or should outside control that instead maybe
 
-  void log(const String& location, const String& level, const String& text) const {
+  void log(const std::string& location, const std::string& level, const std::string& text) const {
     if(enabled) log(fmt(location, level, text));
   }
-  void log(const String& text) const {
+  void log(const std::string& text) const {
     if(enabled) printFn(text);
   }
   void setFmt(const FmtFn& fmtFn) { fmt = std::move(fmtFn); }
 
   private:
-  FmtFn fmt = [](const String& loc, const String& lvl, const String& txt) {
-                  return String((String)millis() + "\t[" + lvl + "]\t" + loc + "\t" + txt); };
+  FmtFn fmt = [](const std::string& loc, const std::string& lvl, const std::string& txt) {
+                  return std::string(std::to_string(millis()) + "\t[" + lvl + "]\t" + loc + "\t" + txt); };
 }; // YADA YADA what think now:
 // - keep arduino logging output
 // + add idf output (by way of smooth? for thread-saef)
 //    CHALLENGE: keep implementations away ffs
-//               (irrelevant while using String but that will change too)
-//               (dont just fucking switch from String to std::string, templatize.)
+//               (irrelevant while using std::string but that will change too)
+//               (dont just fucking switch from std::string to std::string, templatize.)
 // - add back mqtt out already ffs - smooth has something too
 
 class LogOutput { // guess concept of both being and containing (and/or either way? a printer seems snazzy)
-  using FmtFn = std::function<String(const String&, const String&, const String&)>;
-  FmtFn fmt = [](const String& loc, const String& lvl, const String& txt) {
-                  return String((String)millis() + "\t[" + lvl + "]\t" + loc + "\t" + txt); };
+  using FmtFn = std::function<std::string(const std::string&, const std::string&, const std::string&)>;
+  FmtFn fmt = [](const std::string& loc, const std::string& lvl, const std::string& txt) {
+                  return std::string(std::to_string(millis()) + "\t[" + lvl + "]\t" + loc + "\t" + txt); };
   public:
   Print* pr = nullptr; // Stream* s  // not atm but thinking pr not required. Couldl bind that to self and use other fn.
 
-  void log(const String& location, const String& level, const String& text) const {
+  void log(const std::string& location, const std::string& level, const std::string& text) const {
     if(enabled) log(fmt(location, level, text));
   }
-  void log(const String& text) const { if(enabled) pr->print(text); }
+  void log(const std::string& text) const { if(enabled) pr->print(text.c_str()); }
   // size_t printTo(const Print& p) const override {
-  //   return Named::printTo(p) + p.println((String)"put fmtString here n shit"); // uh guess print FmtFn text cause should be printf style anyways :| and ze kinda Print.
+  //   return Named::printTo(p) + p.println((std::string)"put fmtString here n shit"); // uh guess print FmtFn text cause should be printf style anyways :| and ze kinda Print.
   // }
 
   bool enabled; //or should outside control that instead maybe
 
-  LogOutput(const String& id, Print& printer, bool enabled = true):
+  LogOutput(const std::string& id, Print& printer, bool enabled = true):
     //  fmt(std::move(f)) // not sure if inline-default declated lambda w ::move was issue? anyways no biggie
    pr(&printer), enabled(enabled) {} // id(id), pr(reinterpret_cast<Print*>(&printer)), enabled(enabled) {}
 
@@ -185,37 +185,37 @@ public:
   } // sexiest use of globals since ya
 	enum Level: int8_t { INVALID = -1, TRACE = 0, DEBUG, INFO, WARNING, ERROR, CRITICAL }; //add an "NONE" at end to disable output fully?
 
-  bool initOutput(const String& output); // init a predefined
+  bool initOutput(const std::string& output); // init a predefined
   void addOutput(const LogOutput& lo);   // add new
 
-	void log(const String& text, const Level level = INFO, const String& location = "") const;
+	void log(const std::string& text, const Level level = INFO, const std::string& location = "") const;
   template<Level level>
-	void log(const String& text, const String& location = "") const {
+	void log(const std::string& text, const std::string& location = "") const {
     log(text, level, location);
   }
   
   // void ln(const std::string& text, const Level level, const std::string& location) const {
-  //   ln((String)text.c_str(), level, (String)location.c_str());
+  //   ln((std::string)text.c_str(), level, (std::string)location.c_str());
   // }
   // void dbg(const std::string& text, const std::string& location = "") const {
-  //   dbg((String)text.c_str(), (String)location.c_str());
+  //   dbg((std::string)text.c_str(), (std::string)location.c_str());
   // }
   // void err(const std::string& text, const std::string& location = "") const {
-  //   err((String)text.c_str(), (String)location.c_str());
+  //   err((std::string)text.c_str(), (std::string)location.c_str());
   // }
 
   
-  void ln(const String& text, const Level level, const String& location) const;
-  void dbg(const String& text, const String& location = "") const;
-  void err(const String& text, const String& location = "") const;
+  void ln(const std::string& text, const Level level, const std::string& location) const;
+  void dbg(const std::string& text, const std::string& location = "") const;
+  void err(const std::string& text, const std::string& location = "") const;
 
-	void f(const String& location, const Level level, const char *format, ...) const;
-	void logf(const String& location, const Level level, const char *format, ...) const  __attribute__((deprecated));
+	void f(const std::string& location, const Level level, const char *format, ...) const;
+	void logf(const std::string& location, const Level level, const char *format, ...) const  __attribute__((deprecated));
 
-	void fEvery(uint16_t numCalls, uint8_t id, const String& location, const Level level, const char *format, ...) const;
+	void fEvery(uint16_t numCalls, uint8_t id, const std::string& location, const Level level, const char *format, ...) const;
 
 	void setLevel(Level lvl) { if(lvl >= DEBUG && lvl <= CRITICAL) _level = lvl; }
-  // void setOption(const String& option, const String& value); //use in future
+  // void setOption(const std::string& option, const std::string& value); //use in future
 
   virtual size_t write(uint8_t character) { // oh yeah this is what complicates... only for arduino stuff otherswise get called in main printer
     for(auto&& d: destinations)
@@ -236,16 +236,16 @@ private:
 	Level _level = DEBUG;
   std::vector<LogOutput> destinations;
 
-  String lvlStr[CRITICAL+1] = {"TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"};
-  std::vector<String> whiteList, blackList; // control which locations. bound to be idiotically slow
+  std::string lvlStr[CRITICAL+1] = {"TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"};
+  std::vector<std::string> whiteList, blackList; // control which locations. bound to be idiotically slow
 
-	Level convert(const String& lvl) const {
+	Level convert(const std::string& lvl) const {
     for(int8_t ilvl = TRACE; ilvl <= CRITICAL; ilvl++)
-      if(lvl.equalsIgnoreCase(lvlStr[ilvl]))
+      if(lvl == lvlStr[ilvl])
         return (Level)ilvl;
     return INVALID;
   }
-	String convert(const Level lvl) const {
+	std::string convert(const Level lvl) const {
     auto index = constrain(lvl, INVALID, CRITICAL);
     if(index >= 0) return lvlStr[index];
     else return "INVALID";
@@ -257,9 +257,9 @@ extern Log lg;
 
 template<class... Args>
 void DEBUG2(const Args&&... args) {
-    // expand({(String << args << ' ', 0)...});
-  lg.dbg(String((String)args + ", " ...));
-  // lg.dbg(expand({(String << args << ' ', 0)...}));
+    // expand({(std::string << args << ' ', 0)...});
+  lg.dbg(std::string((std::string)args + ", " ...));
+  // lg.dbg(expand({(std::string << args << ' ', 0)...}));
 }
 
 }

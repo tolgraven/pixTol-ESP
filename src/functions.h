@@ -32,7 +32,7 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
     virtual float _apply(float value, float progress) { //force should be a persistent flag, not fn arg
       return value; // fallback if ch is neither applying nor affecting value, acting only as storage...  } //should be PixelBuffer as target
     }
-    String _id;
+    std::string _id;
   protected:
     RenderStage* rs;
     std::vector<Buffer*> targetBuffers; // need to be able to control multiple.
@@ -43,9 +43,9 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
     BlendEnvelope* e = nullptr;
     // ADSREnvelope adsr; //dis the goal
   public:
-    FunctionChannel(const String& id): _id(id) {}
-    FunctionChannel(const String& id, BlendEnvelope* e): _id(id), e(e) {}
-    FunctionChannel(const String& id, float a, float r):
+    FunctionChannel(const std::string& id): _id(id) {}
+    FunctionChannel(const std::string& id, BlendEnvelope* e): _id(id), e(e) {}
+    FunctionChannel(const std::string& id, float a, float r):
       FunctionChannel(id, new BlendEnvelope(id)) { e->set(a, r); }
     virtual ~FunctionChannel() { if(e) delete e; }
 
@@ -73,7 +73,7 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
 
 class Stage {
   enum: uint8_t { MIN = 0, MAX = 1 };
-  String id;
+  std::string id;
   float origin, destination; // eg Open->closed, closed->open, but could do more better funner. min/max and some proper oscillators would make more sense tho lol - eg reuse that system here.
   uint32_t minTime, maxTime;
   /* std::tuple<float> resultRange; */
@@ -93,7 +93,7 @@ class Stage {
   }; //well most wont have one so cant have default but obvs default is straight interpolation from origin to destination
 
   public:
-  Stage(const String& id, float origin, float destination, float minTime = 0, float maxTime = 0, float fractionOfTotal = 0):
+  Stage(const std::string& id, float origin, float destination, float minTime = 0, float maxTime = 0, float fractionOfTotal = 0):
    id(id), origin(origin), destination(destination), minTime(minTime), maxTime(maxTime), fractionOfTotal(fractionOfTotal) {
    }
 
@@ -138,7 +138,7 @@ class Strober: public FunctionChannel { //maybe more appropriate further general
 
   float _apply(float value, float progress) override; //this was why not being called... turned into different function without Strip arg
   public:
-  Strober(const String& id = "Strobe", float hzMin = 1.0f, float hzMax = 12.5f):
+  Strober(const std::string& id = "Strobe", float hzMin = 1.0f, float hzMax = 12.5f):
    FunctionChannel(id), hzMin(hzMin), hzMax(hzMax) {}
 
   float get() override { return result; }
@@ -168,7 +168,7 @@ class Shutter {
 /*       targetFn(value); */
 /*     } */
 /*   public: */
-/*     PassThrough(const String& id, std::function<void(T)> targetFn): */
+/*     PassThrough(const std::string& id, std::function<void(T)> targetFn): */
 /*      FunctionChannel(id), targetFn(targetFn) {} */
 /* }; */
 
@@ -225,7 +225,7 @@ class Functions: public RenderStage,
   RenderStage& target;
   std::map<CH, FunctionChannel*> chan; //or just vector lol std::vector<FunctionChannel*> chan;
 
-  Functions(const String& id, RenderStage& target, uint8_t channelCount = 12):
+  Functions(const std::string& id, RenderStage& target, uint8_t channelCount = 12):
     RenderStage(id + " functions", 1, channelCount),
     PureEvtTask((id + " functions updater").c_str(), 2),
     Sub<PatchControls>(this),

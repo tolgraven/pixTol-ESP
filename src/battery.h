@@ -62,8 +62,8 @@ private:
         lg.logf("Battery", tol::Log::INFO, "Charge back above cutoff! %d", rollingAverageCharge);
       status = Safe;
     }
-    /* setProperty("level").send(String(rollingAverageCharge)); */
-    /* if(status != lastStatus) setProperty("safe").send(String(status)); */
+    /* setProperty("level").send(std::string(rollingAverageCharge)); */
+    /* if(status != lastStatus) setProperty("safe").send(std::string(status)); */
 
     lastStatus = status;
   }

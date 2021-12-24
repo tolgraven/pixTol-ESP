@@ -3,7 +3,7 @@
 
 namespace tol {
 
-Renderer::Renderer(const String& id, uint32_t keyFrameHz, uint16_t targetHz, const RenderStage& target):
+Renderer::Renderer(const std::string& id, uint32_t keyFrameHz, uint16_t targetHz, const RenderStage& target):
   RenderStage(id + " renderer", target.fieldSize(),
               target.fieldCount(), target.buffers().size()),
   core::Task(id.c_str(), 4096, taskPrio,
@@ -16,12 +16,12 @@ Renderer::Renderer(const String& id, uint32_t keyFrameHz, uint16_t targetHz, con
   // guess we might want to pre-set size for these tho. then again objs themselves not big since consist of ptrs...
   for(int i=0; i < target.buffers().size(); i++) {
     auto& model = target.buffer(i);
-    lg.dbg((String)"Creating renderer buf " + i + " for " + model.id() + ", size " + model.fieldSize() + "/" + model.fieldCount());
+    // lg.dbg((std::string)"Creating renderer buf " + std::to_string(i) + " for " + model.id() + ", size " + model.fieldSize() + "/" + model.fieldCount());
     // model.printTo(lg); // ln.print(model); // also works?? discontinue lol
 
     bs.push_back(std::vector<std::shared_ptr<Buffer>>());
     for(auto s: {"origin", "target"}) {
-      bs[i].emplace_back(new Buffer(id + " " + s + " " + i, model.fieldSize(), model.fieldCount()));
+      bs[i].emplace_back(new Buffer(id + " " + s + " " + std::to_string(i), model.fieldSize(), model.fieldCount()));
     }
     get(i, CURRENT).setPtr(model); // in turn directly pointed to Strip buffer (for DMA anyways, handled internally anyways)
     get(i, CURRENT).setDithering(true); // must for proper working. needs to be a setting tho!!

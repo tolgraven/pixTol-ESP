@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "smooth/core/Task.h"
 #include "smooth/core/ipc/IEventListener.h"
 #include "smooth/core/ipc/SubscribingTaskEventQueue.h"
@@ -68,7 +70,7 @@ class FnTask: public core::Task {
     core::Task(core::APPLICATION_BASE_PRIO - 5, milliseconds{ms}),
     task(task) { start(); }
 
-  FnTask(const String& id, int ms, std::function<void()> task,
+  FnTask(const std::string& id, int ms, std::function<void()> task,
          int stackSize = 3000, int prio = core::APPLICATION_BASE_PRIO):
     core::Task(id.c_str(), stackSize, prio, milliseconds{ms}),
     task(task) { start(); }
@@ -82,7 +84,7 @@ class EventFnTask: public core::Task, public IEventListener<T> {
   std::shared_ptr<SubscribingTaskEventQueue<T>> queue;
   using EvtFn = std::function<void(const T& evt)>;
   EvtFn task;
-  EventFnTask(const String& id, EvtFn task, int stackSize = 3000,
+  EventFnTask(const std::string& id, EvtFn task, int stackSize = 3000,
               int prio = core::APPLICATION_BASE_PRIO - 5):
     core::Task(id.c_str(), stackSize, prio, milliseconds{10000}),
     queue(SubscribingTaskEventQueue<T>::create(5, *this, *this)),
@@ -98,12 +100,13 @@ class TaskedRunnable: public core::Task { // will auto clear on dtor right
   public:
   TaskedRunnable(Runnable* runner, int stackSize = 4096,
                  int prio = core::APPLICATION_BASE_PRIO - 5, int tick = 5, int cpu = tskNO_AFFINITY):
-    core::Task((runner->id() + " " + runner->type() + runner->uid()).c_str(), stackSize, prio, milliseconds{tick}, cpu),
+    core::Task((runner->id() + " " + runner->type() + std::to_string(runner->uid())).c_str(),
+                stackSize, prio, milliseconds{tick}, cpu),
     runner(runner) {
       // start(); // lets chill w auto init
     }
 
-  void init() override { DEBUG("Start TaskedRunnable " + runner->id() + " " + runner->uid()); }
+  void init() override { }
   void tick() override { runner->run(); }
 
   Runnable& get() { return *(runner.get()); }
@@ -114,7 +117,7 @@ class TaskedRunnable: public core::Task { // will auto clear on dtor right
 
 class TaskRunGroup: public RunnableGroup, public core::Task { // will auto clear on dtor right
   public:
-  TaskRunGroup(const String& id, int stackSize = 4000,
+  TaskRunGroup(const std::string& id, int stackSize = 4000,
                int prio = core::APPLICATION_BASE_PRIO - 5, int tick = 5,
                int cpu = tskNO_AFFINITY):
     RunnableGroup(id),
@@ -131,7 +134,7 @@ template<class T> // like this'd solve but obv dum-dum lose are cntainer
 class TaskGroup: public Runnable, public core::Task { // Q is are eg Inputters one task tot with sep threads or each single one a task?
   // guess latter since can work priority dep on timed out, high activity etc...  but in the end should be very event driven w data coming in.
   public:
-  TaskGroup(const String& id, int priority = 5, int tick = 5, int cpu = tskNO_AFFINITY):
+  TaskGroup(const std::string& id, int priority = 5, int tick = 5, int cpu = tskNO_AFFINITY):
     Runnable(id, "tasks"),
     core::Task(id.c_str(), 4096, priority, milliseconds{tick}, cpu) {
       start(); //maybe not always safe start on reg? could also pass event to hook start to?
@@ -143,7 +146,7 @@ class TaskGroup: public Runnable, public core::Task { // Q is are eg Inputters o
   void add(Runnable* task) { _tasks.emplace_back(static_cast<T*>(task)); }
   T& get(uint8_t index = 0) { return *(_tasks[index].get()); }
   T& operator[](uint8_t index) { return get(index); }
-  T& get(const String& id) { // something something copy operator.
+  T& get(const std::string& id) { // something something copy operator.
     for(auto&& t: _tasks)
       if(id == t->id())
         return *((T*)*t);
@@ -165,7 +168,7 @@ class TaskGroup: public Runnable, public core::Task { // Q is are eg Inputters o
 //  so this thing can fuckoff hahah
 // class TaskGroupGeneral: public RunnableContainer, public core::Task {
 //   public:
-//   TaskGroupGeneral(const String& id, int priority = 7, int cpu = tskNO_AFFINITY):
+//   TaskGroupGeneral(const std::string& id, int priority = 7, int cpu = tskNO_AFFINITY):
 //     RunnableContainer(id),
 //     core::Task(id.c_str(), 8096, priority, std::chrono::milliseconds{5}, cpu) {}
 

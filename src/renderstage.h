@@ -45,14 +45,14 @@ using namespace smooth::core;
 // and is continously run(), trying to fetch input or send output.
 class RenderStage: public ChunkedContainer, public Runnable { // should be called something else. dunno what
   public:
-    RenderStage(const String& id, uint16_t numBytes): RenderStage(id, 1, numBytes) {}
-    RenderStage(const String& id, uint8_t fieldSize, uint16_t fieldCount,
+    RenderStage(const std::string& id, uint16_t numBytes): RenderStage(id, 1, numBytes) {}
+    RenderStage(const std::string& id, uint8_t fieldSize, uint16_t fieldCount,
                 uint8_t bufferCount = 1, uint16_t portIndex = 0, uint16_t targetHz = 40);
     virtual ~RenderStage() { _buffers.clear(); }
     virtual void init() {}
 
     size_t printTo(Print& p) const override;
-    void sendDiagnostic(const String s) {} // impl as Stream? art has pollreply freestle text, or  opt for using whatever output...
+    void sendDiagnostic(const std::string s) {} // impl as Stream? art has pollreply freestle text, or  opt for using whatever output...
 
     void setSubFieldOrder(const uint8_t subFields[]) override {
       for(auto b: buffers()) b->setSubFieldOrder(subFields);
@@ -101,8 +101,8 @@ class Inputter: public RenderStage {
   // std::shared_ptr<TaskEventQueue<Buffer>> sendQueue; // POSTING. pass in ctor so can post specific and not to everyone
   // std::shared_ptr<SubscribingTaskEventQueue<Buffer>> queue; // POSTING. pass in ctor so can post specific and not to everyone
   public:
-    Inputter(const String& id, uint16_t bufferSize = 512): Inputter(id, 1, bufferSize) {} // raw bytes = field is 1
-    Inputter(const String& id, uint8_t fieldSize, uint16_t fieldCount,
+    Inputter(const std::string& id, uint16_t bufferSize = 512): Inputter(id, 1, bufferSize) {} // raw bytes = field is 1
+    Inputter(const std::string& id, uint8_t fieldSize, uint16_t fieldCount,
              uint8_t bufferCount = 1, uint16_t portIndex = 0):
       RenderStage(id, fieldSize, fieldCount, bufferCount, portIndex) {
       setType("inputter"); // just use RTTI...
@@ -116,7 +116,7 @@ class Inputter: public RenderStage {
 
 class NetworkIn: public Inputter { // figure artnet/sacn/opc (more?) such common format could use this?
   public:
-  NetworkIn(const String& id, uint16_t startPort, uint8_t numPorts, uint16_t pixels = 0):
+  NetworkIn(const std::string& id, uint16_t startPort, uint8_t numPorts, uint16_t pixels = 0):
     Inputter(id, 1, 512, numPorts, startPort) {
       setType("NetworkIn");
     } //tho some not so DMX-aligned
@@ -130,9 +130,9 @@ class NetworkIn: public Inputter { // figure artnet/sacn/opc (more?) such common
 
 class Outputter: public RenderStage, public PureEvtTask, public Sub<PatchOut> {
   public:
-  Outputter(const String& id, uint16_t bufferSize = 512):
+  Outputter(const std::string& id, uint16_t bufferSize = 512):
     Outputter(id, 1, bufferSize) {} // raw bytes = field is 1
-  Outputter(const String& id, uint8_t fieldSize, uint16_t fieldCount,
+  Outputter(const std::string& id, uint8_t fieldSize, uint16_t fieldCount,
             uint8_t bufferCount = 1, uint16_t portIndex = 0):
     RenderStage(id, fieldSize, fieldCount, bufferCount, portIndex),
     PureEvtTask((id + " event runner").c_str(), 24),
@@ -149,11 +149,11 @@ class Outputter: public RenderStage, public PureEvtTask, public Sub<PatchOut> {
 
 class Generator: public Inputter {
   public:
-    Generator(const String& id, uint16_t bufferSize = 1): // raw bytes = field is 1
+    Generator(const std::string& id, uint16_t bufferSize = 1): // raw bytes = field is 1
       Generator(id, 1, bufferSize, 1) {} // raw bytes = field is 1
-    Generator(const String& id, const RenderStage& model):
+    Generator(const std::string& id, const RenderStage& model):
       Generator(id, model.fieldSize(), model.fieldCount(), model.buffers().size()) {}
-    Generator(const String& id, uint8_t fieldSize, uint16_t fieldCount, uint8_t bufferCount = 1):
+    Generator(const std::string& id, uint8_t fieldSize, uint16_t fieldCount, uint8_t bufferCount = 1):
       Inputter(id, fieldSize, fieldCount, bufferCount) {
         setType("Generator");
       }
@@ -193,7 +193,7 @@ class Driver { // shared container so I/O can yada
   // friend RenderStage; // or not even necessary let's see...
 
   public:
-  Driver(const String& id, Args&&... args) {
+  Driver(const std::string& id, Args&&... args) {
     _driver(new T(std::forward<Args>(args)...));
   }
 

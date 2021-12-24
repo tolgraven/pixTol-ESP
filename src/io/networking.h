@@ -21,15 +21,15 @@
 namespace tol {
 
 struct MDNSService {
-  String name, protocol; //or just enum lol
+  std::string name, protocol; //or just enum lol
   uint16_t port;
-  struct InfoField { String name, value; };
+  struct InfoField { std::string name, value; };
   std::vector<InfoField> infoFields;
 };
 
 class NetworkConnection: public Named, public smooth::core::Task { // wifi + mesh/Now, bt, anything else ad-hoc? or generic enough for MQTT etc? tho diff cat
   public:
-  NetworkConnection(const String& id, const String& type):
+  NetworkConnection(const std::string& id, const std::string& type):
     Named(id, type), smooth::core::Task(("NetworkConnection " + id).c_str(), 3072, 8, std::chrono::seconds(10)) {}
   virtual ~NetworkConnection() {}
 
@@ -47,14 +47,14 @@ class WifiConnection: public NetworkConnection {
   std::unique_ptr<WiFiManager> wifiManager;
   std::vector<WiFiManagerParameter> customParams; // After connecting, parameter.getValue() will get you the configured value id/name placeholder/prompt default length
 
-  String hotspotDefaultPassword = "baconmanna";
+  std::string hotspotDefaultPassword = "baconmanna";
 
   struct IfConfig { // blabla anyways need a central point for easy reconfiguration
     IPAddress ip, subnetMask, gateway;
     bool dhcp;
   };
   public:
-  WifiConnection(const String& id, const String& type):
+  WifiConnection(const std::string& id, const std::string& type):
    NetworkConnection("wifi", type) { //provide some kinda (likely subset of) config obj...
 
     wifiManager = std::make_unique<WiFiManager>(); //unlikely this obj itself will be needed for so long.
@@ -108,7 +108,7 @@ class WifiConnection: public NetworkConnection {
       return false; // our caller will have to ensure light starts flashing red and shit asplode
     }
 #ifdef ESP8266
-    String chipId = String(ESP.getChipId(), HEX);
+    std::string chipId = std::string(ESP.getChipId(), HEX);
     MDNS.setInstanceName((id() + " (" + chipId + ")").c_str()); // printf("%s (%s)", );
 
     if(MDNS.begin(id().c_str())) {
@@ -120,7 +120,7 @@ class WifiConnection: public NetworkConnection {
         for(auto& txt: svc.infoFields)
         MDNS.addServiceTxt(svc.name, svc.protocol, txt.name, txt.value);
        } // MDNS.addService("e131", "udp", E131_DEFAULT_PORT); MDNS.addService("http", "tcp", HTTP_PORT);
-       // MDNS.addServiceTxt("e131", "udp", "TxtVers", String(RDMNET_DNSSD_TXTVERS)); MDNS.addServiceTxt("e131", "udp", "ConfScope", RDMNET_DEFAULT_SCOPE); MDNS.addServiceTxt("e131", "udp", "E133Vers", String(RDMNET_DNSSD_E133VERS));
+       // MDNS.addServiceTxt("e131", "udp", "TxtVers", std::string(RDMNET_DNSSD_TXTVERS)); MDNS.addServiceTxt("e131", "udp", "ConfScope", RDMNET_DEFAULT_SCOPE); MDNS.addServiceTxt("e131", "udp", "E133Vers", std::string(RDMNET_DNSSD_E133VERS));
       }
 #endif
       wifiManager.reset(nullptr);

@@ -38,7 +38,7 @@ void Strip::setPixelColor(uint16_t pixel, RgbColor color) {
   if(_mirror) _driver[0]->SetPixelColor(ledsInStrip-1 - pixel, color);
 }
 
-void Strip::adjustPixel(uint16_t pixel, String action, uint8_t value) {
+void Strip::adjustPixel(uint16_t pixel, std::string action, uint8_t value) {
   if(fieldSize() == 4) {
     RgbwColor color;
     getPixelColor(pixel, color);
@@ -168,7 +168,7 @@ void Strip::initDriver() {
   DEBUG("Init drivers");
   for(size_t port=0; port < buffers().size(); port++) {
     // DEBUG("Init driver: ", port, ", wazaa");
-    DEBUG((String)"Init driver: " + port + ", wazaa");
+    // DEBUG((std::string)"Init driver: " + port + ", wazaa");
     printTo(lg);
     if(!externalDriver) {
       // if(_driver[port]) delete _driver[port];

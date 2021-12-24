@@ -46,7 +46,7 @@ class CommandRunner { // right so this incarnation = dumb = parse strings n shit
       
       it->second(id, util::split(args, "\n"));
     } else {
-      lg.err("Command not found " + (String)id.c_str(), "CommandRunner");
+      lg.err("Command not found " + (std::string)id.c_str(), "CommandRunner");
     }
   }
 

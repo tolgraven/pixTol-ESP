@@ -14,7 +14,7 @@ int _write(int file, char *ptr, int len) {
 
 namespace tol {
 
-bool Log::initOutput(const String& output) {
+bool Log::initOutput(const std::string& output) {
   Print* pr = nullptr;
   if(output == "Serial") { // tho, obviously, entire point is being able to define elsewhere.
     pr = &Serial;
@@ -26,8 +26,8 @@ bool Log::initOutput(const String& output) {
   if(pr) {
     auto dest = LogOutput(output, *pr);
     if(enableColor) {
-      auto fmt = [](const String& loc, const String& lvl, const String& txt) {
-                  return String((String)millis() +
+      auto fmt = [](const std::string& loc, const std::string& lvl, const std::string& txt) {
+                  return std::string(std::to_string(millis()) +
                       "\t[" + Ansi<Yellow>(lvl) + "]\t" +
                       Ansi<Blue>(loc) + "\t" + txt); };
       dest.setFmt(fmt);
@@ -40,7 +40,7 @@ bool Log::initOutput(const String& output) {
   return pr;
 }
 
-void Log::log(const String& text, const Level level, const String& location) const {
+void Log::log(const std::string& text, const Level level, const std::string& location) const {
   if(!shouldLog(level)) return;
   if(whiteList.size() > 0) { // filter-in active
     bool found = false;
@@ -57,24 +57,24 @@ void Log::log(const String& text, const Level level, const String& location) con
     }
   }
 
-  String lvl = convert(level);
+  std::string lvl = convert(level);
   auto& guard = smooth::core::logging::Log::guard;
   std::unique_lock<std::mutex> lock(guard);
   for(auto& dest: destinations) { dest.log(location, lvl, text); }
   for(auto& dest: moreDest) { dest.log(location, lvl, text); } // temp. need tuuplay of various strategies
 }
 
-void Log::ln(const String& text, const Level level, const String& location) const {
+void Log::ln(const std::string& text, const Level level, const std::string& location) const {
   log(text + "\n", level, location);
 }
-void Log::dbg(const String& text, const String& location) const {
+void Log::dbg(const std::string& text, const std::string& location) const {
   ln(text, DEBUG, location);
 }
-void Log::err(const String& text, const String& location) const {
+void Log::err(const std::string& text, const std::string& location) const {
   ln(text, ERROR, location);
 }
 
-void Log::f(const String& location, const Level level, const char *format, ...) const {
+void Log::f(const std::string& location, const Level level, const char *format, ...) const {
   if(!shouldLog(level)) return;
   va_list arg; va_start(arg, format);
   char b[180]; //so, if too long, then what? fooled me once!
@@ -83,7 +83,7 @@ void Log::f(const String& location, const Level level, const char *format, ...) 
   log(b, level, location);
 }
 
-void Log::fEvery(uint16_t numCalls, uint8_t id, const String& location, const Level level, const char *format, ...) const {
+void Log::fEvery(uint16_t numCalls, uint8_t id, const std::string& location, const Level level, const char *format, ...) const {
   if(!shouldLog(level)) return;
 
   static std::map<uint8_t, uint16_t> callTracker;

@@ -19,12 +19,12 @@ class PhysicalComponent { // should have setup, update routines, a la Homie.
   // Should also prob be (to start) inheriting HomieNode, but easily decoupled...
   // these need to register themselves with something put in Scheduler, on creation, then automatically setup/update
   protected:
-  String _id;
+  std::string _id;
   std::vector<uint8_t> pins;
   virtual void setup() {}
 
   public:
-    PhysicalComponent(const String& id, const std::vector<uint8_t>& pins):
+    PhysicalComponent(const std::string& id, const std::vector<uint8_t>& pins):
       _id(id), pins(pins) {
       setup();
     }
@@ -34,9 +34,9 @@ class PhysicalComponent { // should have setup, update routines, a la Homie.
 };
 
 class RotaryEncoder: public PhysicalComponent, public Inputter {
-  // RotaryEncoder(uint8_t aPin = D1, uint8_t bPin = D2, uint8_t clickPin = D3, const String& id = "Rotary Encoder",
+  // RotaryEncoder(uint8_t aPin = D1, uint8_t bPin = D2, uint8_t clickPin = D3, const std::string& id = "Rotary Encoder",
   public:
-  RotaryEncoder(const String& id, const std::vector<uint8_t>& pins,
+  RotaryEncoder(const std::string& id, const std::vector<uint8_t>& pins,
       bool resetOnClick = true, void (*clickCallback)(long pos) = nullptr, uint16_t debounceMs = 50):
     PhysicalComponent(id, pins), Inputter(id, 1, 2), //two fields (pos and click), one wide
      clickCallback(clickCallback), resetOnClick(resetOnClick), debounceMs(debounceMs) {
@@ -91,7 +91,7 @@ class OutputPin: public PhysicalComponent, public Outputter {
     Outputter("Pin", 1, 1) {
       pinMode(p, OUTPUT);
   }
-  OutputPin(const String& id, std::vector<uint8_t> pins):
+  OutputPin(const std::string& id, std::vector<uint8_t> pins):
     PhysicalComponent(id, pins),
     Outputter(id, 1, pins.size()) {
       for(auto p: pins) pinMode(p, OUTPUT);

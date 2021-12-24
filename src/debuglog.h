@@ -33,11 +33,11 @@ class Debug {
   Debug(uint8_t* stackAtStartDummy):
     stackAtStart(stackAtStartDummy) {}
 
-  bool sendIfChanged(const String& property, int value);
-  void logFunctionChannels(uint8_t* dataStart, const String& id, uint8_t expectedHz = 40, uint8_t num = 12);
+  bool sendIfChanged(const std::string& property, int value);
+  void logFunctionChannels(uint8_t* dataStart, const std::string& id, uint8_t expectedHz = 40, uint8_t num = 12);
   void registerToLogEvery(Buffer& buffer, uint16_t seconds);
-  void logDMXStatus(uint8_t* data, const String& id = "SRC"); // for logging and stuff... makes sense?
-  void logAndSave(const String& msg); //possible approach...  log to serial + save message, then post by LN once MQTT up
+  void logDMXStatus(uint8_t* data, const std::string& id = "SRC"); // for logging and stuff... makes sense?
+  void logAndSave(const std::string& msg); //possible approach...  log to serial + save message, then post by LN once MQTT up
 
   void run();
 
@@ -54,16 +54,16 @@ class Debug {
 
   // EspSaveCrash saveCrash((uint16_t)0x0010, (uint16_t)0x1000); // original 0x0200 / 512 barely fits fucking one... dumb...
   // EspSaveCrash saveCrash{(uint16_t)0x0010, (uint16_t)0x1000}; ; // original 0x0200 / 512 barely fits fucking one... dumb...
-  // String getStacktrace() {
+  // std::string getStacktrace() {
   //   // unique_ptr<char[]> lastStacktraceBuffer = new char[2048];
   //   // std::unique_ptr<char*> lastStacktraceBuffer(new char[2048]);
   //   // std::unique_ptr<char[]> lastStacktraceBuffer = new char[2048];
   //   // std::unique_ptr<char[]> lastStacktraceBuffer(new char[2048]); // Allocate a buffer to store contents of the file.
   //   char* lastStacktraceBuffer = new char[2048];
   //   saveCrash.crashToBuffer(lastStacktraceBuffer);
-  //   String outStr(lastStacktraceBuffer);
+  //   std::string outStr(lastStacktraceBuffer);
   //   delete[] lastStacktraceBuffer;
-  //   // return String(*lastStacktraceBuffer);
+  //   // return std::string(*lastStacktraceBuffer);
   //   return outStr; //wont work right right?
   // }
 

@@ -23,7 +23,7 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
                                                        // slices also map nicely onto our chunks, plus easier do stuff like "do op x on all white pixels"
                                                        // but then most interesting stuff is here already prob?
     iBuffer() = default;
-    iBuffer(const String& id, uint8_t fieldSize, uint16_t fieldCount,
+    iBuffer(const std::string& id, uint8_t fieldSize, uint16_t fieldCount,
             T* const dataPtr = nullptr, bool copy = false):
       Named(id, "Buffer"), ChunkedContainer(fieldSize, fieldCount),
       ownsData(!dataPtr || copy),

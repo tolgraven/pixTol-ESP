@@ -141,7 +141,7 @@ class Scheduler: public Runnable, public core::Task  {
   float progressMultiplier = 0;
 
   public:
-  Scheduler(const String& id):
+  Scheduler(const std::string& id):
     Runnable(id, "scheduler"),
     core::Task("not-scheduler", 4096, core::APPLICATION_BASE_PRIO - 3, milliseconds{2500}), // try pin 1
     artnet(std::make_shared<ArtnetDriver>(id)) { // try in main task tho..

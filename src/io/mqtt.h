@@ -13,7 +13,7 @@
 class MqttHomie: public Inputter {
   public:
     // MqttHomie(): Inputter("Homie", 1, 128), HomieNode("Render-control", "Inputter") {
-  MqttHomie(const String& id, const String& topic, uint16_t fieldCount): //or does num-anything make sense with dynamic auto-mapping?
+  MqttHomie(const std::string& id, const std::string& topic, uint16_t fieldCount): //or does num-anything make sense with dynamic auto-mapping?
     /* Inputter(id, 1, fieldCount), HomieNode(id, "Input") { */
     Inputter(id, 1, fieldCount) {
 
@@ -21,7 +21,7 @@ class MqttHomie: public Inputter {
     /* advertiseRange(topic, 0, fieldCount-1).settable(); */
   }
 
-  bool handleInput(const String& property, const HomieRange& range, const String& value) {
+  bool handleInput(const std::string& property, const HomieRange& range, const std::string& value) {
     if(range.index < fieldCount()) {
       uint8_t* val = new uint8_t(value.toFloat() * 255);
       buffer().setCopy(val, 0, 0, range.index);

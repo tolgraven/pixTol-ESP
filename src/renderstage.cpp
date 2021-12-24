@@ -2,7 +2,7 @@
 
 namespace tol {
 
-RenderStage::RenderStage(const String& id, uint8_t fieldSize, uint16_t fieldCount,
+RenderStage::RenderStage(const std::string& id, uint8_t fieldSize, uint16_t fieldCount,
                          uint8_t bufferCount, uint16_t portIndex, uint16_t targetHz):
   ChunkedContainer(fieldSize, fieldCount),
   Runnable(id, "Renderstage", targetHz), _portId(portIndex) {
@@ -16,7 +16,7 @@ RenderStage::RenderStage(const String& id, uint8_t fieldSize, uint16_t fieldCoun
 
 size_t RenderStage::printTo(Print& p) const {
   size_t n = Runnable::printTo(p)
-            + p.print((String)buffers().size() + " ports:\n");
+            + p.print((std::to_string(buffers().size()) + " ports:\n").c_str());
   for(auto& b: buffers()) n += b->printTo(p);
   return n;
 }
@@ -32,7 +32,7 @@ Buffer& RenderStage::buffer(uint8_t index) const {
     auto b = _buffers.at(index);
     return *b;
   } catch(const std::out_of_range& oor) {
-    lg.err((String)"Out of range: " + oor.what());
+    lg.err((std::string)"Out of range: " + oor.what());
     throw(oor);
   }
   return *(_buffers[index]); // that'll sho'em!!

@@ -53,8 +53,8 @@ struct BasicEvent {
 // ffs take all this knowledge and build some practical and actually usable shit.  show it to people.
 class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, more?
   private:
-  String _id;
-  std::map<String, Updater*> updater;
+  std::string _id;
+  std::map<std::string, Updater*> updater;
   // NTPTime time; // reckon will help with the rougher (simpler) parts of sync https://github.com/aharshac/EasyNTPClient
   /* PhysicalUI* ui = nullptr; */ // WebUI* webUI;
   // Status lastStatus;
@@ -62,14 +62,14 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
   // std::unique_ptr<WifiConnection> wifi;
   // bool connected = false;
   // FileIO fs;
-  // String cfgFile = "/config.json"; //let's just use WifiManager quick while then move to ConfigManager
+  // std::string cfgFile = "/config.json"; //let's just use WifiManager quick while then move to ConfigManager
   public:
 
   Debug* debug = nullptr;
   uint32_t timeBootDone, timeCurrent;
   /* Config* config; //we'll need to make one of these. */
 
-  Device(const String& id): _id(id) { // serial, random seed mean this before anything else but that makes sense since want watchdog, statusled, display etc from boot...
+  Device(const std::string& id): _id(id) { // serial, random seed mean this before anything else but that makes sense since want watchdog, statusled, display etc from boot...
     // uint8_t stackStart = 0;
     // debug = new Debug(&stackStart);
     // Serial.begin(SERIAL_BAUD); // XXX tempwell, not if uart strip tho...
@@ -102,7 +102,7 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
     // connected = wifi->start(); //blocking...
 
     // updater["OTA"] = new ArduinoOTAUpdater(_id);
-    /* updater["HTTP"] = new HttpUpdater(String(Homie.getConfiguration().mqtt.server.host), 1880, s); */
+    /* updater["HTTP"] = new HttpUpdater(std::string(Homie.getConfiguration().mqtt.server.host), 1880, s); */
 
     handleBootLoop();
 
@@ -189,8 +189,8 @@ class DataIO: public Named { // something common then subclass for SPIFFS, EEPRO
   virtual bool start() = 0;
   virtual bool stop() = 0;
   virtual bool clear() = 0;
-  virtual bool write(const String& location, const String& contents) = 0;
-  virtual std::unique_ptr<char[]> read(const String& location) = 0; // virtual char* read() = 0;
+  virtual bool write(const std::string& location, const std::string& contents) = 0;
+  virtual std::unique_ptr<char[]> read(const std::string& location) = 0; // virtual char* read() = 0;
   // bool writeConfig(); // SPIFFS, RTC, EEPROM..
   // void readConfig();
 };
@@ -202,7 +202,7 @@ class DataIO: public Named { // something common then subclass for SPIFFS, EEPRO
 //   virtual bool start() { return SPIFFS.begin(); } // or even skip theses and enough w ctor/dtor...
 //   virtual bool stop() { SPIFFS.end(); return true; }
 //   virtual bool clear() { return SPIFFS.format(); }
-//   virtual bool write(const String& path, const String& contents) {
+//   virtual bool write(const std::string& path, const std::string& contents) {
 //     File file = SPIFFS.open(path, "w"); //whether or not file exists we can write to it...
 //     if(!file) { return false; }
 //     file.print(contents);
@@ -210,8 +210,8 @@ class DataIO: public Named { // something common then subclass for SPIFFS, EEPRO
 //     return true;
 //   }
 
-//   // virtual char* read(const String& path) {
-//   virtual std::unique_ptr<char[]> read(const String& path) {
+//   // virtual char* read(const std::string& path) {
+//   virtual std::unique_ptr<char[]> read(const std::string& path) {
 //     if(!SPIFFS.exists(path)) return nullptr;
 //     File file = SPIFFS.open(path, "r"); //file exists, reading and loading
 //     if(!file)  return nullptr;  // for long like these maybe a helper fn that logs an error and returns... or statuscodes.
@@ -230,8 +230,8 @@ class DataIO: public Named { // something common then subclass for SPIFFS, EEPRO
 //   virtual ~EepromIO() { stop(); }
 //   virtual bool start() { EEPROM.begin(size); }
 //   virtual bool stop() { EEPROM.end(); }
-//   virtual bool write(const String& fileName, const String& contents) { }
-//   virtual std::unique_ptr<char[]> read(const String& fileName) { }
+//   virtual bool write(const std::string& fileName, const std::string& contents) { }
+//   virtual std::unique_ptr<char[]> read(const std::string& fileName) { }
 // };
 // class DataFormat { //to encode as json bubt also binary packing crap yada
 //   DataFormat() {}

@@ -13,7 +13,7 @@
 
 
 class IOT { //XXX better name/plan. merge with Device?
-  String _id;
+  std::string _id;
   /* BatteryNode* battery; */
   /* const HomieEvent* lastEvent = nullptr; */
   uint8_t disconnects = 0;
@@ -24,23 +24,23 @@ class IOT { //XXX better name/plan. merge with Device?
   public:
   /* ConfigNode* cfg; */
   Device* device;
-  /* std::map<String, HomieNode*> node; */
+  /* std::map<std::string, HomieNode*> node; */
 
-  // using PropertyCallback = std::function<bool(const HomieRange&, const String&)>;
-  // using NodeCallback = std::function<bool(const String&, const HomieRange&, const String&)>;
+  // using PropertyCallback = std::function<bool(const HomieRange&, const std::string&)>;
+  // using NodeCallback = std::function<bool(const std::string&, const HomieRange&, const std::string&)>;
   // struct PropertyConfig {
-  //   String id;
+  //   std::string id;
   //   bool settable = true;
   //   int range[2] = {0, 0}; // = no range
   //   // std::pair<int, int> range;
   //   PropertyCallback handler = nullptr;
-  // }; //std::function<void(const String& value)>
+  // }; //std::function<void(const std::string& value)>
   //
   // struct NodeConfig {
-  //   String id, type;
+  //   std::string id, type;
   //   NodeCallback handler = nullptr;
   //   std::vector<PropertyConfig> properties;
-  //   NodeConfig(const String& id, const String& type, std::vector<PropertyConfig> properties, NodeCallback handler = nullptr):
+  //   NodeConfig(const std::string& id, const std::string& type, std::vector<PropertyConfig> properties, NodeCallback handler = nullptr):
   //     id(id), type(type), properties(properties), handler(handler) {
   //   }
   // };
@@ -48,8 +48,8 @@ class IOT { //XXX better name/plan. merge with Device?
 
   uint8_t blendMode = 0;
 
-  /* IOT(const String& id, Device* device): _id(id), cfg(new ConfigNode()), device(device) { */
-  IOT(const String& id, Device* device): _id(id), device(device) {
+  /* IOT(const std::string& id, Device* device): _id(id), cfg(new ConfigNode()), device(device) { */
+  IOT(const std::string& id, Device* device): _id(id), device(device) {
     /* homieOTAUpdater = new HomieUpdater(); */
     using namespace std::placeholders;
 
@@ -75,7 +75,7 @@ class IOT { //XXX better name/plan. merge with Device?
     /* node["mode"]->advertise("power").settable(std::bind(&IOT::powerHandler, this, _1, _2)); //just on/off for Homekit etc... */
 
     /* node["status"] = new HomieNode("status", "log"); */
-    /* const String statusProperties[] = */
+    /* const std::string statusProperties[] = */
     /* {"freeHeap", "heapFragmentation", "maxFreeBlockSize", */
     /*   "fps", "droppedFrames", */
     /*  "dimmer.base", "dimmer.force", "dimmer.out", "dimmer.strip"}; */
@@ -90,7 +90,7 @@ class IOT { //XXX better name/plan. merge with Device?
     /* // color */
     /* // rgbw 1 4 */
     /* // rgb 1 3 */
-    /* // std::map<String, std::pair*>, then attempt make pair of anything after first word? not null then advertiseRange... */
+    /* // std::map<std::string, std::pair*>, then attempt make pair of anything after first word? not null then advertiseRange... */
     /* // then ideally callbacks formed mostly dynamically, from pre-set blocks, */
     /* // "save to dest"(var, cfg... likely existing with same id in whatever lookup map) */
     /* // "call fn"(wrap needed since cant skip homie cb step) */
@@ -167,7 +167,7 @@ class IOT { //XXX better name/plan. merge with Device?
     /* } */
   }
 
-  /* bool outputHandler(const String& property, const HomieRange& range, const String& value) { */
+  /* bool outputHandler(const std::string& property, const HomieRange& range, const std::string& value) { */
   /*   /1* node["output"]->setProperty(property).send(value); //i mean for sure automate this shit.. *1/ */
 
   /*   if(property == "strip") { // XXX well it should disable the object not fuck w pinmode lol */
@@ -179,7 +179,7 @@ class IOT { //XXX better name/plan. merge with Device?
   /*   return true; */
   /* } */
 
-  /* bool inputHandler(const String& property, const HomieRange& range, const String& value) { */
+  /* bool inputHandler(const std::string& property, const HomieRange& range, const std::string& value) { */
   /*   /1* node["input"]->setProperty(property).send(value); *1/ */
 
   /*   bool on = (value == "on"); */
@@ -197,14 +197,14 @@ class IOT { //XXX better name/plan. merge with Device?
   /*   return true; */
   /* } */
 
-  /* /1* bool controlsHandler(const HomieRange& range, const String& value) { *1/ */
+  /* /1* bool controlsHandler(const HomieRange& range, const std::string& value) { *1/ */
   /* /1*   if(range.index <= f->numChannels) { *1/ */
   /* /1*     f->chOverride[range.index-1] = value.toInt(); *1/ */
   /* /1*     node["mode"]->setProperty("controls").setRange(range).send(value); *1/ */
   /* /1*     return true; *1/ */
   /* /1*   } return false; *1/ */
   /* /1* } *1/ */
-  /* /1* bool blendHandler(const HomieRange& range, const String& value) { *1/ */
+  /* /1* bool blendHandler(const HomieRange& range, const std::string& value) { *1/ */
   /* /1*   if(range.index == 0) { //piggyback pixel blend mode ctrl here *1/ */
   /* /1*     blendMode = value.toInt(); *1/ */
   /* /1*   } else if(range.index <= f->numChannels) { *1/ */
@@ -215,7 +215,7 @@ class IOT { //XXX better name/plan. merge with Device?
   /* /1*   return true; *1/ */
   /* /1* } *1/ */
 
-  /* bool powerHandler(const HomieRange& range, const String& value) { */
+  /* bool powerHandler(const HomieRange& range, const std::string& value) { */
   /*   if(value == "fullreset")    { Homie.reset(); //total reset, stay safe yo */
   /*   } else if(value == "restart") { */
   /*     ESP.restart(); //rather go through device so can set lwd etc */
@@ -232,7 +232,7 @@ class IOT { //XXX better name/plan. merge with Device?
   /* HslColor globalHslColor = HslColor(0.1, 0.42, 0.56); */
   /* RgbwColor* globalOutputColor = &globalRgbwColor; //should obv be one and the same later updating both with each... */
 
-  /* bool colorHandler(const String& property, const HomieRange& range, const String& value) { */
+  /* bool colorHandler(const std::string& property, const HomieRange& range, const std::string& value) { */
   /*   bool wasSuccessful = false; */
 
   /*   /1* if(property == "color") { *1/ */
@@ -268,17 +268,17 @@ class IOT { //XXX better name/plan. merge with Device?
   /*   if(wasSuccessful) { */
   /*     /1* s->setColor(*globalOutputColor); *1/ */
   /*   } */
-  /*   lg.dbg("Set color went:" + (String)wasSuccessful); */
+  /*   lg.dbg("Set color went:" + (std::string)wasSuccessful); */
   /*   return wasSuccessful; */
   /* } */
 
-  /* // bool settingsHandler(const HomieRange& range, const String& value) { */
+  /* // bool settingsHandler(const HomieRange& range, const std::string& value) { */
   /* //   mode.setProperty("settings").send(value); */
   /* //   return true; // was thinking interframes, strobehz, dmxhz, log, flipped. but eh so much wooorke */
   /* // } */
 
-  /* bool globalInputHandler(const HomieNode& node, const String& property, const HomieRange& range, const String& value) { */
-  /*   // static std::map<String, std::function<void(const String& value)>> actions; //this'd be koool */
+  /* bool globalInputHandler(const HomieNode& node, const std::string& property, const HomieRange& range, const std::string& value) { */
+  /*   // static std::map<std::string, std::function<void(const std::string& value)>> actions; //this'd be koool */
   /*   if(property == "mode") { */
   /*     if(value == "dmx") { */
   /*     } else if(value == "mqtt") { */
@@ -288,7 +288,7 @@ class IOT { //XXX better name/plan. merge with Device?
   /*   return true; */
   /* } */
 
-  /* bool broadcastHandler(const String& level, const String& value) { // not sure what to use for but will prob get something... */
+  /* bool broadcastHandler(const std::string& level, const std::string& value) { // not sure what to use for but will prob get something... */
   /*   lg.f("BROADCAST", Log::INFO, "Level %s: %s", level.c_str(), value.c_str()); */
   /*   return true; */
   /* } */

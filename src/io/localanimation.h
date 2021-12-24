@@ -18,7 +18,7 @@
 // start off by basically equally shitty Blinky, but with Buffer target instead of Strip...
 class LocalAnimation: public Inputter {
   public:
-  LocalAnimation(const String& id, uint8_t bitDepth, uint16_t pixels):
+  LocalAnimation(const std::string& id, uint8_t bitDepth, uint16_t pixels):
     Inputter(id, bitDepth, pixels) {
     }
 
@@ -28,7 +28,7 @@ class LocalAnimation: public Inputter {
     // or simply... nothing
     // start by using NeoPixelAnimator prob...
   }
-  std::map<String, RgbwColor> colors;
+  std::map<std::string, RgbwColor> colors;
   void generatePalette() {
     colors["black"]  = RgbwColor(0, 0, 0, 0);
     colors["white"]  = RgbwColor(150, 150, 150, 255);
@@ -38,7 +38,7 @@ class LocalAnimation: public Inputter {
     colors["green"]  = RgbwColor(20, 255, 22, 35);
     colors["blue"]   = RgbwColor(37, 85, 255, 32);
   }
-  bool color(const String& name = "black") {
+  bool color(const std::string& name = "black") {
     if(colors.find(name) != colors.end()) {
       uint8_t c[4];
       c[0] = colors[name].R;
@@ -56,7 +56,7 @@ class LocalAnimation: public Inputter {
     return false;
   }
 
-  void gradient(const String& from = "white", const String& to = "black") {
+  void gradient(const std::string& from = "white", const std::string& to = "black") {
     lg.dbg(from + "<>" + to + " gradient requested");
     RgbwColor* one = colors.find(from) != colors.end()? &colors[from]: nullptr; //colors["white"];
     RgbwColor* two = colors.find(to)   != colors.end()? &colors[to]:   nullptr; //colors["black"];
@@ -74,7 +74,7 @@ class LocalAnimation: public Inputter {
     gradient("orange", "black");
   }
 
-  void blink(const String& colorName, uint8_t blinks = 1) {
+  void blink(const std::string& colorName, uint8_t blinks = 1) {
     for(int8_t b = 0; b < blinks; b++) {
       color(colorName);
       // homieDelay(100);

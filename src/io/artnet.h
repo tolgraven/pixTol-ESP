@@ -31,7 +31,7 @@ class ArtnetDriver: public IEventListener<IPAddress>, public core::Task { // or 
   bool started = false;
 
   public:
-  ArtnetDriver(const String& id):
+  ArtnetDriver(const std::string& id):
     core::Task("artnet-driver", 4096, core::APPLICATION_BASE_PRIO + 2, pollReplyTick),
     artnet(new artnet::Driver((id + " ArtNet").c_str())) {
   }

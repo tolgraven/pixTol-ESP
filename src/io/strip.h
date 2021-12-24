@@ -246,7 +246,7 @@ class Strip: public Outputter {
   //   _driver(d), externalDriver(true) {
   //     initDriver();
   // }
-  Strip(const String& id, uint8_t fieldSize, uint16_t ledCount, uint8_t bufferCount = 1):
+  Strip(const std::string& id, uint8_t fieldSize, uint16_t ledCount, uint8_t bufferCount = 1):
     Outputter(id, fieldSize, ledCount, bufferCount) {
       initDriver();
       for(int i=0; i < bufferCount; i++) {
@@ -292,7 +292,7 @@ class Strip: public Outputter {
     return Color(color, 4);
   }
 
-  void adjustPixel(uint16_t pixel, String action, uint8_t value);
+  void adjustPixel(uint16_t pixel, std::string action, uint8_t value);
 
   /* void rotateBack(uint16_t pixels) { _driver->RotateLeft(pixels); } */
   /* void rotateFwd(uint16_t pixels) {  _driver->RotateRight(pixels); } */
@@ -377,7 +377,7 @@ class Strip: public Outputter {
 /*   } */
 /*   ~Blinky() { delete s; } */
 
-/*   std::map<String, RgbwColor> colors; */
+/*   std::map<std::string, RgbwColor> colors; */
 
 /*   void generatePalette() { */
 /*     colors["black"]  = RgbwColor(0, 0, 0, 0); */
@@ -389,7 +389,7 @@ class Strip: public Outputter {
 /*     colors["blue"]   = RgbwColor(37, 85, 255, 32); */
 /*   } */
 
-/*   bool color(const String& name = "black") { */
+/*   bool color(const std::string& name = "black") { */
 /*     if(colors.find(name) != colors.end()) { */
 /*       lg.dbg("Set color: " + name); */
 /*       s->setColor(colors[name]); */
@@ -398,7 +398,7 @@ class Strip: public Outputter {
 /*     return false; */
 /*   } */
 
-/*   void gradient(const String& from = "white", const String& to = "black") { */
+/*   void gradient(const std::string& from = "white", const std::string& to = "black") { */
 /*     lg.dbg(from + "<>" + to + " gradient requested"); */
 /*     /1* RgbwColor* one = colors.find(from) != colors.end()? &colors[from]: nullptr; //colors["white"]; *1/ */
 /*     /1* RgbwColor* two = colors.find(to)   != colors.end()? &colors[to]:   nullptr; //colors["black"]; *1/ */
@@ -421,7 +421,7 @@ class Strip: public Outputter {
 /*   /1* void testCB(int stage=0) { *1/ */
 /*   /1*   lg.logf("Blinky", Log::DEBUG, "Run gradient CB test"); *1/ */
 /*   /1*   /2* std::vector<auto> calls = {color("black"), gradient("black", "blue")}; *2/ *1/ */
-/*   /1*   /2* std::vector<String[2]> args = { {"black", "blue"}, {"blue", "green"}, {"green", "red"}, {"red", "orange"} }; *2/ *1/ */
+/*   /1*   /2* std::vector<std::string[2]> args = { {"black", "blue"}, {"blue", "green"}, {"green", "red"}, {"red", "orange"} }; *2/ *1/ */
 
 /*   /1*   /2* color("black"); *2/ *1/ */
 /*   /1*   /2* gradient("black", "blue"); *2/ *1/ */
@@ -432,7 +432,7 @@ class Strip: public Outputter {
 /*   /1*   /2* gradient("orange", "black"); *2/ *1/ */
 /*   /1* } *1/ */
 
-/*   void blink(const String& colorName, uint8_t blinks = 1, bool restore = true, uint16_t numLeds = 0) { */
+/*   void blink(const std::string& colorName, uint8_t blinks = 1, bool restore = true, uint16_t numLeds = 0) { */
 /*     uint16_t originalLedCount = s->fieldCount(); */
 /*     if(numLeds && numLeds != s->fieldCount()) s->fieldCount(numLeds); //so can do like clear to end of entire strip if garbage there and not using entire... */
 

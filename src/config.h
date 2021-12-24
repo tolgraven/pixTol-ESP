@@ -148,7 +148,7 @@ class ConfigNode: public HomieNode { // seems homie (now?) has a 10 settings lim
     // optBool flip;
 
   protected:
-  // virtual bool handleInput(const String& property, const HomieRange& range, const String& value) {
+  // virtual bool handleInput(const std::string& property, const HomieRange& range, const std::string& value) {
   //   // Homie.getLogger() << "Property: " << property << ", " << "value: " << value;
   //   lg.logf(__func__, tol::Log::DEBUG, "Got prop %s, value=%s", property.c_str(), value.c_str());
   //   // write to json or whatever, makes sense to can update straight mqtt no json-over-mqtt?
@@ -162,12 +162,12 @@ class ConfigNode: public HomieNode { // seems homie (now?) has a 10 settings lim
 #endif
 
 // struct PixtolConfig {
-//   PixtolConfig(const String& id): id(id) {}
-//   String type, id; //name of app/thing, id of individual unit
+//   PixtolConfig(const std::string& id): id(id) {}
+//   std::string type, id; //name of app/thing, id of individual unit
 
 //   struct Port {
-//     Port(const String& id, uint16_t port): id(id), port(port) {}
-//     String id;
+//     Port(const std::string& id, uint16_t port): id(id), port(port) {}
+//     std::string id;
 //     uint16_t port; //universe or equiv, network port, physical pin/port id, w/e
 //     // should this contain kind, or is that for owner to know?
 //     // prob go in here somehow? but like from above types, not "artnet" or w/e anyways bc we also want
@@ -178,14 +178,14 @@ class ConfigNode: public HomieNode { // seems homie (now?) has a 10 settings lim
 //   };
 //   enum DataUnit { BYTE, DOUBLEBYTE, FLOAT };
 //   struct IOConfig {
-//     IOConfig(const String& id, uint8_t fieldSize, uint16_t fieldCount, DataUnit dataType = BYTE):
+//     IOConfig(const std::string& id, uint8_t fieldSize, uint16_t fieldCount, DataUnit dataType = BYTE):
 //       id(id), fieldSize(fieldSize), fieldCount(fieldCount), dataType(dataType) {
 //       }
-//     IOConfig& addPort(const String& id, uint16_t number) {
+//     IOConfig& addPort(const std::string& id, uint16_t number) {
 //       ports.push_back(Port(id, number));
 //       return *this;
 //     }
-//     String id; //eg "ArtNet". use to look up from list of available...
+//     std::string id; //eg "ArtNet". use to look up from list of available...
 //     uint8_t fieldSize;
 //     uint16_t fieldCount;
 //     DataUnit fieldType; // uint16_t size; //size, in bytes, required for each port buffer

@@ -16,7 +16,7 @@ class OPC: public NetworkIn {
   std::unique_ptr<OpcClient> client;
   std::unique_ptr<OpcServer> server;
 
-  OPC(const String& id, uint16_t startChannel, uint8_t numPorts, uint16_t pixels):
+  OPC(const std::string& id, uint16_t startChannel, uint8_t numPorts, uint16_t pixels):
     NetworkIn(id, startChannel, numPorts, pixels),
     wifiServer(new WiFiServer(OPC_PORT_DEFAULT)),
     client(new OpcClient()),

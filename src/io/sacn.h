@@ -10,7 +10,7 @@ class sAcnInput: public NetworkIn {
   ESPAsyncE131* sacn;
   e131_packet_t* packet;
   public:
-  sAcnInput(const String& id, uint16_t startUni, uint8_t numPorts):
+  sAcnInput(const std::string& id, uint16_t startUni, uint8_t numPorts):
     NetworkIn(id, startUni, numPorts),
     sacn(new ESPAsyncE131(numPorts)), packet(new e131_packet_t()) {
       setType("sacn");

@@ -16,20 +16,21 @@ using UID = uint32_t;
 class Named: public Printable { // has a name and a type.
   public:
     Named(): Named("") {}
-    Named(const String& id, const String& type = "");
+    Named(const std::string& id, const std::string& type = "");
     virtual ~Named() {}
-    const String& id()   const { return _id; }
-    const String& type() const { return _type; } // prob rename "kind"
+    const std::string& id()   const { return _id; }
+    const std::string& type() const { return _type; } // prob rename "kind"
     UID           uid()  const { return _uid; }
-    void          setId(const String& newId)     { _id = newId; }
-    void          setType(const String& newType) { _type = newType; }
+    void          setId(const std::string& newId)     { _id = newId; }
+    void          setType(const std::string& newType) { _type = newType; }
     virtual size_t printTo(Print& p) const override {
-      return p.print("Type " + type() + ", id " + id() + ", uid" + uid() + ". ");
-      // return p.print(String(typeid(this).name()) + ", type " + type() + ", id " + id() + ". ");
+      // return p.print("Type " + type() + ", id " + id() + ", uid" + uid() + ". ");
+      return p.print("Just no");
+      // return p.print(std::string(typeid(this).name()) + ", type " + type() + ", id " + id() + ". ");
       // might as well just enable rtti and not have this fucking virtual?
     }
   private:
-    String _id, _type;
+    std::string _id, _type;
     UID _uid;
 };
 
@@ -53,7 +54,7 @@ class ChunkedContainer: public Printable {  // (Buffer, but also others containi
     const uint8_t* getSubFieldOrder() const { return subFieldOrder; }
 
     virtual size_t printTo(Print& p) const override {
-      return p.print((String)"fieldSize " + fieldSize() + ", fieldCount " + fieldCount() + ". ");
+      return 0; // return p.print((std::string)"fieldSize " + fieldSize() + ", fieldCount " + fieldCount() + ". ");
     }
   protected:
     uint8_t  _fieldSize;
@@ -83,7 +84,7 @@ struct Checkpoint {
 // same concepts are good forbtracking keyframes and interpolation and in some ways triggered stuff that will run anim eg strobe.
 class Runnable: public Named { // something expected to be run (usually continously
   public:
-    Runnable(const String& id, const String& type, uint16_t targetHz = 40): // make default targetHz build config option
+    Runnable(const std::string& id, const std::string& type, uint16_t targetHz = 40): // make default targetHz build config option
       Named(id, type), targetHz(targetHz) {
       ts.start = micros(); // more like create I guess
     }
@@ -145,7 +146,7 @@ class Runnable: public Named { // something expected to be run (usually continou
 // just a Runnable with a stack of Runnables...
 class RunnableGroup: public Runnable {
   public:
-  RunnableGroup(const String& id):
+  RunnableGroup(const std::string& id):
     Runnable(id, "Runnables") {}
 
   using Tasks = std::vector<std::shared_ptr<Runnable>>; // well yeah i guess if want this "ze same" just put a vector in reg with one elem pointing to this. but eh
@@ -155,7 +156,7 @@ class RunnableGroup: public Runnable {
   Runnable& get(int index) const { return *(_tasks[index].get()); }
   Runnable& operator[](int index) const { return get(index); }
 
-  Runnable& get(const String& id) { // something something copy operator.
+  Runnable& get(const std::string& id) { // something something copy operator.
     for(auto&& t: _tasks) {
       if(id == t->id()) return *t;
     }
@@ -183,7 +184,7 @@ class RunnableGroup: public Runnable {
 
 class LimitedRunnable: public Runnable { // took this out since is pretty useless + base ready() ought to lack side effects...
   public:
-    LimitedRunnable(const String& id, const String& type):
+    LimitedRunnable(const std::string& id, const std::string& type):
       Runnable(id, type) {}
 
     bool ready() override {
@@ -255,7 +256,7 @@ class LimitedRunnable: public Runnable { // took this out since is pretty useles
 
 
 class Timed { // eh overkill dynamic bs
-  String _id;
+  std::string _id;
   struct UpdateState {
     uint32_t updates;
     UpdateState(uint32_t currentUpdates):

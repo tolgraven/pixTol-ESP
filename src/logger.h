@@ -38,15 +38,13 @@ struct LogMessage {
 };
 
 class Logger: public core::Task,
-              public Sub<LogMessage<>>,
               public Sub<LogMessage<const char*>>,
-              public Sub<LogMessage<String>> {
+              public Sub<LogMessage<std::string>> {
   public:
   Logger():
     core::Task("Logger", 6144, 1, seconds(60), 0),
-    Sub<LogMessage<>>(this, 10),
     Sub<LogMessage<const char*>>(this, 10),
-    Sub<LogMessage<String>>(this, 10) {
+    Sub<LogMessage<std::string>>(this, 10) {
       start();
     }
 
@@ -60,9 +58,6 @@ class Logger: public core::Task,
     lg.log(msg.msg, Log::Level::INFO, msg.tag);
   }
   void onEvent(const LogMessage<std::string>& msg) override {
-    lg.log(msg.msg.c_str(), Log::Level::INFO, msg.tag.c_str()); // XXX for now. fix
-  }
-  void onEvent(const LogMessage<String>& msg) override {
     lg.log(msg.msg, Log::Level::INFO, msg.tag); // for now. fix
   }
 

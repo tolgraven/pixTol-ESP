@@ -29,7 +29,7 @@ class Strip: public Outputter {
   int flushes = 0, flushAttempts = 0;
 
   public:
-  Strip(const String& id, uint8_t subPixels, uint16_t pixelCount, uint16_t startPort,
+  Strip(const std::string& id, uint8_t subPixels, uint16_t pixelCount, uint16_t startPort,
         int16_t numPorts = 1):
     Outputter(id, subPixels, pixelCount, numPorts) {
       setType("Strip");

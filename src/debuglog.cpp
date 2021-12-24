@@ -3,20 +3,20 @@
 
 namespace tol {
 
-bool Debug::sendIfChanged(const String& property, int value) {
-  static std::map<String, int> propertyValues;
+bool Debug::sendIfChanged(const std::string& property, int value) {
+  static std::map<std::string, int> propertyValues;
   if(propertyValues.find(property) != propertyValues.end()) {
     int last = propertyValues[property];
     if(value == last || (value > 0.90*last && value < 1.10*last)) //XXX settable tolerance...
       return false;
   }
   lg.f(property, tol::Log::INFO, " %i \n", value);
-  /* lg.flushProperty(property, String(value)); */
+  /* lg.flushProperty(property, std::string(value)); */
   propertyValues[property] = value;
   return true; //set and sent
 }
 
-void Debug::logFunctionChannels(uint8_t* dataStart, const String& id, uint8_t expectedHz, uint8_t num) {
+void Debug::logFunctionChannels(uint8_t* dataStart, const std::string& id, uint8_t expectedHz, uint8_t num) {
   /* if(dmxFrameCounter % (expectedHz * flushEverySeconds)) return; */
 
   /* Serial.println(""); */
@@ -36,7 +36,7 @@ void Debug::registerToLogEvery(Buffer& buffer, uint16_t seconds) {
 void Debug::run() {
   for(auto buf: buffers) {
     if(!((startTime / 1000000) % buf.second)) {
-      Serial.println(buf.first->id() + ":");
+      Serial.println((buf.first->id() + ":").c_str());
       for(uint16_t b = 0; b < buf.first->lengthBytes(); b++) {
         Serial.printf("%u ", buf.first->get()[b]);
       } Serial.println("");
@@ -44,7 +44,7 @@ void Debug::run() {
   }
 }
 
-void Debug::logDMXStatus(uint8_t* data, const String& id) { // for logging and stuff... makes sense?
+void Debug::logDMXStatus(uint8_t* data, const std::string& id) { // for logging and stuff... makes sense?
   dmxFrameCounter++;
   uint32_t now = millis(), passed = now - lastFlush;
   if(passed / 1000 < flushEverySeconds) return;
@@ -62,14 +62,14 @@ void Debug::logDMXStatus(uint8_t* data, const String& id) { // for logging and s
     Serial.printf("%u ", data[b]);
   } Serial.println("");
 
-  // static const String keys[] = { "freeHeap", "heapFragmentation", "maxFreeBlockSize", "fps", "droppedFrames",
+  // static const std::string keys[] = { "freeHeap", "heapFragmentation", "maxFreeBlockSize", "fps", "droppedFrames",
   //   "dimmer.base", "dimmer.force", "dimmer.out"};
   // static const std::function<int()> getters[] =
   // { ESP.getFreeHeap(), ESP.getHeapFragmentation(), ESP.getMaxFreeBlockSize(),
   //   [=]() {dmxFrameCounter / (totalTime / 1000)},
   //   [s]() {return s->droppedFrames}, [f]() {return f->dimmer.getByte()}, [f]() {return f->chOverride[chDimmer]},
   // [f]() {return f->outBrightness}};
-  // static map<String, string> table(make_map(keys, getters));
+  // static map<std::string, string> table(make_map(keys, getters));
 
   /* sendIfChanged("freeHeap", ESP.getFreeHeap()); */
   /* sendIfChanged("heapFragmentation", ESP.getHeapFragmentation()); */
@@ -85,7 +85,7 @@ void Debug::logDMXStatus(uint8_t* data, const String& id) { // for logging and s
   dmxFrameCounter = 0; //illegal instruction this lol what
 }
 
-void Debug::logAndSave(const String& msg) { //possible approach...  log to serial + save message, then post by LN once MQTT up
+void Debug::logAndSave(const std::string& msg) { //possible approach...  log to serial + save message, then post by LN once MQTT up
   // cause now lose info if never connects...
 }
 
