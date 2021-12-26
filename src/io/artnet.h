@@ -1,9 +1,11 @@
 #pragma once
 
+#include <array>
 #include <functional>
 #include <artnet4real.h>
 #include <AsyncUDP.h>
 
+#include "smooth/core/network/Wifi.h"
 #include "smooth/core/logging/log.h"
 
 #include "log.h"
@@ -19,7 +21,7 @@ using namespace smooth::core::ipc;
 // using namespace anfr;
 namespace artnet = anfr;
 
-class ArtnetDriver: public IEventListener<IPAddress>, public core::Task { // or just wrap this after?
+class ArtnetDriver: public core::Task, public Sub<IPAddress> {
   // const int pollReplyInterval = 4000; // XXX figure out how the fuck this doesnt work as supposed to
   // milliseconds{4000} to Task works. milliseconds{const int} turns ns or some shit,
   // static const + constexpr milliseconds works. But passing ints works everywhere else.
@@ -33,7 +35,9 @@ class ArtnetDriver: public IEventListener<IPAddress>, public core::Task { // or 
   public:
   ArtnetDriver(const std::string& id):
     core::Task("artnet-driver", 4096, core::APPLICATION_BASE_PRIO + 2, pollReplyTick),
+    Sub<IPAddress>(this, 1),
     artnet(new artnet::Driver((id + " ArtNet").c_str())) {
+    start(); //start task. needed to receive IP event and actually start driver.
   }
   // template<class Fun, class... Args> typename std::result_of<Fun&&(Args&&...)>::type
   // template<class Fun, class... Args>
@@ -46,9 +50,9 @@ class ArtnetDriver: public IEventListener<IPAddress>, public core::Task { // or 
     return (artnet->*function)(std::forward<Args>(args)...);
   }
 
-  void init(const IPAddress& ip, const IPAddress& sub, uint8_t* mac) { // this should be called in response to NetworkEvent.
+  void setup(const IPAddress& ip, const IPAddress& sub, uint8_t* mac) { // this should be called in response to NetworkEvent.
     if(!started) {
-      lg.dbg("ARTNET INIT"); // BAD ERROR
+      lg.dbg("ARTNET INIT");
       if(ip != INADDR_NONE)
         artnet->init(ip, sub, mac);
       else
@@ -75,20 +79,26 @@ class ArtnetDriver: public IEventListener<IPAddress>, public core::Task { // or 
           });
       }
       artnet->begin();
-      started = true;
     }
   }
 
   void stop() { started = false; socket.close(); }
 
-  void event(const IPAddress& ip) override {
+  void onEvent(const IPAddress& ip) override {
     DEBUG("Artnet got IP event");
-    artnet->setIP(ip); //etc. update config. more to come.
+    if(!started) {
+      std::array<uint8_t, 6> mac;
+      bool gotMac = core::network::Wifi::get_local_mac_address(mac);
+      setup(ip, IPAddress(255,255,255,0), mac.data());
+      started = true;
+    } else {
+      artnet->setIP(ip); //etc. update config. more to come.
+    }
   }
 
   void tick() override {     //only on start and response. unless controller. or controllers poll says yada...
-    // lg.dbg("ARTNET driver tick - send pollreply");
-    artnet->sendPollReply(); // ola runs as node tho so welp gotta spam.
+    if(started)
+      artnet->sendPollReply(); // ola runs as node tho so welp gotta spam.
   }
 
   void cbRDM() {} // get on so can start using

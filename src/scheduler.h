@@ -130,13 +130,6 @@ class Scheduler: public Runnable, public core::Task  {
   std::vector<std::shared_ptr<Inputter>> ins;
   std::vector<std::shared_ptr<Outputter>> outs;
 
-  EventFnTask<IPAddress> ip{"IP", // really should be put in ArtnetDriver. Which might subclass a Driver which listens to a bunch of events. Generic "Connected"/"Disconnected" event (whether means wifi, bt, physical...) etc
-    [this](const IPAddress& ip) {
-        uint8_t mac[6]; WiFi.macAddress(mac);
-        this->artnet->init(ip, IPAddress(255,255,255,0), mac);
-        this->artnet->start(); //start task
-    }};
-
   uint32_t timeInputs = 0;
   float progressMultiplier = 0;
 
