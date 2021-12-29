@@ -79,12 +79,12 @@ iBuffer<T, T2> iBuffer<T, T2>::concat(const iBuffer& rhs) {
 template<class T, class T2>
 void iBuffer<T, T2>::fill(const iField<T, T2>& source, uint16_t from, uint16_t to) {
   if(!to || to >= fieldCount()) to = fieldCount() - 1; // also check from tho I guess..
-  for(auto f = from; f <= to; f++) setField(source, f);
+  for(auto f = from; f <= to; f++)
+    setField(source, f);
 }
 template<class T, class T2>
 void iBuffer<T, T2>::fill(const T& source, uint16_t from, uint16_t to) {
-  // for(int i=0; i < lengthBytes(); i += sizeof(T)) {
-  for(int i=0; i < lengthBytes(); i++) {
+  for(int i=0; i < length(); i++) { // more better
     data[i] = source;
   }
 }
