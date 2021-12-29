@@ -169,7 +169,6 @@ void Strip::initDriver() {
   for(size_t port=0; port < buffers().size(); port++) {
     // DEBUG("Init driver: ", port, ", wazaa");
     // DEBUG((std::string)"Init driver: " + port + ", wazaa");
-    printTo(lg);
     if(!externalDriver) {
       // if(_driver[port]) delete _driver[port];
       // if(fieldSize() == RGB)       _driver[port] = new StripRGB(ledsInStrip);

@@ -4,6 +4,7 @@
 #include <limits>
 #include <type_traits>
 #include <valarray>
+#include <string>
 
 #include <field.h>
 #include "base.h"
@@ -61,8 +62,9 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
     T*        operator*() const { return get(); } //does raw offset make much sense ever? still, got getField.get() so...
     operator  T*() const { return get(); }
 
-    size_t printTo(Print& p) const override {
-      return Named::printTo(p) + ChunkedContainer::printTo(p) + p.printf("this %p, data %p\n", this, this->get());
+    std::string toString() const override {
+      return Named::toString() + ". " + ChunkedContainer::toString() +
+        "this " + std::to_string((uint32_t)this) + ", data ", std::to_string((uint32_t)this->get());
     }
 
     uint16_t lengthBytes() const { return length() * sizeof(T); }

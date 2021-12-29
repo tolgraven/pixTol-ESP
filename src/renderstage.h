@@ -51,7 +51,7 @@ class RenderStage: public ChunkedContainer, public Runnable { // should be calle
     virtual ~RenderStage() { _buffers.clear(); }
     virtual void init() {}
 
-    size_t printTo(Print& p) const override;
+    std::string toString() const override;
     void sendDiagnostic(const std::string s) {} // impl as Stream? art has pollreply freestle text, or  opt for using whatever output...
 
     void setSubFieldOrder(const uint8_t subFields[]) override {

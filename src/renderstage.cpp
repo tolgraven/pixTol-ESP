@@ -11,14 +11,12 @@ RenderStage::RenderStage(const std::string& id, uint8_t fieldSize, uint16_t fiel
     _buffers.emplace_back(std::make_unique<Buffer>(id, fieldSize, fieldCount));
 
   init();
-  printTo(tol::lg);
 }
 
-size_t RenderStage::printTo(Print& p) const {
-  size_t n = Runnable::printTo(p)
-            + p.print((std::to_string(buffers().size()) + " ports:\n").c_str());
-  for(auto& b: buffers()) n += b->printTo(p);
-  return n;
+std::string RenderStage::toString() const {
+  auto s = Runnable::toString() + std::to_string(buffers().size()) + " ports:\n";
+  for(auto& b: buffers()) s += b->toString();
+  return s;
 }
 
 uint32_t RenderStage::sizeInBytes() const {

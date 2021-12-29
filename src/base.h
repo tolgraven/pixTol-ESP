@@ -3,9 +3,10 @@
 #include <memory>
 #include <functional>
 #include <vector>
+#include <string>
 
-#include <Arduino.h>
 #include <Ticker.h>
+#include <Arduino.h>
 
 namespace tol {
 
@@ -13,7 +14,7 @@ namespace tol {
 // add uid, ptr to parent (?) (well, creator, since can be multiple owners)
 using UID = uint32_t;
 
-class Named: public Printable { // has a name and a type.
+class Named { // has a name and a type.
   public:
     Named(): Named("") {}
     Named(const std::string& id, const std::string& type = "");
@@ -23,11 +24,9 @@ class Named: public Printable { // has a name and a type.
     UID           uid()  const { return _uid; }
     void          setId(const std::string& newId)     { _id = newId; }
     void          setType(const std::string& newType) { _type = newType; }
-    virtual size_t printTo(Print& p) const override {
-      // return p.print("Type " + type() + ", id " + id() + ", uid" + uid() + ". ");
-      return p.print("Just no");
-      // return p.print(std::string(typeid(this).name()) + ", type " + type() + ", id " + id() + ". ");
-      // might as well just enable rtti and not have this fucking virtual?
+
+    virtual std::string toString() const {
+      return std::to_string(uid()) + "-> " + type() + ": " + id();
     }
   private:
     std::string _id, _type;
@@ -36,8 +35,8 @@ class Named: public Printable { // has a name and a type.
 
 
 // setup with buffer(s) subdivided by elements of a specific size
-// templatize for float buffers and that.
-class ChunkedContainer: public Printable {  // (Buffer, but also others containing multuple Buffers - RS)
+// largely overlapping with Field stuff, utilize?
+class ChunkedContainer {  // (Buffer, but also others containing multuple Buffers - RS)
   public:
     ChunkedContainer(uint16_t fieldCount = 0): ChunkedContainer(1, fieldCount) {}
     ChunkedContainer(uint8_t fieldSize, uint16_t fieldCount):
@@ -53,9 +52,10 @@ class ChunkedContainer: public Printable {  // (Buffer, but also others containi
     uint8_t subFieldForIndex(uint8_t sub) const { return subFieldOrder? subFieldOrder[sub]: sub; }
     const uint8_t* getSubFieldOrder() const { return subFieldOrder; }
 
-    virtual size_t printTo(Print& p) const override {
-      return 0; // return p.print((std::string)"fieldSize " + fieldSize() + ", fieldCount " + fieldCount() + ". ");
+    std::string toString() const {
+      return "fieldSize " + std::to_string(fieldSize()) + ", fieldCount " + std::to_string(fieldCount());
     }
+
   protected:
     uint8_t  _fieldSize;
     uint16_t _fieldCount;
@@ -109,10 +109,9 @@ class Runnable: public Named { // something expected to be run (usually continou
 
     float averageHz(uint32_t timePeriod = 0) const { return (float)count.run / (micros() - ts.start); }
 
-    size_t printTo(Print& p) const override {
-      return Named::printTo(p) +
-             p.printf("Runs/drops %u / %u (%2.f hz). ",
-                 count.run, count.attempt - count.run, averageHz()); //osvosv fix bettr
+    std::string toString() const override {
+      return Named::toString() + ". Runs/drops " + std::to_string(count.run) + " / " +
+        std::to_string(count.attempt - count.run) + " (" + std::to_string(averageHz()) + " hz)";
     }
 
     void setTargetFreq(uint16_t hz) { targetHz = hz; }
@@ -217,6 +216,7 @@ class LimitedRunnable: public Runnable { // took this out since is pretty useles
       }
     };
 
+    // DEPRECATED
     class PeriodLimiter: public Limiter { // obvs dumb, no diff from maxHz
       Ticker timer;                    // tho multiple instances and ||'d limiters would do for patterns n shit
       bool isReady = false;
