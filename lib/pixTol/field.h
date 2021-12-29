@@ -64,7 +64,7 @@ class iField {
   iField(const iField& rhs): iField(rhs.get(), rhs.size(), 0, true) {  } // p f dangerous copy constructor unless actually copies, so...
   ~iField() { if(ownsData) delete[] data; }; // ~iField() { if(ownsData) delete[] data; }; //how goz dis when we dont created array, just using ptr?
 
-  bool operator==(const iField& rhs) const { return memcmp(rhs.get(), data, _size * sizeof(T)); } //XXX add alpha check n shite
+  bool operator==(const iField& rhs) const { return memcmp(rhs.get(), data, _size * sizeof(T)) == 0; } //XXX add alpha check n shite
   bool operator!=(const iField& rhs) const { return !(*this == rhs); }
   bool operator<(const iField& rhs)  const { return (average() <  rhs.average()); }
   bool operator<=(const iField& rhs) const { return (average() <= rhs.average()); }
