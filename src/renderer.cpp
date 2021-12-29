@@ -7,11 +7,11 @@ Renderer::Renderer(const std::string& id, uint32_t keyFrameHz, uint16_t targetHz
   RenderStage(id + " renderer", target.fieldSize(),
               target.fieldCount(), target.buffers().size()),
   core::Task(id.c_str(), 4096, taskPrio,
-             milliseconds{1000/targetHz}, // got div by zero, guess makes sense not yet initialized...
-             0), // test pin cpu has to be dynamic or at least properly calculated heh
-  Sub<PatchIn>(this), // I suppose these of course should run under a different thread duh! or just, may not interrupt frame mid-render..
+             milliseconds{1000/targetHz},
+             1), // test pin cpu has to be dynamic or at least properly calculated heh
+  Sub<PatchIn>(this),
   _keyFrameInterval(MILLION / keyFrameHz),
-  targetFps(keyFrameHz) {
+  targetFps(targetHz) {
 
   // guess we might want to pre-set size for these tho. then again objs themselves not big since consist of ptrs...
   for(int i=0; i < target.buffers().size(); i++) {

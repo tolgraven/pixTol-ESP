@@ -16,8 +16,6 @@
 
 namespace tol {
 
-const int rendererBaseTargetFPS = 1000;
-  
 
 class Renderer: public RenderStage,
                 public core::Task,
@@ -65,7 +63,7 @@ class Renderer: public RenderStage,
   const static int taskPrio = 18;
 
   uint32_t _keyFrameInterval, _lastKeyframe = 0, _lastFrame = 0; // still need tracking expected interval dep on srces yada but go away these...
-  int targetFps = rendererBaseTargetFPS;
+  int targetFps;
   const uint32_t keyFrameAdjustmentInterval = 1000000;
   std::vector<std::vector<std::shared_ptr<Buffer>>> bs;
 
