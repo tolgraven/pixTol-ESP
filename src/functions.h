@@ -41,7 +41,7 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
     // bool running = false;
     /* std::tuple<float> range; */
     /* float min = 0.f, max = 1.f; // XXX scaling */
-    std::optional<BlendEnvelope> e;
+    std::optional<BlendEnvelope> e{};
     // ADSREnvelope adsr; //dis the goal
   public:
     FunctionChannel(const std::string& id): _id(id) {}
@@ -62,8 +62,15 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
       origin = current; target = value;
     }
     void setTarget(RenderStage& targetRs) { rs = &targetRs; } //tho can manip anything taking a float (or properly wrapped), most common to just set a buffer?
-    void setEnvelope(BlendEnvelope& newEnv) { e = newEnv; }
-    void setEnvelope(float a, float r) { e->set(a, r); }
+    void setEnvelope(const BlendEnvelope& newEnv) { e = newEnv; }
+    void setEnvelope(float a, float r) { 
+      if(e.has_value())
+        e->set(a, r);
+      else {
+        setEnvelope(BlendEnvelope(_id + " BlendEnvelope"));
+        e->set(a, r);
+      }
+    }
 
     virtual float get() { return current; }
 
@@ -232,13 +239,14 @@ class Functions: public RenderStage,
     Sub<PatchControls>(this),
     target(target), numChannels(channelCount),
     chOverride("override", 1, channelCount),
-    val("val", 1, channelCount), blendOverride("blendOverride", 1, 12) {
+    val("val", 1, channelCount),
+    blendOverride("blendOverride", 1, channelCount) {
       
     lg.dbg("Create Functions, target Stage: " + target.id());
-     
+    
     chOverride.fill(-1);
     blendOverride.fill(0.5f);
-
+    
     chan[chDimmer] = new Dimmer(BlendEnvelope("dimmerEnvelope", 1.2f, 1.1f));
     // using namespace std::placeholders;
     // chan[chDimmer]->targetFn = std::bind(&RenderStage::setGain, target, _1);
