@@ -31,7 +31,7 @@ Renderer::Renderer(const std::string& id, uint32_t keyFrameHz, uint16_t targetHz
   if(auto order = target.buffer(0).getSubFieldOrder())
     setSubFieldOrder(order); // only sets it on "internal"/dest buffers so ORIGIN/TARGET now affected
 
-  effectors.emplace_back(std::make_shared<Interpolator>());
+  effectors.push_back(std::make_shared<Interpolator>());
 
   DEBUG("DONE");
 }

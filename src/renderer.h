@@ -33,8 +33,8 @@ class Renderer: public RenderStage,
 
   Renderer(const std::string& id, uint32_t keyFrameInterval, uint16_t targetHz, const RenderStage& target);
   
-  void addEffectManager(Functions* fun) {
-    functions.emplace_back(fun);
+  void addEffectManager(std::shared_ptr<Functions> fun) {
+    functions.push_back(fun);
   }
 
   void updateTarget(const Buffer& mergeIn, int index, uint8_t blendType = 0, bool mix = false);
