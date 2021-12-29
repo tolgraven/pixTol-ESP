@@ -26,7 +26,7 @@ float Strober::_apply(float value, float progress) {
 void Strober::start(float value) {
   float hz = (hzMax-hzMin) * value + hzMin;
   timeInStage[TOTAL]  = MILLION / hz;
-  timeInStage[PRE]    = 50000; //debounce
+  timeInStage[PRE]    = 150000; //debounce
   timeInStage[OPEN]   = std::min((uint32_t)(timeInStage[TOTAL] * fraction[OPEN]), maxTime[OPEN]);
   timeInStage[FADING] = std::min((uint32_t)(timeInStage[TOTAL] * fraction[FADING]), maxTime[FADING]);
   timeInStage[CLOSED] = timeInStage[TOTAL] - timeInStage[OPEN] - timeInStage[FADING];
