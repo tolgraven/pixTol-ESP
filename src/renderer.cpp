@@ -57,7 +57,7 @@ void Renderer::updateTarget(const Buffer& mergeIn, int i, uint8_t blendType, boo
     BlendEnvelope* e = nullptr;
     if(!functions.empty())
       e = &functions[0]->e;
-    get(i, TARGET).blendUsingEnvelopeB(get(i, TARGET), toMerge, 1.0, e); //very good, no effect unless A/R
+    get(i, TARGET).blendUsingEnvelopeB(get(i, ORIGIN), toMerge, 1.0, e); //very good, no effect unless A/R
   }
   _lastKeyframe = micros(); // maybe rather after ops...
 }
