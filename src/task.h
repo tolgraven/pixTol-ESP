@@ -38,16 +38,18 @@ using namespace std::chrono;
 // template<class Inheritor, class T>
 template<class T>
 class Sub: public IEventListener<T> {
-  bool enabled = true;
+  core::Task* task;
+  int size;
   public:
   std::shared_ptr<SubscribingTaskEventQueue<T>> queue;
   Sub(core::Task* task, int size = 2):
+    task(task), size(size),
     queue(SubscribingTaskEventQueue<T>::create(size, *task, *this)) {}
 
-  void disableSub() { enabled = false; } // ideally would disable at source but we can also just ignore events...
-  void enableSub() { enabled = true; }
-  virtual void event(const T& out) { if(enabled) onEvent(out); } // a default so don't _HAVE_ to implement
-  virtual void onEvent(const T& out) = 0; // a default so don't _HAVE_ to implement
+  void disableSub() { queue.reset(nullptr); }
+  void enableSub() { queue.reset(SubscribingTaskEventQueue<T>::create(size, *task, *this)); }
+  virtual void event(const T& out) { onEvent(out); } // a remnant, remove...
+  virtual void onEvent(const T& out) = 0;
 };
 
 class PureEvtTask: public core::Task { // Evt = Event, in what sense lol? I guess cause does nothing etc
