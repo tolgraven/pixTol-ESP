@@ -4,6 +4,7 @@
 #include <map>
 #include <vector>
 #include <string>
+#include <optional>
 
 #include <Arduino.h>
 
@@ -40,17 +41,17 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
     // bool running = false;
     /* std::tuple<float> range; */
     /* float min = 0.f, max = 1.f; // XXX scaling */
-    BlendEnvelope* e = nullptr;
+    std::optional<BlendEnvelope> e;
     // ADSREnvelope adsr; //dis the goal
   public:
     FunctionChannel(const std::string& id): _id(id) {}
-    FunctionChannel(const std::string& id, BlendEnvelope* e): _id(id), e(e) {}
+    FunctionChannel(const std::string& id, std::optional<BlendEnvelope> e): _id(id), e(e) {}
     FunctionChannel(const std::string& id, float a, float r):
-      FunctionChannel(id, new BlendEnvelope(id)) { e->set(a, r); }
-    virtual ~FunctionChannel() { if(e) delete e; }
+      FunctionChannel(id, BlendEnvelope(id)) { e->set(a, r); }
+    virtual ~FunctionChannel() {}
 
     void apply(float progress) {
-      float value = !e? target: e->interpolate(origin, target, progress); //first generic envelope interpolation
+      float value = !e.has_value()? target: e->interpolate(origin, target, progress); //first generic envelope interpolation
       current = _apply(value, progress); // apply using that, possibly returning further changed value
       // running = fIsZero(current)? false: true;
       if(targetFn) targetFn(get()); // gotta run even if zero to get 0 well ya get...
@@ -61,7 +62,7 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
       origin = current; target = value;
     }
     void setTarget(RenderStage& targetRs) { rs = &targetRs; } //tho can manip anything taking a float (or properly wrapped), most common to just set a buffer?
-    void setEnvelope(BlendEnvelope* newEnv) { if(e) delete e; e = newEnv; }
+    void setEnvelope(BlendEnvelope& newEnv) { e = newEnv; }
     void setEnvelope(float a, float r) { e->set(a, r); }
 
     virtual float get() { return current; }
@@ -146,7 +147,7 @@ class Strober: public FunctionChannel { //maybe more appropriate further general
 
 class Dimmer: public FunctionChannel { // XXX point dimmer to dest shutter. boom.
   public:
-  Dimmer(BlendEnvelope* e): FunctionChannel("Dimmer", e) {}
+  Dimmer(BlendEnvelope e): FunctionChannel("Dimmer", e) {}
   Dimmer(float a, float r): FunctionChannel("Dimmer", a, r) {}
 };
 
@@ -238,12 +239,13 @@ class Functions: public RenderStage,
     chOverride.fill(-1);
     blendOverride.fill(0.5f);
 
-    using namespace std::placeholders;
-    chan[chDimmer] = new Dimmer(new BlendEnvelope("dimmerEnvelope", 1.2f, 1.1f));
+    chan[chDimmer] = new Dimmer(BlendEnvelope("dimmerEnvelope", 1.2f, 1.1f));
+    // using namespace std::placeholders;
     // chan[chDimmer]->targetFn = std::bind(&RenderStage::setGain, target, _1);
     chan[chDimmer]->targetFn = [this](float result) {
       this->target.setGain(result);
     }; // an exercise in pointlessness: the std::bind equivalent suddenly simply stopped working.
+ 
     // is it this done in ctor and passed target overrides member target?
     // but being an opaque ref to a still existing asshole shouldn't that not matter?
     // or at least error? :S
