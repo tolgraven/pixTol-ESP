@@ -4,8 +4,8 @@ namespace tol {
 
 template<class T, class T2>
 void iBuffer<T, T2>::setCopy(const T* const newData, uint16_t copyLength, uint16_t readOffset, uint16_t writeOffset) {
-  if(!copyLength) copyLength = lengthBytes() - readOffset - writeOffset;
-  memcpy(data + writeOffset, newData + readOffset, copyLength); // watch out offset, if using to eg skip past fnChannels then breaks
+  if(!copyLength) copyLength = length() - readOffset - writeOffset;
+  memcpy(data + writeOffset * sizeof(T), newData + readOffset * sizeof(T), copyLength * sizeof(T)); // watch out offset, if using to eg skip past fnChannels then breaks
   setDirty();
 }
 template<class T, class T2>
