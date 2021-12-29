@@ -88,10 +88,11 @@ void Renderer::frame(float timeMultiplier) {
   if(timeMultiplier > 0.0f)       // no data fall-back or far-apart frames...
     progress *= timeMultiplier;   // progress is then made up so no realism huhu
   
-  if(progress > 1.0f)
-    progress = 1.0f; // bouncing is neat idea but prob means progress 0.3 0.6 0.9 0.8... when should be 1.0 in that case.
-    // progress = fabs(fmod(1.0f + progress, 2) - 1.0f); /* progress = fabs(sin(progress * PI - 0.5*PI)); //oh yeah dont even want a sine lol, just triangle */
-  else if(progress < 0.0f)
+  if(progress > 1.0f) {
+    progress = (timeMultiplier > 0.0f)? // bouncing only makes sense in slomo
+               fabs(fmod(1.0f + progress, 2) - 1.0f):
+               1.0f;
+  } else if(progress < 0.0f)
     progress = 0.0f;
 
   std::vector<PatchOut> patches;
