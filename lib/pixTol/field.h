@@ -51,7 +51,7 @@ class iField {
       *data = value;
   } // noo go gets to messy if we fuck with own allocs or smart ptrs
   // iField(args...): iField()
-  iField(T* bufferStart, size_t size, uint16_t fieldIndex = 0, bool copy = false):
+  iField(const T* bufferStart, size_t size, uint16_t fieldIndex = 0, bool copy = false):
     _size(size) {
       // XXX these make no sense. looks like copy makes it set *bufferStart to whats at fieldIndex...
       if      (!copy && bufferStart) { setPtr(bufferStart, fieldIndex);
@@ -163,8 +163,8 @@ class iField {
     return *this;
   }
   iField& setCopy(const iField& newData) { return setCopy(newData.get()); } //set data by copy. also need a copy constructor
-  iField& setPtr(T* bufferStart, uint16_t fieldIndex) { //set ptr, or copy block
-    data = bufferStart + fieldIndex * _size;
+  iField& setPtr(const T* const bufferStart, uint16_t fieldIndex) { //set ptr, or copy block
+    data = (T*)bufferStart + fieldIndex * _size;
     return *this;
   }
   iField& setSubField(T value, uint16_t index) { //set subfield. dunno I mean field[2] = 8 yeah?
