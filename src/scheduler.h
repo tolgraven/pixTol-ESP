@@ -179,58 +179,6 @@ class Scheduler: public Runnable, public core::Task  {
     DEBUG("DONE");
   }
 
-  // only thing need from this style going ahead is the mult-srcs support
-  // (obviously essential for local generators)
-  // so flesh out Patch obj more better and yea.
-  // void handleInput() {
-  //   lwd.stamp(PIXTOL_SCHEDULER_INPUT_DMX);
-  //   bool blank = true;
-  //   auto begin = micros();
-  //   auto fChans = renderer->f->numChannels;
-
-  //   for(auto& src: ins->tasks()) {
-
-  //     auto* source = static_cast<Inputter*>(src.get());
-  //     if(!source->dirty()) continue; // source's responsibility not set newData until all frames in (esp if sync used)
-
-  //     for(size_t i = 0; i < source->buffers().size(); i++) {
-  //       auto& b = source->buffer(i); // be careful. was creating a copy when just auto no &... well no shit?
-  //       if(!b.dirty()) continue;
-
-  //       bool blendAll = !controlsSource.length(); //still bit confusing
-  //       if((controlsSource == source->id() || blendAll) && (i == 0)) { //pref matches, only first chan used.
-  //         renderer->updateControls(b, blendAll);
-  //       }
-  //       // auto& strip = static_cast<Strip&>((*outs)[i]);
-  //       // auto offsetBuffer = Buffer(*b, strip.fieldCount(), fChans, false);
-  //       // offsetBuffer.setFieldSize(strip.fieldSize()); // ^ clone target-buffer and then just adjust its offset instead. fugly.
-
-  //       if(blank) { // so, need more stuff to splice which seems reasonable?  or rather, need Patch.  Tho given mult outs in this case dunno whether eg 2 renderers x 240px or all in one makes more sense?
-  //         // renderer->updateTarget(offsetBuffer, i);
-  //         blank = false; // doesn't hold up with multiple buffers.
-  //       } else {
-  //         int blendMode = 4; //used to come from iot but decoupled
-  //         // renderer->updateTarget(offsetBuffer, i, blendMode, true);
-  //       }
-
-  //       b.setDirty(false); // consumed
-  //     }
-  //   }
-
-  //   if(false) { // } else if(all sources timed out) {
-  //     lg.dbg("No input for 5 seconds, running fallback...");
-  //     // auto model = (Outputter&)(*outs)[0];
-  //     // ins->add(new Generator("Fallback animation", model)); // what will be
-  //     progressMultiplier = 0.001f;
-  //   }
-  //   timeInputs += micros() - begin;
-  // }
-
-  // void tick() override { _run(); }
-
-  // bool _run() override {
-  //   return true;
-  // }
 };
 
 }
