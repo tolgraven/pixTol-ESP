@@ -21,7 +21,7 @@ std::string RenderStage::toString() const {
 
 uint32_t RenderStage::sizeInBytes() const {
   uint32_t size = 0;
-  for(auto b: buffers()) size += b->length(); // * sizeof(T) remember extend templ evt
+  for(auto b: buffers()) size += b->lengthBytes(); // * sizeof(T) remember extend templ evt
   return size;
 }
 
@@ -46,25 +46,27 @@ bool RenderStage::dirty() const {
 
 
 bool Inputter::onData(uint16_t index, uint16_t length, uint8_t* data, bool flush) {
-  if(!length || length > sizeInBytes())
-    length = sizeInBytes();
-  if(index < buffers().size()) {
-    if(data != buffer(index).get()) { // dont touch if already pointing to right place.
-      buffer(index).setPtr(data);   //but then that can be done downstream too? just easier if here knows whether all related data has arrived...
-    }
-    if(flush) {
-      // actual: dispatch Buffer as event, uids and patch-structures with stored fns will send along
-      buffer(index).setDirty(true);
+  if(index < buffers().size())
+    return false; // and maybe log
+  auto& buf = buffer(index);
+  if(!length || length > buf.lengthBytes())
+    length = buf.lengthBytes(); // dont overflow on oversized input
+  
+  if(data != buf.get()) // dont touch if already pointing to right place.
+    buf.setPtr(data);   //but then that can be done downstream too? just easier if here knows whether all related data has arrived...
+  
+  if(flush) {
+    // actual: dispatch Buffer as event, uids and patch-structures with stored fns will send along
+    buf.setDirty(true);
 
-      if(index == 0 && controlDataLength != 0) { // temp til real Patch structure, 0 ctrls, 1 data...
-        auto [controls, data] = buffer(index).slice(controlDataLength); // should return shader_ptrs tho
-        ipc::Publisher<PatchControls>::publish(PatchControls(controls, index));
-        ipc::Publisher<PatchIn>::publish(PatchIn(data, index));
-      } else {
-        ipc::Publisher<PatchIn>::publish(PatchIn(buffer(index), index));
-      }
-      return true;
+    if(index == 0 && controlDataLength != 0) { // temp til real Patch structure, 0 ctrls, 1 data...
+      auto [controls, pix] = buf.slice(controlDataLength); // should return shader_ptrs tho
+      ipc::Publisher<PatchControls>::publish(PatchControls(controls, index));
+      ipc::Publisher<PatchIn>::publish(PatchIn(pix, index));
+    } else {
+      ipc::Publisher<PatchIn>::publish(PatchIn(buf, index));
     }
+    return true;
   }
   return false;
 }
