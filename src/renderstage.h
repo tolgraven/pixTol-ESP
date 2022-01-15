@@ -45,6 +45,7 @@ using namespace smooth::core;
 // and is continously run(), trying to fetch input or send output.
 class RenderStage: public ChunkedContainer, public Runnable { // should be called something else. dunno what
   public:
+    enum StageType { IN, OUT, THROUGH };
     RenderStage(const std::string& id, uint16_t numBytes): RenderStage(id, 1, numBytes) {}
     RenderStage(const std::string& id, uint8_t fieldSize, uint16_t fieldCount,
                 uint8_t bufferCount = 1, uint16_t portIndex = 0, uint16_t targetHz = 40);
@@ -66,10 +67,16 @@ class RenderStage: public ChunkedContainer, public Runnable { // should be calle
 
     void setBuffer(Buffer& pointTo, uint8_t index = 0) {
       _buffers.at(index) = std::shared_ptr<Buffer>(&pointTo);
+      // wouldn't we have to use std::move to capture any potential temporary object?
+      // but then would cause other trouble hmmm
       // XXX or rather repoint the ptr? again issue w this semi-managed shit is it's all-in or nothing...
       // tho as Buffers themselves still have notion of raw data ptr ownership shouldnt result in anything hmm
       // _buffers.at(index).assign(&pointTo);
     }
+    void updateBuffer(const Buffer& copyFrom, uint8_t index = 0) {
+      buffer(index).setCopy(copyFrom);
+    }
+    
     void setGain(float gain) {
       _gain = gain;
       for(auto& b: buffers())
@@ -87,14 +94,8 @@ class RenderStage: public ChunkedContainer, public Runnable { // should be calle
     float  _gain = 1.0; //applies to buffers within unless overridden.
     uint16_t _portId; // to start, only continous possible...   UDP port, pin, interface id, whatever...
     uint8_t _priority = 0; //might be useful for all stages no? just had in inputter earlier
+    StageType stageType;
   private:
-};
-
-class Router: public RenderStage {
-  // would need to support input buffers (likely those created by default...)
-  // and further buffers (for routing controls sep from data etc)
-  // and would be the one to actually publish...
-
 };
 
 class Inputter: public RenderStage {
@@ -103,26 +104,31 @@ class Inputter: public RenderStage {
   public:
     Inputter(const std::string& id, uint16_t bufferSize = 512): Inputter(id, 1, bufferSize) {} // raw bytes = field is 1
     Inputter(const std::string& id, uint8_t fieldSize, uint16_t fieldCount,
-             uint8_t bufferCount = 1, uint16_t portIndex = 0):
-      RenderStage(id, fieldSize, fieldCount, bufferCount, portIndex) {
+             uint8_t bufferCount = 1, uint16_t portIndex = 0,
+             int controlDataLength = 0):
+      RenderStage(id, fieldSize, fieldCount, bufferCount + (controlDataLength? 1: 0), portIndex) {
       setType("inputter"); // just use RTTI...
+      if(controlDataLength) {
+        controlsBuffer = std::make_shared<Buffer>(id + " controls", 1, controlDataLength);
+      }
     }
 
     bool onData(uint16_t index, uint16_t length, uint8_t* data, bool flush = true);
-    int controlDataLength = 12;
+  protected:
+    std::shared_ptr<Buffer> controlsBuffer;
 
     virtual void onCommand() {}
 };
 
 class NetworkIn: public Inputter { // figure artnet/sacn/opc (more?) such common format could use this?
   public:
-  NetworkIn(const std::string& id, uint16_t startPort, uint8_t numPorts, uint16_t pixels = 0):
-    Inputter(id, 1, 512, numPorts, startPort) {
+  NetworkIn(const std::string& id, uint16_t startPort, uint8_t numPorts, int controlDataLength = 0):
+    Inputter(id, 1, 512, numPorts, startPort, controlDataLength) {
       setType("NetworkIn");
     } //tho some not so DMX-aligned
 
   protected:
-  // bool isFrameSynced = false; // dunno if others, but Artnet lots timecode + flush stuff.
+  bool isFrameSynced = false; // dunno if others, but Artnet lots timecode + flush stuff.
   int lastStatusCode;
   // uint8_t lastSeq; //common enough?
 };

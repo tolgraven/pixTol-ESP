@@ -46,23 +46,27 @@ bool RenderStage::dirty() const {
 
 
 bool Inputter::onData(uint16_t index, uint16_t length, uint8_t* data, bool flush) {
-  if(index < buffers().size())
+  bool isControls = index == 0 && controlsBuffer != nullptr;
+  if(!isControls && !controlsBuffer && index > 0) {
+    index--; // since 0 taken up by controlsBuffer, tho it's not in RS bufs due to smaller size... 1 becomes 0 etc
+  }
+  if(index > buffers().size())
     return false; // and maybe log
-  auto& buf = buffer(index);
-  if(!length || length > buf.lengthBytes())
+  auto& buf = isControls? *controlsBuffer: buffer(index);
+  if(!length || length > buf.lengthBytes()) // tho uhh length 0 means empty so prob log and bail?
     length = buf.lengthBytes(); // dont overflow on oversized input
   
   if(data != buf.get()) // dont touch if already pointing to right place.
-    buf.setPtr(data);   //but then that can be done downstream too? just easier if here knows whether all related data has arrived...
+    buf.setPtr(data);
   
-  if(flush) {
+  if(!flush)
+    buf.setDirty(false); // since setPtr will dirty it...
+  else {
     // actual: dispatch Buffer as event, uids and patch-structures with stored fns will send along
     buf.setDirty(true);
 
-    if(index == 0 && controlDataLength != 0) { // temp til real Patch structure, 0 ctrls, 1 data...
-      auto [controls, pix] = buf.slice(controlDataLength); // should return shader_ptrs tho
-      ipc::Publisher<PatchControls>::publish(PatchControls(controls, index));
-      ipc::Publisher<PatchIn>::publish(PatchIn(pix, index));
+    if(isControls) { // temp til real Patch structure, 0 ctrls, 1 data...
+      ipc::Publisher<PatchControls>::publish(PatchControls(buf, index));
     } else {
       ipc::Publisher<PatchIn>::publish(PatchIn(buf, index));
     }
