@@ -8,7 +8,7 @@ Renderer::Renderer(const std::string& id, uint32_t keyFrameHz, uint16_t targetHz
               target.fieldCount(), target.buffers().size()),
   core::Task(id.c_str(), 4096, taskPrio,
              milliseconds{1000/targetHz},
-             1), // test pin cpu has to be dynamic or at least properly calculated heh
+             -1), // test pin cpu has to be dynamic or at least properly calculated heh
   Sub<PatchIn>(this),
   _keyFrameInterval(MILLION / keyFrameHz),
   targetFps(targetHz) {
@@ -20,16 +20,20 @@ Renderer::Renderer(const std::string& id, uint32_t keyFrameHz, uint16_t targetHz
     // model.printTo(lg); // ln.print(model); // also works?? discontinue lol
 
     bs.push_back(std::vector<std::shared_ptr<Buffer>>());
-    for(auto s: {"origin", "target"}) {
+    for(auto s: {"origin", "target", "out"}) {
       bs[i].emplace_back(new Buffer(id + " " + s + " " + std::to_string(i), model.fieldSize(), model.fieldCount()));
     }
-    get(i, CURRENT).setPtr(model); // in turn directly pointed to Strip buffer (for DMA anyways, handled internally anyways)
-    get(i, CURRENT).setDithering(true); // must for proper working. needs to be a setting tho!!
+    buffer(i).setDithering(true); // must for proper working. needs to be a setting tho!!
 
-    lg.f(__func__, Log::DEBUG, "curr at %p ptr %p\n", &get(i, CURRENT), get(i, CURRENT).get());
+    lg.f(__func__, Log::DEBUG, "curr at %p ptr %p\n", &get(i, OUT), get(i, OUT).get());
   }
-  if(auto order = target.buffer(0).getSubFieldOrder())
-    setSubFieldOrder(order); // only sets it on "internal"/dest buffers so ORIGIN/TARGET now affected
+  if(auto order = target.buffer(0).getSubFieldOrder()) {
+    setSubFieldOrder(order); // only sets it on "internal"/dest buffers so ORIGIN/TARGET not affected
+    for(int i=0; i < bs.size(); i++) {
+      // get(i, OUT).setSubFieldOrder(order);
+      buffer(i).setSubFieldOrder(order);
+    }
+  }
 
   effectors.push_back(std::make_shared<Interpolator>());
 
@@ -38,7 +42,8 @@ Renderer::Renderer(const std::string& id, uint32_t keyFrameHz, uint16_t targetHz
 
 
 void Renderer::updateTarget(const Buffer& mergeIn, int i, uint8_t blendType, bool mix) {
-  _numKeyFrames++;
+  if(i == 0) // is first buffer, so update counters
+    _numKeyFrames++;
 
   Buffer toMerge(mergeIn); // need to adapt it to ours since source can be whatever
   // would be reasonable here, not interpolate, is where we actually utilize setSubFieldOrder
@@ -59,7 +64,8 @@ void Renderer::updateTarget(const Buffer& mergeIn, int i, uint8_t blendType, boo
       e = &functions[0]->e;
     get(i, TARGET).blendUsingEnvelopeB(get(i, ORIGIN), toMerge, 1.0, e); //very good, no effect unless A/R
   }
-  _lastKeyframe = micros(); // maybe rather after ops...
+  if(i == 0) // is first buffer, so update counters
+    _lastKeyframe = micros(); // maybe rather after ops...
 }
 
 // not sure why this is here yo. it's renderish I guess...
@@ -77,11 +83,13 @@ void Renderer::mixBuffers(Buffer& lhs, const Buffer& rhs, uint8_t blendType) {
 }
 
 void Renderer::frame(float timeMultiplier) {
-  uint32_t now = micros();
-  static uint32_t timeLastRender = 0;
-  static uint32_t timeSpentRendering = 0;
+  uint64_t now = micros();
+  static uint64_t timeLastRender = 0;
+  static uint64_t timeSpentRendering = 0;
   
   float progress = (now - _lastKeyframe + timeLastRender) / (float)_keyFrameInterval; // we keep track of expected time for Buffer::interpolate and Strip flush and aim "later" by adding interpolation time...
+  // but should probably use a running avg instead or single slow frame screws a bit with timing...
+  // also shouldn't we try to send one "pure" frame directly maybe hmm. guess we're mostly waiting on strip anyways tho...
   
   // this only really makes sense in the incoming merge step, not here
   // what really ought to be happening is a Generator with low weight/alpha/whatever steps in and everything moves towards that.
@@ -97,10 +105,10 @@ void Renderer::frame(float timeMultiplier) {
 
   std::vector<PatchOut> patches;
   for(int i=0; i < bs.size(); i++) { // well no, set a flag what's been updated or etc yada.
-    auto& curr = get(i, CURRENT);
+    auto& buf = buffer(i);
     auto& origin = get(i, ORIGIN);
     auto& target = get(i, TARGET);
-    bool fullGain = curr.getGain() > 0.95f; // skip interp for early frames to bust more out? such little time actually spent interp hehe
+    bool fullGain = buffer(i).getGain() > 0.95f; // skip interp for early frames to bust more out? such little time actually spent interp hehe
     if(false && fullGain && timeMultiplier == 0.0f) { // however need scaling elsewhere then if dimmer...
       // if(progress < 0.10f)      curr.setCopy(origin); // or eh what destructive we doing could maybe current temp pass through?
       // else if(progress > 0.90f) curr.setCopy(target);
@@ -111,22 +119,31 @@ void Renderer::frame(float timeMultiplier) {
     } else {
       // curr.interpolate(origin, target, progress);
       for(auto& eff: effectors)
-        eff->execute(curr, origin, target, progress);
+        eff->execute(buf, origin, target, progress);
     }
-
-    patches.emplace_back(curr, i); // at least curr RMT method we want these synchronized.
   }
 
   _numFrames++;
   if(!(_numFrames % 7500)) {
-    lg.f(__func__, tol::Log::DEBUG, "Run: %uus (avg %uus) fps: %u, key/frames %u %u\n",
-          timeLastRender, timeSpentRendering / (_numFrames + 1), _numFrames / (1 + (_lastFrame / MILLION)), _numKeyFrames, _numFrames);
+    lg.f(__func__, tol::Log::DEBUG, "Run: %lluus (avg %lluus) fps: %llu, key/frames %u %u\n",
+          timeLastRender, timeSpentRendering / (_numFrames + 1),
+          _numFrames / (1 + (_lastFrame / MILLION)),
+          _numKeyFrames, _numFrames);
   }
-
+  
   for(auto f: functions)
-    f->apply(progress);
+    f->apply(progress); // since these point to curr it doesn't matter bufs are cloned.
+
+  for(int i=0; i < bs.size(); i++) {
+    get(i, OUT).setCopy(buffer(i));       // double buffer so don't glitch when already rendering next by time event arrives
+    patches.emplace_back(get(i, OUT), i); // real issue iirc was Strip being pointed straight to curr I think? but optimize later yo
+  }
+                                    
   
   for(auto& p: patches) { // TODO we are waiting on all in this case, so send one event hehe. Different in other scenarios..
+    // ideally we would lock here and prevent next frame from doing anything until receivers have done their thing
+    // since yet another round of copying seems wasteful, but will have to do that for now
+    // (would passing a lock between threads even work?)
     ipc::Publisher<PatchOut>::publish(p); // publish "PatchOut" (poor name? not a one-time patch but like, current mapping, so...)
   }
 
