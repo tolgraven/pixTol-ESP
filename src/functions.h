@@ -63,7 +63,7 @@ class FunctionChannel { //rename, or group as, Function, for effects with multip
     }
     void setTarget(RenderStage& targetRs) { rs = &targetRs; } //tho can manip anything taking a float (or properly wrapped), most common to just set a buffer?
     void setEnvelope(const BlendEnvelope& newEnv) { e = newEnv; }
-    void setEnvelope(float a, float r) { 
+    void setEnvelope(float a, float r) {  // should be updateEnvelope...
       if(e.has_value())
         e->set(a, r);
       else {
@@ -192,7 +192,9 @@ class Rotate: public FunctionChannel {
     bool forward;
     float _apply(float value, float progress);
   public:
-    Rotate(bool forward): FunctionChannel("Rotate Strip"), forward(forward) {}
+    Rotate(bool forward): FunctionChannel("Rotate Strip",
+                                          BlendEnvelope("RotateEnvelope")),
+                          forward(forward) {}
 };
 
 class Bleed: public FunctionChannel {
@@ -269,7 +271,9 @@ class Functions: public RenderStage,
     chan[chNoise] = new Noise();
     chan[chBleed] = new Bleed();
     chan[chRotateFwd] = new Rotate(true);
+    chan[chRotateFwd]->setEnvelope(0.9, 0.9);
     chan[chRotateBack] = new Rotate(false);
+    chan[chRotateBack]->setEnvelope(0.9, 0.9);
     chan[chHue] = new RotateHue();
     for(auto c: chan) c.second->setTarget(target); //lock in strip s as our target...
 
