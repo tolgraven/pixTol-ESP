@@ -35,7 +35,7 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
           memset(data, 0, lengthBytes());
         }
         if(dataPtr && copy) {
-          setCopy(dataPtr, lengthBytes());
+          setCopy(dataPtr, length());
         }
     }
     virtual ~iBuffer() { // tho im not looking to inhering anymore right?
@@ -83,8 +83,7 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
     void setByField(const iBuffer& from, uint16_t numFields = 0, uint16_t readOffsetField = 0, uint16_t writeOffsetField = 0, bool autoLock = true);
     void setField(const iField<T, T2>& source, uint16_t fieldIndex); //XXX also set alpha etc - really copy entire field, but just grab data at ptr
 
-    // T* get(uint16_t unitOffset = 0) const { return this->data + sizeof(T) * unitOffset; } //does raw offset make much sense ever? still, got getField.get() so...
-    T* get(uint16_t unitOffset = 0) const { return this->data + unitOffset; } //does raw offset make much sense ever? still, got getField.get() so...
+    T* get(uint16_t unitOffset = 0) const { return this->data + unitOffset * fieldSize(); } // no sizeof(T) since pointer arithmetic...
     iField<T, T2> getField(uint16_t fieldIndex) const { return iField<T, T2>(data, (size_t)fieldSize(), fieldIndex); } //  // elide copy constructor - is straight
 
     iBuffer getSubsection(uint16_t startField, uint16_t endField = 0) const;
@@ -190,11 +189,13 @@ class iBuffer: public Named, public ChunkedContainer { //rename ValBuffer? lots 
        minValue = std::numeric_limits<T>::min(); //generally 0
     float alpha = 1.0; //or weight, or something...
     float _gain = 1.0;
-    T blackPoint = 0.010f * maxValue,
+    T blackPoint = 0.015f * maxValue,
       whitePoint = 0.95f  * maxValue,
-      noDitherPoint = 0.020f * maxValue;
+      noDitherPoint = 0.030f * maxValue;
     bool _dirty = false;
     // uint16_t updatedBytes = 0; //rename updatedFields?
+
+  friend class Interpolator;
   private:
 };
 

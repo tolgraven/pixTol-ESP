@@ -127,7 +127,16 @@ void iBuffer<T, T2>::shift(int count, uint16_t first, uint16_t last) {
   uint16_t toIndex = count < 0? first: first + count; // move fwd, it's just first+count. back, first?
   uint16_t numFields = min(last - toIndex + 1, last - fromIndex + 1); //limited by both space copied to, and from
 
-  memmove(get() + toIndex*fieldSize(), get() + fromIndex*fieldSize(), numFields * fieldSize());
+  // need to clear rest as well or becomes duplicated...
+  // auto* temp = new iBuffer<T, T2>(*this, 0, 0, true); // copied
+  auto* temp = new iBuffer<T, T2>("temp shift" + id(), fieldSize(), fieldCount()); // zeroed
+  temp->setCopy(*this);
+  auto numBytes = numFields*fieldSize() * sizeof(T);
+
+  memset(get(fromIndex), 0, numBytes); // clear area copied "from"
+  memmove(get(toIndex), temp->get(fromIndex), numBytes);
+
+  delete temp;
 } // intentional no dirty
 
 // template<class T, class T2>
@@ -224,6 +233,7 @@ void iBuffer<float, float>::applyGain() {
 //   }
 // }
 
+// XXX call A(progress) etc and pass results here instead so not dep on envelope
 template<class T, class T2>
 void iBuffer<T, T2>::blendUsingEnvelopeB(const iBuffer<T, T2>& origin, const iBuffer<T, T2>& target,
                                          float progress, BlendEnvelope* e) {

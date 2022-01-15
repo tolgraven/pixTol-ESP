@@ -43,7 +43,8 @@ bool IRAM_ATTR Interpolator::execute(Buffer& receiver, const Buffer& origin, con
                           + (mix24 - ((uint32_t)mix16 << 8)); // max 255 residual, 255 mix16, 255 mix8? so certainly more than one.
       // *(pData + destSub) = (error < 256)? mix8: mix8 + 1;
       if(mix8 >= receiver.noDitherPoint)
-        *(pData + destSub) = mix8 + (error / 256);
+      // if(mix8 >= receiver.noDitherPoint && highestCanGo <= 255) // tho 
+        *(pData + destSub) = (uint8_t)std::clamp((uint16_t)mix8 + (error / 256), 0, 255);
       else
         *(pData + destSub) = mix8;
       *pResiduals++ = error; // anything over 8bit capacity gets rolled over. but that only makes sense if looking <256...
