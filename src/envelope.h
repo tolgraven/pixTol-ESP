@@ -47,8 +47,9 @@ class BlendEnvelope { // simple "envelope" to control how much an incoming value
           value[es] = constrain(1.0 - value[es], 0.0, 1.0);
     }
   public:
-    BlendEnvelope(const std::string& id = "BlendEnvelope", float atDivisor = 1.0, float reDivisor = 1.0,
-        bool straight = false, float baseline = 1.0):
+    BlendEnvelope(const std::string& id = "BlendEnvelope",
+                  float atDivisor = 1.05, float reDivisor = 1.05,
+                  bool straight = false, float baseline = 1.0):
       _id(id), straight(straight), _baseline(baseline) {
         setDivisor(AT, atDivisor);
         setDivisor(RE, reDivisor);
