@@ -26,10 +26,6 @@ class Renderer: public RenderStage,
                             Add, Sub, Htp,
                             Lotp_IgnoreZero, Lotp };
   enum Role: uint8_t { ORIGIN = 0, TARGET, OUT }; // i reckon "result" for current? less ambigous
-  uint64_t _numKeyFrames = 0, _numFrames = 0;
-  float _lastProgress = 0;
-  std::vector<std::shared_ptr<Functions>> functions;
-  std::vector<std::shared_ptr<Effector>> effectors; // tho same concept could also be run on input especially if more intensive...
 
   Renderer(const std::string& id, uint32_t keyFrameInterval, uint16_t targetHz, const RenderStage& target);
   
@@ -59,7 +55,12 @@ class Renderer: public RenderStage,
 
   private:
   const static int taskPrio = 18;
+  
+  std::vector<std::shared_ptr<Functions>> functions;
+  std::vector<std::shared_ptr<Effector>> effectors; // tho same concept could also be run on input especially if more intensive...
 
+  uint64_t _numKeyFrames = 0, _numFrames = 0;
+  float _lastProgress = 0;
   uint64_t _keyFrameInterval, _lastKeyframe = 0, _lastFrame = 0; // still need tracking expected interval dep on srces yada but go away these...
   int targetFps;
   // const uint64_t keyFrameAdjustmentInterval = 1000000;

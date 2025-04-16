@@ -3,6 +3,9 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <limits>
+#include <algorithm>
+
 
 enum FieldSize: uint8_t {
   SINGLE = 1, DMX = 1, ONE_BYTE = 1, WHITE = 1, UV = 1, //etc

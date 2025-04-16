@@ -17,20 +17,18 @@ Renderer::Renderer(const std::string& id, uint32_t keyFrameHz, uint16_t targetHz
   for(int i=0; i < target.buffers().size(); i++) {
     auto& model = target.buffer(i);
     // lg.dbg((std::string)"Creating renderer buf " + std::to_string(i) + " for " + model.id() + ", size " + model.fieldSize() + "/" + model.fieldCount());
-    // model.printTo(lg); // ln.print(model); // also works?? discontinue lol
 
     bs.push_back(std::vector<std::shared_ptr<Buffer>>());
-    for(auto s: {"origin", "target", "out"}) {
+    for(auto s: {"origin", "target"}) {
       bs[i].emplace_back(new Buffer(id + " " + s + " " + std::to_string(i), model.fieldSize(), model.fieldCount()));
     }
     buffer(i).setDithering(true); // must for proper working. needs to be a setting tho!!
 
-    lg.f(__func__, Log::DEBUG, "curr at %p ptr %p\n", &get(i, OUT), get(i, OUT).get());
+    lg.f(__func__, Log::DEBUG, "curr at %p ptr %p\n", &buffer(i), buffer(i).get());
   }
   if(auto order = target.buffer(0).getSubFieldOrder()) {
     setSubFieldOrder(order); // only sets it on "internal"/dest buffers so ORIGIN/TARGET not affected
     for(int i=0; i < bs.size(); i++) {
-      // get(i, OUT).setSubFieldOrder(order);
       buffer(i).setSubFieldOrder(order);
     }
   }
@@ -42,7 +40,7 @@ Renderer::Renderer(const std::string& id, uint32_t keyFrameHz, uint16_t targetHz
 
 
 void Renderer::updateTarget(const Buffer& mergeIn, int i, uint8_t blendType, bool mix) {
-  if(i == 0) // is first buffer, so update counters
+  if(i == 0) // is first buffer, so update counters. oops no longer the case urgh. 
     _numKeyFrames++;
 
   Buffer toMerge(mergeIn); // need to adapt it to ours since source can be whatever
@@ -117,7 +115,6 @@ void Renderer::frame(float timeMultiplier) {
       // meaning original shite when straight copy = bad.
       // hence, do fieldOrder shuffle on copy not interp!
     } else {
-      // curr.interpolate(origin, target, progress);
       for(auto& eff: effectors)
         eff->execute(buf, origin, target, progress);
     }
@@ -125,7 +122,7 @@ void Renderer::frame(float timeMultiplier) {
 
   _numFrames++;
   if(!(_numFrames % 7500)) {
-    lg.f(__func__, tol::Log::DEBUG, "Run: %lluus (avg %lluus) fps: %llu, key/frames %u %u\n",
+    lg.f(__func__, tol::Log::DEBUG, "Run: %lluus (avg %lluus) fps: %llu, key/frames %llu %llu\n",
           timeLastRender, timeSpentRendering / (_numFrames + 1),
           _numFrames / (1 + (_lastFrame / MILLION)),
           _numKeyFrames, _numFrames);
@@ -135,17 +132,27 @@ void Renderer::frame(float timeMultiplier) {
     f->apply(progress); // since these point to curr it doesn't matter bufs are cloned.
 
   for(int i=0; i < bs.size(); i++) {
-    get(i, OUT).setCopy(buffer(i));       // double buffer so don't glitch when already rendering next by time event arrives
-    patches.emplace_back(get(i, OUT), i); // real issue iirc was Strip being pointed straight to curr I think? but optimize later yo
+    // patches.emplace_back(get(i, OUT), i); // real issue iirc was Strip being pointed straight to curr I think? but optimize later yo
+    try {
+      ipc::Publisher<PatchOut>::publish(PatchOut(buffer(i), i)); // publish "PatchOut" (poor name? not a one-time patch but like, current mapping, so...)
+      // patches.emplace_back(buffer(i), i); // real issue iirc was Strip being pointed straight to curr I think? but optimize later yo
+    // } catch(std::bad_alloc& e) {
+    } catch(std::exception& e) {
+      lg.err("Can't publish buffer." + std::string(e.what()), "Renderer");
+    }
   }
                                     
   
-  for(auto& p: patches) { // TODO we are waiting on all in this case, so send one event hehe. Different in other scenarios..
-    // ideally we would lock here and prevent next frame from doing anything until receivers have done their thing
-    // since yet another round of copying seems wasteful, but will have to do that for now
-    // (would passing a lock between threads even work?)
-    ipc::Publisher<PatchOut>::publish(p); // publish "PatchOut" (poor name? not a one-time patch but like, current mapping, so...)
-  }
+  // for(auto& p: patches) { // TODO we are waiting on all in this case, so send one event hehe. Different in other scenarios..
+  //   // ideally we would lock here and prevent next frame from doing anything until receivers have done their thing
+  //   // since yet another round of copying seems wasteful, but will have to do that for now
+  //   // (would passing a lock between threads even work?)
+  //   try {
+  //     ipc::Publisher<PatchOut>::publish(p); // publish "PatchOut" (poor name? not a one-time patch but like, current mapping, so...)
+  //   } catch(std::exception& e) {
+  //     lg.err("Can't publish buffer." + std::string(e.what()), "Renderer");
+  //   }
+  // }
 
   timeLastRender = micros() - now; // oh yeah will get wonky in case interpolate skips on own bc gain 0 etc...
   timeSpentRendering += timeLastRender;

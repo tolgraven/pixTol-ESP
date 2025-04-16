@@ -19,7 +19,7 @@ using namespace smooth::application::network;
 using namespace std::chrono;
 
 void App::init() {
-  Serial.begin(SERIAL_BAUD); // XXX tempwell, not if uart strip tho...
+  // Serial.begin(SERIAL_BAUD); // XXX tempwell, not if uart strip tho...
   lg.initOutput("Serial");  //logging can be done after here
   logger = std::make_unique<Logger>();
   // TODO figure out heap situation. ipc0 using 27kb heap before anything inits - why?
@@ -31,12 +31,15 @@ void App::init() {
   logging::Log::error("App", "init");
 
   wifiCrap();
+  
+  timeSync.start();
+
   // esp_log_level_set(mqtt_log_tag, static_cast<esp_log_level_t>(CONFIG_SMOOTH_MQTT_LOGGING_LEVEL)); //<- remember set up my loggers w esp then easy set lvl etc
    
   Logger::logHeap();
   Logger::logHeapRegions();
   
-  device = std::make_unique<Device>(deviceId); // this is getting emptied for now (and most stuff native support in idf) but might restore some
+  // device = std::make_unique<Device>(deviceId); // this is getting emptied for now (and most stuff native support in idf) but might restore some
   // deviceLoop = std::make_unique<FnTask>("device->loop", 25, [this]{ this->device->loop(); }); // XXX replace with Task
   
   // fs = std::make_unique<SPIFlash>(FlashMount::instance(), "app_storage", 10, true);
@@ -90,8 +93,6 @@ void App::init() {
   scheduler = std::make_unique<Scheduler>(deviceId);
   scheduler->start();
 
-  timeSync.start();
-
   Logger::logHeap();
   Logger::logHeapRegions();
   // SystemStatistics::instance().dump(); // apparently causes stack overflow now
@@ -110,8 +111,6 @@ void App::onEvent(const network::NetworkStatus& e) {
 }
 
 void App::wifiCrap() {
-  wifiOld = std::make_unique<WifiConnection>("pixTol-proto", "wifi");
-
   // needed to fetch from nvs...
   // smooth doesnt call this until connect. wifimanager should do earlier but was apparently luck.
   wifi_init_config_t wifiCfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -127,17 +126,19 @@ void App::wifiCrap() {
   auto pw = (std::string)reinterpret_cast<const char*>(conf.sta.password);
   
 
-  if(pw != "") { // use stored creds
+  // if(pw != "") { // use stored creds
     auto& wifi = get_wifi();
     wifi.set_host_name("pixTol-proto");
     wifi.set_auto_connect(true); // more like auto reconnect...
-    wifi.set_ap_credentials(ssid.c_str(), pw.c_str());
+    // wifi.set_ap_credentials(ssid.c_str(), pw.c_str());
+    wifi.set_ap_credentials("wazzuz", "quackered");
     wifi.connect_to_ap(); // broken and get spam about old style event loop
-  } else {
-    wifiOld->start(); // smooth-wifi acting iffy (depr event loop yada but literally new api tho?)
-    // wifiOld->setup(); // smooth-wifi acting iffy (depr event loop yada but literally new api tho?)
-    // but can still use it to fetch connection info...
-  }
+  // } else {
+  //   wifiOld = std::make_unique<WifiConnection>("pixTol-proto", "wifi");
+  //   wifiOld->start(); // smooth-wifi acting iffy (depr event loop yada but literally new api tho?)
+  //   // wifiOld->setup(); // smooth-wifi acting iffy (depr event loop yada but literally new api tho?)
+  //   // but can still use it to fetch connection info...
+  // }
     
 }
 

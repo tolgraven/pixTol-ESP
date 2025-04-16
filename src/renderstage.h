@@ -5,6 +5,8 @@
 
 #include "smooth/core/ipc/TaskEventQueue.h"
 #include "smooth/core/ipc/IEventListener.h"
+#include "smooth/core/timer/Timer.h"
+#include "smooth/core/timer/TimerExpiredEvent.h"
 
 #include "buffer.h"
 #include "base.h"
@@ -22,6 +24,7 @@ template<Patching dir, auto dest = PatchType::Pixels>
 struct BufferPatch {
   BufferPatch() = default;
   BufferPatch(const Buffer& buffer, int i): buffer(buffer), destIdx(i) {}
+  // BufferPatch(const Buffer& buffer, int i): buffer(buffer, 0, 0, true), destIdx(i) {} // for now at least, yet more copying...
   // BufferPatch(Buffer& buffer, int i): buffer(&buffer), i(i) {}
   // BufferPatch& operator=(BufferPatch& rhs) {
   //   buffer = rhs.buffer; i = rhs.i; return *this;
@@ -31,7 +34,8 @@ struct BufferPatch {
   Buffer buffer = Buffer(); // XXX copy needed since eg slicing in ArtnetIn, but for most stuff bit inefficient (one hand, only ptr no copy, other hand, tons of other crap in class)
   // Buffer& buffer;
   int destIdx = 0; // index for OUTGOING buffer (in future not necessarily the same as )
-  int sourceIdx = 0;
+  // ^ should be renamed to just idx because router handles translation
+  
   RenderStage* originator = nullptr;
   int priority = 10; // 0 to 20 I guess. If actively receiving messages of a higher priority, ignore lower ones?
 };
@@ -134,38 +138,118 @@ class NetworkIn: public Inputter { // figure artnet/sacn/opc (more?) such common
 };
 
 
-class Outputter: public RenderStage, public PureEvtTask, public Sub<PatchOut> {
+class Outputter: public RenderStage, public core::Task, public Sub<PatchOut> {
   public:
   Outputter(const std::string& id, uint16_t bufferSize = 512):
     Outputter(id, 1, bufferSize) {} // raw bytes = field is 1
   Outputter(const std::string& id, uint8_t fieldSize, uint16_t fieldCount,
-            uint8_t bufferCount = 1, uint16_t portIndex = 0):
+            uint8_t bufferCount = 1, uint16_t portIndex = 0, uint16_t fixedHz = 0):
     RenderStage(id, fieldSize, fieldCount, bufferCount, portIndex),
-    PureEvtTask((id + " event runner").c_str(), 24),
-    Sub<PatchOut>(this, 4) {
+    core::Task(id + " event runner", 2560, 24,
+               fixedHz? milliseconds(1000/fixedHz): seconds(10), // TODO 40 turns into 35 due to bleh, use smooth::core::timer instead...
+               1),
+    Sub<PatchOut>(this, bufferCount) {
       setType("outputter");
+      setTargetFreq(fixedHz); // tho most of Runnable is just dumb remnant of prev DIY coop scheduling and should be cleaned up...
+                              // tho it does have some timeout stuff we'll need to utilize?
       start();
     }
 
-  virtual bool flush(int b = -1) { return false; }
+  enum BufferIndex: int { ALL = -1, VALID = 0 };
+
+  virtual bool flush(int b = BufferIndex::ALL) {
+    if(b >= BufferIndex::VALID)
+      return flushBuffer(b);
+    
+    bool outcome = false;
+    for(uint8_t i=0; i < buffers().size(); i++) {
+      if(flushBuffer(i))
+        outcome = true;
+    }
+    return outcome;
+  }
+  
+  virtual void update(const Buffer& data, int i, bool doFlush = true) { 
+    updateBuffer(data, i);
+    if(doFlush) flush(i);
+  } // so can update outside just events
+  void onEvent(const PatchOut& out) {
+    update(out.buffer, out.destIdx, !targetHz); // flush unless fixed hz
+  }
+  void tick() override { if(targetHz) flush(); } // default should be all
   private:
+
+  virtual bool flushBuffer(uint8_t b) { return false; }; // XXX temp all should actually implement this in future (whether then flush called from event or tick)
 };
 
+// intercept PatchIn
+// decide which input id goes to what (potentially multiple?) and call its update fn (and hence needs to be uniform)...
+//
+// or if passthrough (like to DMX), simply publish.
+// but also stuff like merge universes for Renderer doing 144x4 Strip
+// 
+// basically would earlier get result of parsed json cfg of input - [merge/split] - output(s)
+// but tbh move away from controls in same uni as strip data...
 
+class Router: public RenderStage, public PureEvtTask, public Sub<PatchIn> {
+  public:
+  // Patcher
+};
 
-class Generator: public Inputter {
+using namespace std::chrono;
+
+class Generator: public Inputter, public core::Task {
   public:
     Generator(const std::string& id, uint16_t bufferSize = 1): // raw bytes = field is 1
       Generator(id, 1, bufferSize, 1) {} // raw bytes = field is 1
     Generator(const std::string& id, const RenderStage& model):
       Generator(id, model.fieldSize(), model.fieldCount(), model.buffers().size()) {}
-    Generator(const std::string& id, uint8_t fieldSize, uint16_t fieldCount, uint8_t bufferCount = 1):
-      Inputter(id, fieldSize, fieldCount, bufferCount) {
+    Generator(const std::string& id,  uint8_t fieldSize, uint16_t fieldCount, uint8_t bufferCount = 1, uint16_t targetHz = 40):
+      Inputter(id, fieldSize, fieldCount, bufferCount),
+      core::Task(id + " generator", 3072, 10, milliseconds(1000/targetHz), 1) {
         setType("Generator");
       }
 
-    enum GeneratorType { Static, Animation, Playback };
+    // void setDuration(std::chrono::duration<> dur) {}
+    void setDuration(milliseconds dur) { playDuration = dur; }
+    void restart();
+
+
+    using GeneratorUpdater = std::function<bool(std::vector<std::shared_ptr<Buffer>>, float)>;
+    GeneratorUpdater updater;
+    void tick() override {
+      duration now = milliseconds(millis());
+      float progress = playDuration.count() / (float)(now.count() - ts.start);
+      progress = std::clamp(progress, 0.0f, 1.0f);
+      bool res = true;
+      if(updater) { // lambda ting
+        res = updater(buffers(), progress);
+      } else { // inheritor ting
+        // _run(progress);
+      }
+
+
+      if(now + milliseconds(1000/targetHz) > playDuration) { // about to run over
+        switch(onEnd) {
+          case Stop: res = false; break;
+          case Loop: break;
+          case BackAndForth: break;
+          case Random: break;
+        }
+      }
+
+      if(!res) {
+        // send signal to manager we are to be killed
+      }
+      // update anim or whatever...
+    }
+
+    milliseconds playDuration = seconds(1);
+
+    enum GeneratorType { Static, Playback }; // well actually anything static should not be a task n shit yeah...
+    GeneratorType genType = Playback;
     enum OnEnd { Stop, Loop, BackAndForth, Random }; //if Animation or, specifically, Playback. Or tbh up to whoever is requesting generator's services?
+    OnEnd onEnd = Stop;
 
     // std::vector<Animator> anims; // the one that will actually update buffers.
     // bool _run() override {

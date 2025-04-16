@@ -26,7 +26,7 @@ register_component()
 target_compile_options(${COMPONENT_LIB} PRIVATE
     -DESP32
     -DARDUINO_ARCH_ESP32
-    -DARDUINO
+    # -DARDUINO
     # -DSERIAL_BAUD=230400
     -DSERIAL_BAUD=${CONFIG_MONITOR_BAUD}
     -Wno-error

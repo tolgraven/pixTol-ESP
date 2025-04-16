@@ -8,6 +8,8 @@
 
 #include <Arduino.h>
 
+#include "tweeny.h"
+
 #include "log.h"
 #include "envelope.h"
 #include "buffer.h"
@@ -101,8 +103,10 @@ class Stage {
   }; //well most wont have one so cant have default but obvs default is straight interpolation from origin to destination
 
   public:
-  Stage(const std::string& id, float origin, float destination, float minTime = 0, float maxTime = 0, float fractionOfTotal = 0):
-   id(id), origin(origin), destination(destination), minTime(minTime), maxTime(maxTime), fractionOfTotal(fractionOfTotal) {
+  Stage(const std::string& id, float origin, float destination,
+        float minTime = 0, float maxTime = 0, float fractionOfTotal = 0):
+   id(id), origin(origin), destination(destination),
+   minTime(minTime), maxTime(maxTime), fractionOfTotal(fractionOfTotal) {
    }
 
   void init(uint32_t requestedTime) {
@@ -277,7 +281,7 @@ class Functions: public RenderStage,
     chan[chHue] = new RotateHue();
     for(auto c: chan) c.second->setTarget(target); //lock in strip s as our target...
 
-    /* e.set(0.5f, 0.5f); //default not 0 so is nice for local sources if no input */
+    e.set(0.5f, 0.5f); //default not 0 so is nice for local sources if no input
   }
   
   ~Functions() {} //remember for when got mult
@@ -301,7 +305,6 @@ class Functions: public RenderStage,
       //   ((uint8_t)*chOverride.get(i) * *blendOverride.get(i) + // Generally these would be set appropriately (or from settings) at boot and used if no ctrl values incoming
       //    *controls.get(i) * (1.0f - *blendOverride.get(i))); //but also allow (with prio/mode flag) override etc. and adjust behavior, why have anything at all hardcoded tbh
       *val.get(i) = std::clamp(*controls.get(i) / 255.0f, 0.0f, 1.0f);
-      
     }
 
     e.set(*val.get(chAttack), *val.get(chRelease)); // high val can btw only slow things,

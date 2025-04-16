@@ -10,7 +10,7 @@ UID generateUID() {
 }
 
 Named::Named(const std::string& id, const std::string& type):
-      _id(id), _type(type), _uid(generateUID()) {}
+      _id(id), /*_type(type),*/ _uid(generateUID()) {}
 
 
 void ChunkedContainer::setSubFieldOrder(const uint8_t subFields[]) {

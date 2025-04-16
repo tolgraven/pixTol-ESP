@@ -3,8 +3,11 @@
 #include <map>
 #include <algorithm>
 #include <functional>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wignored-qualifiers"
 #include <NeoPixelBrightnessBus.h>
 #include <NeoPixelAnimator.h>
+#pragma GCC diagnostic pop
 
 #include "renderstage.h"
 #include "envelope.h"

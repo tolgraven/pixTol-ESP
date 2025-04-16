@@ -74,19 +74,19 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
     // debug = new Debug(&stackStart);
     // Serial.begin(SERIAL_BAUD); // XXX tempwell, not if uart strip tho...
     // lg.initOutput("Serial");  //logging can be done after here
-    Serial2.begin(SERIAL_BAUD, SERIAL_8N1, 4, 2);
-    lg.initOutput("Serial2");  //mirror to pins 2-4
+    // Serial2.begin(SERIAL_BAUD, SERIAL_8N1, 4, 2);
+    // lg.initOutput("Serial2");  //mirror to pins 2-4
 
-    uint32_t finishAt = millis() + 2000;
-    auto dotter = [finishAt]() {
-                    if(millis() < finishAt) {
-                      Serial.print("."); return true;
-                    } else return false;
-                  };
-    recurring.attach_ms(250, dotter); // so, cant find where in lib return false to detach actually handled?
+    // uint32_t finishAt = millis() + 2000;
+    // auto dotter = [finishAt]() {
+    //                 if(millis() < finishAt) {
+    //                   Serial.print("."); return true;
+    //                 } else return false;
+    //               };
+    // recurring.attach_ms(250, dotter); // so, cant find where in lib return false to detach actually handled?
 
     lwd.init(); //muy important, chilled out constructor
-    lg.dbg(lwd.getResetReason() + (lwd.softResettable()? ", softResettable!": ""));
+    // lg.dbg(lwd.getResetReason() + (lwd.softResettable()? ", softResettable!": ""));
 
     // lg.dbg(debug->getStacktrace());
     // OTA update leads to crash in Neo i2s_slc_isr
@@ -107,7 +107,7 @@ class Device { //inits hardware stuff, holds Updaters, PhysicalUI/components, mo
     handleBootLoop();
 
     /* lwd.stamp(PIXTOL_SETUP_EXIT); */
-    timeBootDone = micros();
+    // timeBootDone = micros();
 
     lg.dbg("Done Device");
   }

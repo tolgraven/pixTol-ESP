@@ -10,7 +10,19 @@ void iBuffer<T, T2>::setCopy(const T* const newData, uint16_t copyLength, uint16
 }
 template<class T, class T2>
 void iBuffer<T, T2>::setCopy(const iBuffer<T, T2>& newData, uint16_t copyLength, uint16_t readOffset, uint16_t writeOffset) {
-  setCopy(newData.get(), copyLength, readOffset, writeOffset);
+  // NOTE I'm apparently too dumb to get this right...
+  // if(!copyLength) copyLength = length - readOffset - writeOffset;
+  // if(getSubFieldOrder()) {
+  //   for(uint16_t i=0; i < fieldCount() && i * fieldSize() < copyLength; i++) {
+  //     for(uint16_t j=0; j < fieldSize(); j++) {
+  //       data[writeOffset + i * fieldSize() + subFieldForIndex(j)] =
+  //         *(newData.get(i + readOffset) + newData.subFieldForIndex(j)); 
+  //     }
+  //   }
+  //   setDirty();
+  // } else {
+    setCopy(newData.get(), copyLength, readOffset, writeOffset);
+  // }
 }
 
 template<class T, class T2>

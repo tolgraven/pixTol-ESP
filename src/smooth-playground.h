@@ -31,6 +31,9 @@
 #include "smooth/core/SystemStatistics.h" //could this still cause trouble? was lacking pragma once
 #include "smooth/core/Application.h"
 
+#undef B1000000
+#undef B110
+
 #include "smooth/core/filesystem/SPIFlash.h"
 #include "smooth/core/json/JsonFile.h"
 
@@ -38,6 +41,8 @@
 #include "smooth/application/network/http/HTTPServerClient.h"
 #include "smooth/application/network/http/HTTPProtocol.h"
 
+#undef B1000000
+#undef B110
 
 #include "task.h"
 #include "device.h"
@@ -83,16 +88,40 @@ class DataRetriever: public http::ITemplateDataRetriever {
   }
 };
 
+// make App aware of primarily heap level but also other stuff
+// so can estimate whether something like starting new service is actually feasible
+// whether non-essential tasks should shut down etc
+// otoh at least free heap is always just a syscall away hahah
+// guess I'm envisioning keeping track of tasks free stack, persisting that,
+// and automatically squeezing it...
+struct SystemStats {
+  SystemStats() = default;
+  SystemStats& operator=(const SystemStats& rhs) = default;
+};
 
 class App: public core::Application,
            public Sub<network::NetworkStatus>,
-           public Sub<sntp::TimeSyncEvent> {
+           public Sub<sntp::TimeSyncEvent>,
+           public Sub<SystemStats> {
 
   sntp::Sntp timeSync{std::vector<std::string>{"pool.ntp.org", "time.euro.apple.com"}};
 
   const char* deviceId = "pixTol";
+  std::map<std::string, std::unique_ptr<core::Task>> tasks; // should move towards this.
+  // only start tasks that are needed (no logging on prod etc), easily delete once not needed, etc...
+  // issue: loads of shared_ptr to Tasks, oh wait only those created in Scheduler and we don't manage, muaha!
+  // will necessite proper cleanup/destructors at very least...
+  // or better yet a stop fn so stuff can finish anything (possibly slow) in progress
+  // like maybe writing a file and shit? processing a queue with multiple things in it
+  // then stop listening to new messages (Sub disable), send App an event asking it to destroy task.
+  // basic unix signals maybe...
+  // well, kill, kill -9, SIGSTOP, SIGCONT?
+  // also tasks should be able to request the START of a task they depend on
+  // like a task handling input (console, button...) might request start of HTTP server for configuration
+  // or AP mode handler
+  // instead of starting and managing task themselves (gross)
   std::unique_ptr<Device>  device;
-  std::unique_ptr<FnTask>  deviceLoop; // for now
+  SystemStats stats;
   
   std::unique_ptr<Logger>  logger;
 
@@ -112,28 +141,19 @@ class App: public core::Application,
   public:
     App(): Application(APPLICATION_BASE_PRIO - 1, seconds(60)),
       Sub<network::NetworkStatus>(this),
-      Sub<sntp::TimeSyncEvent>(this)
+      Sub<sntp::TimeSyncEvent>(this),
+      Sub<SystemStats>(this)
     {}
 
     void init() override;
 
-    void tick() override {
-      // logging::Log::info("Stats++", "\n{}", moreStatz());
-      // XXX uncommented cause causing crashes. Almost eclusively loadprohibited
-      // but at least once indicating heap poisoning!! so definitely investigate
-      // seems to run fine tho with no major errors tho without these calls...
-
-      // util::logHeap();
-      // heap_caps_print_heap_info(MALLOC_CAP_8BIT);
-      // vTaskDelay(5);
-      // util::logHeapRegions();
-      // SystemStatistics::instance().dump();
-    }
+    void tick() override { }
 
     void onEvent(const network::NetworkStatus& e) override;
     void onEvent(const sntp::TimeSyncEvent& e) override {
       logging::Log::info("Current time", "{}", timeString()); // appears someone else listening to this and actually sets time whoo
     }
+    void onEvent(const SystemStats& e) override {}
 
     void wifiCrap();
 };

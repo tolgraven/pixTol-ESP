@@ -5,6 +5,7 @@
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <string>
 #include "esp_heap_task_info.h"
 
 #include "smooth/core/logging/log.h"
@@ -42,7 +43,7 @@ class Logger: public core::Task,
               public Sub<LogMessage<std::string>> {
   public:
   Logger():
-    core::Task("Logger", 6144, 1, seconds(60), 0),
+    core::Task("Logger", 6608, 1, seconds(60), 0),
     Sub<LogMessage<const char*>>(this, 10),
     Sub<LogMessage<std::string>>(this, 10) {
       start();
@@ -78,11 +79,10 @@ class Logger: public core::Task,
 
     uint32_t timeTot;
     uxTaskGetSystemState(taskStats, numTasks, &timeTot);
-    timeTot /= 100UL; /* For percentage calculations. */
     constexpr const char* fmtStr = "{:<25} {:<14} {}{}%\t {} \t {}\t{}\t{}\t{}\t{}\r\n";
     if(timeTot > 0) { /* Avoid divide by zero errors. */
       for(auto& task: taskStats) { /* Create a human readable table from the binary data. */
-        uint32_t percent = task.ulRunTimeCounter / timeTot;
+        uint32_t percent = task.ulRunTimeCounter / (timeTot / 100UL); // timeTot overflows after 71 m so should use a rollover counter...
         auto state = "";
         switch(task.eCurrentState) {
           case eRunning:   state = "RUN"; break;
@@ -99,14 +99,14 @@ class Logger: public core::Task,
               task.pcTaskName, time, percent > 0UL? " ": "~", percent,
               state, task.uxCurrentPriority, task.xTaskNumber,
               (task.xCoreID == 0 || task.xCoreID == 1)? std::to_string(task.xCoreID): " ",
-              task.usStackHighWaterMark, heap[task.xTaskNumber]);
+              task.usStackHighWaterMark, heap[task.pcTaskName]);
         m[task.ulRunTimeCounter] = s; //prev was sexier but oorder for 0
         // vTaskDelay(5); // or rather, spin off to a low prio logger task.
       }
     }
     for(auto& t: m) s = t.second + s;
     auto res = fmt::format(fmtStr, "TASK", "TIME", " ", " ", "STATE",
-                              "PRIO", "#", "CPU", "MIN STACK", "HEAP") + s;
+                              "PRIO", "#", "CPU", "MIN S", "HEAP") + s;
     ipc::Publisher<LogMessage<decltype(res)>>::publish(LogMessage<>("top", "INFO", "\n" + res));
   }
 
@@ -120,11 +120,11 @@ class Logger: public core::Task,
     size_t minimum = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
     
     auto res = fmt::format("Free heap: {}, minimum: {}, largest block: {}\n",
-        freeHeap, largestBlock, minimum);
+        freeHeap, minimum, largestBlock);
     ipc::Publisher<LogMessage<>>::publish(LogMessage<>("Heap", "INFO", res));
   }
   
-
+#ifdef CONFIG_HEAP_TASK_TRACKING
   static heap_task_info_params_t& getHeapRegionsSystem() { // move elsewhere...
       const uint8_t maxTaskNum = 20;
       const uint8_t maxBlockNum = 20;
@@ -151,31 +151,43 @@ class Logger: public core::Task,
 
       return heap_info;
   }
+#endif
 
-  static std::map<uint32_t, size_t> getHeapRegions() {
+  static std::map<std::string, size_t> getHeapRegions() {
+#ifdef CONFIG_HEAP_TASK_TRACKING
     auto& regions = getHeapRegionsSystem();
-    std::map<uint32_t, size_t> numToHeap;
+    std::map<std::string, size_t> numToHeap;
 
     for(int i = 0 ; i < *regions.num_totals; i++) {
-      lg.log(("num " + std::to_string(uxTaskGetTaskNumber(regions.totals[i].task)) + "heap "
-            + std::to_string(regions.totals[0].size[0]) + "\n").c_str(),
-          Log::Level::INFO, "FART"); // for now. fix
-      numToHeap.insert({uxTaskGetTaskNumber(regions.totals[i].task),
+      auto s = fmt::format("{} #{} \t heap {}, name {}\n",
+          i,
+          uxTaskGetTaskNumber(regions.totals[i].task),
+          // uxTaskGetTaskNumber(regions.tasks[i]), // loadprohibited
+          regions.totals[i].size[0],
+          pcTaskGetTaskName(regions.totals[i].task));
+      // lg.log(s, Log::Level::INFO, "HEAP");
+      // lg.log((std::to_string(i) +
+      //        ", #" + std::to_string(uxTaskGetTaskNumber(regions.totals[i].task)) +
+      //        ", heap " + std::to_string(regions.totals[i].size[0]) + "\n"),
+      //     Log::Level::INFO, "FART"); // for now. fix
+      // numToHeap.insert({uxTaskGetTaskNumber(regions.totals[i].task),
+      numToHeap.insert({pcTaskGetTaskName(regions.totals[i].task),
                         regions.totals[i].size[0]});
     }
     return numToHeap;
+#endif
+    return std::map<std::string, size_t>();
   }
   
   static void logHeapRegions() {
+#ifdef CONFIG_HEAP_TASK_TRACKING
     auto& regions = getHeapRegionsSystem();
 
     std::string res = "Current allocations\n";
     
-    lg.log(std::to_string(regions.totals[0].size[0]).c_str(), Log::Level::INFO, "FART"); // for now. fix
-
     // suddenly num_totals is 20 instead of actual amt of tasks?
     for(int i = 0 ; i < *regions.num_totals; i++) {
-      res += fmt::format("CAP_8BIT: {}\tCAP_32BIT: {}\t-> Task: {}\n",
+      res += fmt::format("8: {}    \t32: {}\t->\t{}\n",
                 regions.totals[i].size[0],   // Heap size with CAP_8BIT capabilities
                 regions.totals[i].size[1],   // Heap size with CAP32_BIT capabilities
                 regions.totals[i].task? pcTaskGetTaskName(regions.totals[i].task)?
@@ -184,6 +196,7 @@ class Logger: public core::Task,
     }
 
     ipc::Publisher<LogMessage<>>::publish(LogMessage<>("Heap", "INFO", res + "\n"));
+#endif
   }
   
 };

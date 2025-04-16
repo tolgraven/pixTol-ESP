@@ -38,7 +38,7 @@ Buffer& RenderStage::buffer(uint8_t index) const {
 
 bool RenderStage::dirty() const {
   bool isDirty = false;
-  for(auto&& b: buffers()) {
+  for(auto& b: buffers()) {
     isDirty |= b->dirty();
   }
   return isDirty;
@@ -47,7 +47,7 @@ bool RenderStage::dirty() const {
 
 bool Inputter::onData(uint16_t index, uint16_t length, uint8_t* data, bool flush) {
   bool isControls = index == 0 && controlsBuffer != nullptr;
-  if(!isControls && !controlsBuffer && index > 0) {
+  if(!isControls && controlsBuffer && index > 0) {
     index--; // since 0 taken up by controlsBuffer, tho it's not in RS bufs due to smaller size... 1 becomes 0 etc
   }
   if(index > buffers().size())

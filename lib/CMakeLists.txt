@@ -1,4 +1,6 @@
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 set(COMPONENT_ADD_INCLUDEDIRS
     Arduino-modded
     ESPAsyncE131_ID1781
@@ -9,6 +11,7 @@ set(COMPONENT_ADD_INCLUDEDIRS
     OpcServer/src
     pixTol
     WifiManager
+    Tweeny/include
     )
 
 # needs to run idf.py reconfigure if adding files when doing this.
@@ -25,6 +28,7 @@ set(COMPONENT_SRCS # cant use both apparently...
     OpcServer/src/OpcServer.cpp
     WifiManager/WiFiManager.cpp
     pixTol/field.cpp
+    Tweeny/src/sandbox.cc
     )
 
 set(COMPONENT_REQUIRES arduino)
@@ -33,11 +37,13 @@ register_component()
 target_compile_options(${COMPONENT_LIB} PRIVATE
     -DESP32
     -DARDUINO_ARCH_ESP32
-    -DARDUINO
     -Wno-error=class-memaccess
     -Wno-extra
     -Wno-error
+    -std=gnu++17
     )
+
+set(CMAKE_CXX_FLAGS "-std=c++17 -mlongcalls")
 
 set_source_files_properties(NeoEspBitBangMethod.h
     PROPERTIES COMPILE_FLAGS

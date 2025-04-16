@@ -2,7 +2,10 @@
 
 #include <array>
 #include <functional>
+
 #include <artnet4real.h>
+
+#include <Arduino.h>
 #include <AsyncUDP.h>
 
 #include "smooth/core/network/Wifi.h"
@@ -42,6 +45,9 @@ class ArtnetDriver: public core::Task, public Sub<IPAddress> {
   // template<class Fun, class... Args> typename std::result_of<Fun&&(Args&&...)>::type
   // template<class Fun, class... Args>
   //   auto operator()(Fun&& f, Args&&... args) { artnet->(f)(std::forward<Args>(args)...); }
+  ~ArtnetDriver() {
+    stop();
+  }
   artnet::Driver* operator*() { return get(); }
   artnet::Driver* operator->() { return get(); }
   artnet::Driver* get() { return artnet.get(); }
@@ -51,35 +57,41 @@ class ArtnetDriver: public core::Task, public Sub<IPAddress> {
   }
 
   void setup(const IPAddress& ip, const IPAddress& sub, uint8_t* mac) { // this should be called in response to NetworkEvent.
-    if(!started) {
-      lg.dbg("ARTNET INIT");
-      if(ip != INADDR_NONE)
-        artnet->init(ip, sub, mac);
-      else
-        artnet->init();
-
-      artnet->setPacketSendFn([this](IPAddress dest, uint8_t* data, uint16_t length,
-                                     uint16_t port = artnet::def::defaultUdpPort) {
-            AsyncUDPMessage packet{length};
-            packet.write(data, length);
-            auto res = this->socket.sendTo(packet, dest, port);
-            // lg.dbg("ARTNET SEND PACKET");
-          });
-
-      if(!socket.listen(artnet::def::defaultUdpPort)) { // Start listening for UDP packets
-        lg.dbg("ARTNET BAD CANT LISTEN"); // BAD ERROR
-      } else {
-        // socket.onPacket([this](AsyncUDPPacket& packet) { // INFO copy not ref due to AsyncUDP bug (pbuf_free thing, copy-ctor PR exists but is stale and might have issues(=))
-        socket.onPacket([this](AsyncUDPPacket packet) { // INFO copy not ref due to AsyncUDP bug (pbuf_free thing, copy-ctor PR exists but is stale and might have issues(=))
-                                                        // fucking or not? #3290 it is then.
-            // this (asyncudp) was acting up again (stack overflow if lucky, thread stuck if unlucky)
-            // move to smooth equivalent asap... looks a bit fiddly tho
-            this->artnet->onPacket(packet.remoteIP(), packet.data(), packet.length());
-            // lg.dbg("ARTNET RECEIVE PACKET");
-          });
-      }
-      artnet->begin();
+    if(started) {
+      DEBUG("ALREADY INITIALIZED");
+      return;
     }
+    lg.dbg("ARTNET INIT");
+    if(ip != INADDR_NONE)
+      artnet->init(ip, sub, mac);
+    else {
+      lg.dbg("ARTNET IP BROKEN");
+      return;
+    }
+
+    artnet->setPacketSendFn([this](IPAddress dest, uint8_t* data, uint16_t length,
+                                    uint16_t port = artnet::def::defaultUdpPort) {
+          AsyncUDPMessage packet{length};
+          packet.write(data, length);
+          auto bytesSent = this->socket.sendTo(packet, dest, port);
+          if(bytesSent != length)
+            lg.dbg("ARTNET SEND PACKET failure");
+        });
+
+    if(!socket.listen(artnet::def::defaultUdpPort)) { // Start listening for UDP packets
+      lg.dbg("ARTNET BAD CANT LISTEN"); // BAD ERROR
+      return;
+    } else {
+      socket.onPacket([this](AsyncUDPPacket& packet) { // INFO copy not ref due to AsyncUDP bug (pbuf_free thing, copy-ctor PR exists but is stale and might have issues(=))
+      // socket.onPacket([this](AsyncUDPPacket packet) { // INFO copy not ref due to AsyncUDP bug (pbuf_free thing, copy-ctor PR exists but is stale and might have issues(=))
+                                                      // fucking or not? #3290 it is then.
+          // this (asyncudp) was acting up again (stack overflow if lucky, thread stuck if unlucky)
+          // move to smooth equivalent asap... looks a bit fiddly tho
+          this->artnet->onPacket(packet.remoteIP(), packet.data(), packet.length());
+          // lg.dbg("ARTNET RECEIVE PACKET");
+        });
+    }
+    artnet->begin();
   }
 
   void stop() { started = false; socket.close(); }
@@ -87,10 +99,14 @@ class ArtnetDriver: public core::Task, public Sub<IPAddress> {
   void onEvent(const IPAddress& ip) override {
     DEBUG("Artnet got IP event");
     if(!started) {
+      vTaskDelay(pdMS_TO_TICKS(1000)); // try see if helps with current shitfest since seems especially vurnerable at startup...
       std::array<uint8_t, 6> mac;
-      bool gotMac = core::network::Wifi::get_local_mac_address(mac);
-      setup(ip, IPAddress(255,255,255,0), mac.data());
-      started = true;
+      if(core::network::Wifi::get_local_mac_address(mac)) {
+        setup(ip, IPAddress(255,255,255,0), mac.data());
+        started = true;
+      } else {
+        ERROR("GOT NO MAC, ARTNET BAILING");
+      }
     } else {
       artnet->setIP(ip); //etc. update config. more to come.
     }
@@ -110,8 +126,9 @@ class ArtnetIn: public NetworkIn {
   Buffer bigData;
 
   public:
-  ArtnetIn(uint16_t startUni, uint8_t numPorts, std::shared_ptr<ArtnetDriver> driver):
-    NetworkIn("artnet in", startUni, numPorts), driver(driver),
+  ArtnetIn(uint16_t startUni, uint8_t numPorts, std::shared_ptr<ArtnetDriver> driver, uint16_t controlDataLength = 0):
+    NetworkIn("artnet in", startUni, numPorts, controlDataLength),
+    driver(driver),
     bigData(Buffer("Artnet Chunk", 1, numPorts * 512)) {
       setType("input");
 
@@ -154,7 +171,7 @@ class ArtnetOut: public Outputter {
 
   public:
   ArtnetOut(uint16_t startUni, uint8_t numPorts, std::shared_ptr<ArtnetDriver> driver):
-    Outputter("artnet out", 1, 512, numPorts), driver(driver) {
+    Outputter("artnet out", 1, 512, numPorts, 0, 40), driver(driver) { // tho suppose for debug purposes still want ability to have free float. also shouldnt be fixed at 40 anyways...
       setType("output");
 
       // oh yeah so have to re-engineer internal Port getup a bit...
@@ -178,7 +195,7 @@ class ArtnetOut: public Outputter {
       for(int portIdx=0; portIdx < numPorts; portIdx++) {
         auto port = (*driver)->getPort(0, portIdx);
         if(!port) {
-          int pID = (*driver)->addPort(groupID, portIdx, startUni + portIdx, artnet::PortArtnetIn); // XXX have swapped "In" and "Out"
+          (*driver)->addPort(groupID, portIdx, startUni + portIdx, artnet::PortArtnetIn); // XXX have swapped "In" and "Out"
         } else {
           port->portType = artnet::PortArtnetHub;
         }
@@ -186,40 +203,35 @@ class ArtnetOut: public Outputter {
       }
   }
 
-  bool _run() override {
-    bool outcome = false;
-    for(uint8_t port=0; port < buffers().size(); port++) { // XXX bad wrong because now eg port 3 is idx 0
-      // uint8_t group = 1; //send-group, made-up for now...
+
+  private:
+  bool flushBuffer(uint8_t b) override {
+    auto& buf = buffer(b);
+    // int port = i % numGroupsnshit // XXX or will blow with >4 ports
+
+    if(buf.dirty()) { // well not gonna happen because got mult buffer objs using same resource, not us getting set...
+    // if(buf.dirty() || port.hasnt_sent_in_4s_yada()) { // well not gonna happen because got mult buffer objs using same resource, not us getting set...
       uint8_t group = 0; //send-group, made-up for now...
-      auto& buf = buffer(port);
-      // it's weird tho how buf1/controls somehow throttles even w/o dirty check? not actually impl like...
-      // turns out setting maxHz makes it start pushing data even when no changes.
-      // WEIRD! bc should only affect microsTilReady() right?
-
-      if(buf.dirty()) { // well not gonna happen because got mult buffer objs using same resource, not us getting set...
-      // if(buf.dirty() || port.hasnt_sent_in_4s_yada()) { // well not gonna happen because got mult buffer objs using same resource, not us getting set...
-        // (*driver)->sendDMX(group, port, buf.get(), buf.lengthBytes()); // so it's required it properly set up. wont overflow at least
-        (*driver)->sendDMX(group, port, buf.get(), buf.lengthBytes()); // XXX TEMP
-        buf.setDirty(false); // our view anyways. Many Buf same addr both good and tricky
-        outcome = true;
-      }
-    }
-    return outcome;
-  }
-
-  void onEvent(const PatchOut& event) override {
-    uint8_t group = 0; //send-group, made-up for now...
-    auto& buf = buffer(event.i);
-    // it's weird tho how buf1/controls somehow throttles even w/o dirty check? not actually impl like...
-    // turns out setting maxHz makes it start pushing data even when no changes.
-    // WEIRD! bc should only affect microsTilReady() right?
-
-    if(buf.dirty() /* || port.hasnt_sent_in_4s_yada() */) { // should always be dirty if event arrived tho
-      (*driver)->sendDMX(group, event.i, buf.get(), buf.lengthBytes());
+      (*driver)->sendDMX(group, b /* port */, buf.get(), buf.lengthBytes()); // so it's required it properly set up. wont overflow at least
       buf.setDirty(false); // our view anyways. Many Buf same addr both good and tricky
+      return true;
     }
-    
+    return false;
   }
+
+  // void onEvent(const PatchOut& event) override {
+  //   uint8_t group = 0; //send-group, made-up for now...
+  //   auto& buf = buffer(event.destIdx); // uhhm so this works because we set the buffers in Scheduler but that's so unpure and spaghetti or whatever.
+  //   // it's weird tho how buf1/controls somehow throttles even w/o dirty check? not actually impl like...
+  //   // turns out setting maxHz makes it start pushing data even when no changes.
+  //   // WEIRD! bc should only affect microsTilReady() right?
+
+  //   if(buf.dirty() /* || port.hasnt_sent_in_4s_yada() */) { // should always be dirty if event arrived tho
+  //     (*driver)->sendDMX(group, event.destIdx, buf.get(), buf.lengthBytes());
+  //     buf.setDirty(false); // our view anyways. Many Buf same addr both good and tricky
+  //   }
+    
+  // }
 
   void cbRDM() {} // get on so can start using
 };

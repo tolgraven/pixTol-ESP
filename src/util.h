@@ -17,6 +17,29 @@
 namespace tol {
 namespace util {
   
+class from_string {
+  const std::string str;
+public:
+  from_string(const char* str): str(str) {}
+  from_string(const std::string& str): str(str) {}
+  template<typename T>
+  operator T() {
+      if constexpr (std::is_same_v<T, float>)
+        return stof(str);
+      else if      (std::is_same_v<T, int> ||
+                    std::is_same_v<T, uint8_t> ||
+                    std::is_same_v<T, uint16_t> ||
+                    std::is_same_v<T, uint32_t> ||
+                    std::is_same_v<T, int8_t> ||
+                    std::is_same_v<T, int16_t> ||
+                    std::is_same_v<T, int32_t>)
+        return stoi(str);
+      else if      (std::is_same_v<T, std::string>) // could extend concept to a parsing class
+        return str;
+  }
+};
+
+
 inline std::vector<std::string> split(std::string text, char delim) {
   std::string line;
   std::vector<std::string> vec;

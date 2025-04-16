@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <string>
 #include <Arduino.h>
 #ifdef ESP8266
 #include <EspSaveCrash.h>

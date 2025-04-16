@@ -30,7 +30,7 @@ struct MDNSService {
 class NetworkConnection: public Named, public smooth::core::Task { // wifi + mesh/Now, bt, anything else ad-hoc? or generic enough for MQTT etc? tho diff cat
   public:
   NetworkConnection(const std::string& id, const std::string& type):
-    Named(id, type), smooth::core::Task(("NetworkConnection " + id).c_str(), 3072, 8, std::chrono::seconds(10)) {}
+    Named(id, type), smooth::core::Task(("NetworkConnection " + id).c_str(), 6144, 8, std::chrono::seconds(10)) {}
   virtual ~NetworkConnection() {}
 
   virtual bool setup() = 0;
@@ -73,10 +73,10 @@ class WifiConnection: public NetworkConnection {
     wifiManager->setAPCallback(std::bind(&WifiConnection::onConfigMode, this)); // when fails to connect and launches hotspot
     // 
     // inject custom head element You can use this to any html bit to the head of the configuration portal. If you add a <style> element, bare in mind it overwrites the included css, not replaces.
-    wifiManager->setCustomHeadElement("<style>html{filter: invert(100%); -webkit-filter: invert(100%);}</style>");
+    // wifiManager->setCustomHeadElement("<style>html{filter: invert(100%); -webkit-filter: invert(100%);}</style>");
     // inject a custom bit of html in the configuration form
-    WiFiManagerParameter custom_text("<p>pixTol in the houze</p>");
-    wifiManager->addParameter(&custom_text);
+    // WiFiManagerParameter custom_text("<p>pixTol in the houze</p>");
+    // wifiManager->addParameter(&custom_text);
 
     // customParams.emplace_back("server", "mqtt server", mqtt_server, 40); // eh these p clunky lol
     // customParams.emplace_back("universe", "dmx", mqtt_port, 6);

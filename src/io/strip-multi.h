@@ -21,7 +21,7 @@ class Strip: public Outputter {
 
   std::vector<std::unique_ptr<StripDriver>> output;
   const std::pair<int, int> defaultPinRange{12, 32};
-  std::vector<int>badPins = {1, 3, 6, 7, 8, 9, 10, 11, 20, 21, 22, 24, 28, 29, 30, 31};
+  std::vector<int>badPins = {1, 3, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 21, 22, 24, 28, 29, 30, 31};
   inline static std::vector<int>usedPins;
   const int numRmtChs = 8;
   inline static int highestUsedRmtCh = -1; // we got 0-7... shared between instances.
@@ -60,7 +60,7 @@ class Strip: public Outputter {
       usedPins.push_back(pin);
       highestUsedRmtCh++;
       
-      auto bus = new StripDriver(fieldCount(), i, pin);
+      auto bus = new StripDriver(fieldCount(), highestUsedRmtCh, pin);
       bus->Begin();
       buffer(i).setPtr(bus->Pixels()); // tho, mod lib so can go other way round -> point driver to renderer res, and sharing their Buffer obj so know wazup.
       output.emplace_back(bus); // but move from ctor bc might not want uniform or continuous...
@@ -68,7 +68,9 @@ class Strip: public Outputter {
     }
   }
 
-  void onEvent(const PatchOut& out) {
+  void onEvent(const PatchOut& out) override {
+    if(out.buffer.fieldSize() != buffer(out.destIdx).fieldSize())
+      return; // temp for having multiple renderers and whatnot, need proper patching tho...
     buffer(out.destIdx).setCopy(out.buffer); // will already need to do one copy to driver buf so might as well do it here?
     flushAttempts++;
 
@@ -77,22 +79,18 @@ class Strip: public Outputter {
 
   bool flush(int i) override {
     auto& out = output[i];
-    if(out->CanShow()) { // will def lead to skipped frames. Should publish something when ready hmm
-      if(out->Pixels() != *buffer(i)) {
-        // someone repointed our buffah!! booo
-        // memcpy(out->Pixels(), *buffer(i), out->PixelsSize()); // tho ideally I mean they're just pointing to the same spot nahmean
-      }
+    while(!out->CanShow()) { } // spinlock here will limit renderer to actually outputtable fps. Suppose more efficient would be one thread per pin tho?
+    // while(!out->CanShow()) { vTaskDelay(1); } // would make sense if sep task per pin...
       
-      out->Dirty();
+    out->Dirty();
+    
+    static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+    // portENTER_CRITICAL_SAFE(&mux); // seems to work
+    xPortEnterCriticalTimeout(&mux, portMUX_NO_TIMEOUT);
+    out->Show();
+    portEXIT_CRITICAL_SAFE(&mux);
+    return true;
       
-      portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
-      // taskENTER_CRITICAL(&mux); // doesnt seem to help and somehow slows down other stuff??
-      portENTER_CRITICAL_SAFE(&mux); // seems to work
-      out->Show();
-      // taskEXIT_CRITICAL(&mux);
-      portEXIT_CRITICAL_SAFE(&mux);
-      return true;
-    }
     return false;
   }
 

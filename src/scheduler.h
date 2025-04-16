@@ -14,9 +14,9 @@
 #include "buffer.h"
 #include "io/strip-multi.h"
 // #include "io/strip.h"
-// #include "io/sacn.h"
+#include "io/sacn.h"
 #include "io/artnet.h"
-// #include "io/opc.h"
+#include "io/opc.h"
 #include "functions.h"
 #include "watchdog.h"
 #include "base.h"
@@ -126,7 +126,7 @@ class DeviceState: public Named {
 // used to be somewhat a scheduler. now just a thing that holds all the io and stuff.
 class Scheduler: public Runnable, public core::Task  {
   std::shared_ptr<ArtnetDriver> artnet;
-  std::shared_ptr<Renderer> renderer;
+  std::vector<std::shared_ptr<Renderer>> renderers;
   std::vector<std::shared_ptr<Inputter>> ins;
   std::vector<std::shared_ptr<Outputter>> outs;
 
@@ -146,16 +146,17 @@ class Scheduler: public Runnable, public core::Task  {
 
   void init() override {
     const int startUni = 2;
-    const int numPorts = 2;
+    const int numPorts = 4;
+    const int numControls = 12;
 
-    auto artnetIn = std::make_shared<ArtnetIn>(startUni, numPorts, artnet);
+    auto artnetIn = std::make_shared<ArtnetIn>(startUni, numPorts, artnet, numControls);
     ins.push_back(artnetIn); // so can free it up later if needed
-    // ins->add(new sAcnInput(id() + " sACN", 1, 1));
-    // ins->add(new OPC(id() + " OPC", 1, 1, 120));
+    // ins.push_back(std::make_shared<sAcnInput>(id() + " sACN", 1, 1));
+    // ins.push_back(std::make_shared<OPC>(id() + " OPC", 1, 1, 120));
     lg.dbg("Done add inputs"); //lg << "Done add inputs!" << endl;
 
-    const int startPin = 15; // had at 25 but apparently some bad pins above that...
-    auto strip = std::make_shared<Strip>("Strip 1", 4, 120, startPin, numPorts);
+    const int startPin = 16; // had at 25 but apparently some bad pins above that...
+    auto strip = std::make_shared<Strip>("Strip 1", 4, 128, startPin, numPorts);
     uint8_t order[] = {1, 0, 2, 3}; // should be set for then/retrieved from Strip tho...
     strip->setSubFieldOrder(order);
     outs.push_back(strip);
@@ -165,16 +166,36 @@ class Scheduler: public Runnable, public core::Task  {
     outs.push_back(artnetOut);
     lg.dbg("Done add outputs");
 
-    renderer = std::make_shared<Renderer>("Renderer", 40, 1000, *strip);
-    renderer->addEffectManager(new Functions("Strip", *renderer)); // welll eh myeh...
+    auto renderer = std::make_shared<Renderer>("Renderer", 40, 500, *strip);
+    
+    auto fun = std::make_shared<Functions>("Strip", *renderer);
+    renderer->addEffectManager(fun); // welll eh myeh...
+    renderers.push_back(renderer);
 
+    
+    // auto strip2 = std::make_shared<Strip>("Strip 2", 3, 144, 20, numPorts);
+    // uint8_t order2[] = {1, 0, 2}; // should be set for then/retrieved from Strip tho...
+    // strip2->setSubFieldOrder(order2);
+    // outs.push_back(strip2);
+    
+    // auto renderer2 = std::make_shared<Renderer>("Renderer 2", 40, 1000, *strip2);
+    // auto fun2 = std::make_shared<Functions>("Strip 2", *renderer2);
+    // renderer2->addEffectManager(fun2);
+    // renderers.push_back(renderer2);
+    
     // connect artnetOut to renderer result...
     // should have a cleaner way to multi-setup second output for something
     // even if renderer always has its original target as "master"
-    artnetOut->setBuffer(renderer->getDestination(0), 0); //fwd calculated packets...
-    artnetOut->setBuffer(artnetIn->buffer(0), 1); //fwd incoming
-    lg.dbg("Done create renderer");
+    // also somewhat fugly _having_ to point to other buf, prob better to just setup a copy on event in Outputter?
+    artnetOut->setBuffer(renderer->buffer(0), 0); //fwd calculated packets...
+    artnetOut->setBuffer(renderer->buffer(1), 1); //fwd calculated packets...
+    artnetOut->setBuffer(renderer->buffer(2), 2); //fwd calculated packets...
+    artnetOut->setBuffer(renderer->buffer(3), 3); //fwd calculated packets...
+    // artnetOut->setBuffer(artnetIn->buffer(0), 3); //fwd incoming
+    lg.dbg("Done create renderers");
 
+    // heap_caps_check_integrity_all(true); // apparently doesnt do anything after 4.2.2 https://github.com/espressif/esp-idf/issues/7364
+    // but stacktraces seem to indicate it does, tho?
     renderer->start();
     DEBUG("DONE");
   }

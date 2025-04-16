@@ -54,10 +54,8 @@ class Sub: public IEventListener<T> {
 
 class PureEvtTask: public core::Task { // Evt = Event, in what sense lol? I guess cause does nothing etc
   public:
-  PureEvtTask(const char* id, int priority = 4):
-    // core::Task(id, 3000, core::APPLICATION_BASE_PRIO - 10, seconds{1}, 1) { // pin cpu 1
-    core::Task(id, 4096, priority, seconds{1}, 1) { // pin cpu 1
-    // core::Task(id, 3000, core::APPLICATION_BASE_PRIO - 5, milliseconds{25}) {
+  PureEvtTask(const char* id, int priority = 14):
+    core::Task(id, 3072, priority, seconds{1}, 1) { // pin cpu 1
       start();
     }
 };
